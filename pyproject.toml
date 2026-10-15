@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "commonmemo"
+version = "0.0.1"
+description = "Framework-neutral memory for agents and workflows: event, session, episodic and user memory behind one handle."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Mehul Gupta", email = "mehulgupta85@gmail.com" },
+]
+# The core is stdlib-only (sqlite3, dataclasses): installing and using
+# commonmemo with the local engine needs nothing else. Engines and
+# integrations bring their own dependencies through extras.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+commonadk = [
+    "commonadk>=0.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/commonmemo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
