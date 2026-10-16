@@ -2,15 +2,18 @@
 
 Framework-neutral memory for agents and workflows. Four tiers behind one
 `Memory` handle, one install, and a decorator or a subclass to get events in
--- everything else (session state, consolidation into episodes, user facts,
+-- everything else (working state, recaps of past sessions, the user profile,
 retrieval, context for the next turn) is built in.
 
 | Tier | Holds | Owned by |
 |---|---|---|
-| **Event** | append-only log of what happened: messages, tool calls, your domain events | CommonMemo (SQLite) |
-| **Session** | live working state of one conversation or workflow run, resumable by id | CommonMemo (SQLite) |
-| **Episodic** | consolidated summaries of past sessions, retrieved by relevance | a wrapped engine |
-| **User** | durable facts about a user; a newer value supersedes, history is kept | a wrapped engine |
+| **Log** | everything that happened, in order, never edited: messages, tool calls, your domain events | CommonMemo (SQLite) |
+| **Working** | what the current conversation or workflow run has in hand: live state and resume points, resumable by id | CommonMemo (SQLite) |
+| **Recaps** | short summaries of finished sessions, retrieved by relevance | a wrapped engine |
+| **UserProfile** | durable facts about one user; a newer value supersedes, history is kept | a wrapped engine |
+
+These names are new (before: event, session, episodic, user). The code still
+uses the old names until [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
 
 Beside the tiers, CommonMemo keeps **structured kinds** of memory itself:
 **tool memory** (which tools fail, how, and what fixed it — never the

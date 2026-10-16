@@ -5,7 +5,7 @@
 ## Question
 
 Which kind of database should hold the memory CommonMemo owns itself: the
-event log, the session tier, and the structured kinds (tool memory, world
+log, the Working tier, and the structured kinds (tool memory, world
 facts, feedback, negatives, resume points)? Memory has to be *correct*
 (nothing lost, nothing counted twice, nothing forgotten that the user asked to
 keep, nothing kept that the user asked to forget). Agent workloads also
@@ -69,7 +69,7 @@ they have to be fixed on SQLite first. A different database fixes neither.
 | Data | Writes | Reads | Partition key |
 |---|---|---|---|
 | Event log | append-only, every event | by session in order; by user (forget, consolidation); by kind | session (user secondary) |
-| Session tier | state on every write; open/close | by session id, every turn | session |
+| Working tier | state on every write; open/close | by session id, every turn | session |
 | User-scoped projections (feedback, negatives, tombstones, steps, checkpoints) | small upserts | filtered reads per user/session, every turn | user / session |
 | World facts | rare; supersede with history | by scope, every turn | scope |
 | Tool memory | **a counter increment on every tool call** | group-by per tool, per agent | tool × agent — **shared across users** |
@@ -115,7 +115,7 @@ Two hot spots exist at any scale and in any database:
 | **Distributed SQL** (CockroachDB, YugabyteDB, AlloyDB; Postgres protocol) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | horizontal | managed options | **The scale path, same SQL** |
 | **DynamoDB** | ✅ conditional put | ✅ `TransactWriteItems` (≤100 items) or a stream consumer | ✅ strongly consistent reads per item | ✅ conditional write | ✅ by partition key | ⚠️ no group-by; precompute everything; design keys up front | horizontal, serverless | none (AWS only) | **Second backend** for serverless / AWS |
 | **MongoDB** | ✅ unique index | ✅ multi-document transactions (replica set) | ✅ majority reads | ✅ conditional update | ✅ | ⚠️ aggregation pipeline works; supersede by convention | sharding | moderate | Alternative second backend |
-| **Redis** | ⚠️ durability depends on AOF / persistence settings | ⚠️ | ✅ | ✅ `SET NX` | ✅ | ❌ | high | moderate | **Cache for the session tier only**, never the source of truth |
+| **Redis** | ⚠️ durability depends on AOF / persistence settings | ⚠️ | ✅ | ✅ `SET NX` | ✅ | ❌ | high | moderate | **Cache for the Working tier only**, never the source of truth |
 | **Cassandra / ScyllaDB** | ✅ (idempotent by key) | ❌ no multi-row atomicity | ⚠️ tunable | ⚠️ lightweight transactions (Paxos), costly | ⚠️ tombstones | ❌ group-by | very high | heavy | Rejected: I4 and I6 are what memory needs most |
 | **Kafka / Kinesis / EventStoreDB** | ✅ | ✅ projections as idempotent consumers | ⚠️ needs a read model elsewhere | ❌ needs another store | ❌ immutable log; deletion only via crypto-shredding | ❌ | very high | heavy | Rejected as primary; maybe an ingestion buffer at "Platform" scale |
 | **Object storage (S3)** | ✅ | n/a | ❌ | ❌ | ✅ | ❌ | unlimited | none | **Archive tier** for old events |
@@ -140,7 +140,7 @@ interface honest.**
    invariant has a native mechanism: conditional writes, item-level
    transactions, strongly consistent reads. MongoDB is the alternative if a
    deployment already runs it.
-4. **Redis is only ever a cache** for the session tier. Durable session state
+4. **Redis is only ever a cache** for the Working tier. Durable session state
    is what makes resuming work, so it can't live only in a cache.
 5. **Old events go to object storage**, under per-kind retention. This
    addresses the volume problem whichever database is chosen.

@@ -2,6 +2,10 @@
 
 ## 0.0.1 — unreleased
 
+Tier names: the four tiers are now **Log**, **Working**, **Recaps** and
+**UserProfile** (before: event, session, episodic, user). Docs only so far;
+the code follows in [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
+
 Structured memory kinds and hybrid reads:
 
 - **Tool memory** from every `ToolInvoked` (and CommonADK `tool_call`): calls,

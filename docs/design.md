@@ -34,20 +34,29 @@ it is written**:
 
 | Tier | Holds | Scope | Lifetime | Written by | Read by | Owner |
 |---|---|---|---|---|---|---|
-| Event | immutable records: messages, tool calls, framework events, domain events | session / user | retention policy (`prune`) | automatic capture | consolidation, replay, debugging | CommonMemo `Store` |
-| Session | working state of one conversation or run | `session_id` | until closed or expired (TTL); resumable | the application, live | every turn (`Session.context`) | CommonMemo `Store` |
-| Episodic | one consolidated summary per session | user / agent | long-term | consolidation at session close | retrieval by relevance | wrapped `Engine` |
-| User | durable facts about a user | `user_id`, across sessions and agents | long-term; superseded, never silently lost | explicit `UserFact` events + engine extraction | every turn | wrapped `Engine` |
+| Log | immutable records: messages, tool calls, framework events, domain events | session / user | retention policy (`prune`) | automatic capture | consolidation, replay, debugging | CommonMemo `Store` |
+| Working | what one conversation or run has in hand | `session_id` | until closed or expired (TTL); resumable | the application, live | every turn (`Session.context`) | CommonMemo `Store` |
+| Recaps | one consolidated summary per session | user / agent | long-term | consolidation at session close | retrieval by relevance | wrapped `Engine` |
+| UserProfile | durable facts about one user | `user_id`, across sessions and agents | long-term; superseded, never silently lost | explicit `UserFact` events + engine extraction | every turn | wrapped `Engine` |
 
-**Data flow:** events → session (live) → on session close, consolidation →
-episodes and user facts.
+**Data flow:** the log → working memory (live) → on session close,
+consolidation → a recap and UserProfile facts.
+
+### Naming
+
+Each name says what the tier holds. They replace event, session, episodic and
+user, which clashed with the event types (`MemoryEvent`), with the `Session`
+handle and every harness's own sessions, and with plain English ("episodic").
+"Session" now means only one run. World facts are not part of UserProfile;
+they stay a separate kind with their own scopes. The code still uses the old
+names until [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
 
 ### Why this split of ownership
 
-The event and session tiers are simple, hot (touched on every turn) and must
+The log and working memory are simple, hot (touched on every turn) and must
 never be lost, so they live in a store CommonMemo controls; routing them
 through an engine would add latency and couple the source of truth to an
-engine's data model. The episodic and user tiers are where the hard,
+engine's data model. Recaps and the UserProfile are where the hard,
 optimizable work is (summarization, extraction, retrieval, conflict
 resolution) — exactly what engines specialize in, so they are delegated.
 
@@ -84,8 +93,8 @@ tool memory, for one, is shared across users, which user facts never are.
 
 | Kind | Example | Scope | Built from | Reaches the agent by |
 |---|---|---|---|---|
-| User facts | "prefers email" | user | `UserFact`, engine extraction | push (stable) + `memory_recall` |
-| Episodes | "on 10/14 we debugged the charger" | user, agent | session close | push above a relevance threshold (turn) + `memory_recall` |
+| UserProfile facts | "prefers email" | user | `UserFact`, engine extraction | push (stable) + `memory_recall` |
+| Recaps | "on 10/14 we debugged the charger" | user, agent | session close | push above a relevance threshold (turn) + `memory_recall` |
 | **World facts** | "refund window is 30 days" | `global`, `project:<name>` | `WorldFact` | push (stable) + `memory_recall` |
 | **Tool memory** | "`search_flights` fails on DD/MM dates; ISO works" | tool × agent, **across users** | `ToolInvoked` (incl. CommonADK `tool_call`) | the tool's own description |
 | **Feedback** | ratings, comments, corrections | user × agent | `Feedback` | lessons, push (stable) |
@@ -96,14 +105,14 @@ Deliberately **not** a kind: raw model reasoning. It is not available
 uniformly across providers (summaries, encrypted reasoning, or none),
 it restates untrusted input, and it is not always faithful to what the model
 did. What is worth keeping from it — decisions and their outcomes — belongs
-in lessons and episodes.
+in lessons and recaps.
 
 ## How agents use memory (hybrid)
 
 | Mode | What | Where |
 |---|---|---|
 | **Push, stable** | negatives, user facts, world facts, lessons from feedback | the agent's instructions — changes rarely, so it keeps prompt caching intact |
-| **Push, turn** | episodes above `min_episode_score`, session state, where a resumed process stands | in front of the turn's prompt |
+| **Push, turn** | recaps above `min_episode_score`, working state, where a resumed process stands | in front of the turn's prompt |
 | **In the tools** | tool memory's notes | each tool's own description, read exactly when the model decides how to call it |
 | **Pull** | `memory_recall(query)` — every kind, wider limits, no threshold | a tool call |
 | **Write** | `memory_remember`, `memory_note_fact`, `memory_avoid`, `memory_save_progress` | tool calls, recorded `source="agent"` |
@@ -272,7 +281,7 @@ the store's SQLite file.
 |---|---|
 | one closed session | one episode; the uuid Graphiti assigns is recorded in the local index |
 | a user | one `group_id` (graph partition); ids outside `[A-Za-z0-9_-]` are sanitized and hash-suffixed |
-| episodic retrieval | hybrid `search` → facts → the episodes they came from, best first, with the matching facts appended |
+| recap retrieval | hybrid `search` → facts → the episodes they came from, best first, with the matching facts appended |
 | extracted user facts | the group's currently valid entity edges |
 | `forget_user` | delete the group |
 
@@ -284,7 +293,7 @@ to reprocess, and raises `NodeNotFoundError` for a new one. (The first
 version did pass one; only the live run below caught it, which is why the
 backend tests now bind every call against graphiti-core's real signatures.) Framework bookkeeping
 (`ExternalEvent`s such as token counts) stays out of the episode text; it is
-noise for extraction and remains in the event tier. Graphiti is reached
+noise for extraction and remains in the log. Graphiti is reached
 through a small `GraphBackend` interface, so the engine's logic is tested
 without a graph database or an LLM.
 
@@ -314,7 +323,7 @@ model tokens. It needs `OPENAI_API_KEY` and network access to
 | one closed session | one `add(messages, user_id, metadata={commonmemo_session_id})` |
 | a user | Mem0 `user_id`; ids with whitespace are sanitized and hash-suffixed |
 | extracted user facts | `get_all(filters={"user_id"})`, as `Fact(key="memory")` after the explicit ones |
-| episodic retrieval | `search` → memories → the sessions that created them |
+| recap retrieval | `search` → memories → the sessions that created them |
 | re-ingest | delete the memories tagged with the session, then add again |
 | `forget_user` | `delete_all(user_id=...)` |
 
@@ -369,7 +378,7 @@ What exists, and what CommonMemo takes from it:
 - **TencentDB Agent Memory** (MIT, Node): L0 raw → L1 facts → L2 scenes → L3
   persona; integrates mainly through an LLM proxy; team memory hub in v2.
   Its tiers are levels of *processing*; CommonMemo's are *scopes and
-  lifetimes*, with a resumable session tier it has no equivalent of.
+  lifetimes*, with a resumable Working tier it has no equivalent of.
 - **Engines:** Mem0 (extraction, personalization), Zep/Graphiti (temporal
   knowledge graph), Letta (self-editing memory blocks), LangMem (on
   LangGraph's store), Cognee (graph from documents), Hindsight, MemOS.
@@ -398,7 +407,7 @@ What exists, and what CommonMemo takes from it:
 Tracked in GitHub issues, with the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) as
 the index. Nothing gets coded without an issue.
 
-**Shipped:** event and session tiers, `@mem.track`, `MemoryEvent`, the local
+**Shipped:** the Log and Working tiers, `@mem.track`, `MemoryEvent`, the local
 engine and the CommonADK integration ([#1](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/1)); the Graphiti and Mem0 engines, the
 structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
 
@@ -413,6 +422,8 @@ structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/
   long-memory tasks and on scenarios only CommonMemo covers (resume after a
   crash, a known tool failure, negatives, forgetting); deterministic in CI,
   live after #3. New memory kinds (#8, #9, #10) are measured against it
+- [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19) — rename the tiers in code (Log, Working, Recaps, UserProfile),
+  before the release
 - [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
 - [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools
 - [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
