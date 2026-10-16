@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Optional, Sequence
 
-from ..events import ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact
+from ..events import BOOKKEEPING, ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord
 from .base import Engine, Episode, Fact
 
@@ -74,8 +74,10 @@ def summarize(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
     tools = [e for e in events if isinstance(e, ToolInvoked)]
     external = [e for e in events if isinstance(e, ExternalEvent)]
     facts = [e for e in events if isinstance(e, UserFact)]
+    described = [d for d in (describe(e) for e in events) if d]
     other = [
-        e for e in events if not isinstance(e, (Message, ToolInvoked, ExternalEvent, UserFact))
+        e for e in events
+        if not isinstance(e, (Message, ToolInvoked, UserFact, *BOOKKEEPING)) and describe(e) is None
     ]
 
     parts = [f"Session {session.session_id}" + (f" with agent {session.agent}" if session.agent else "")]
@@ -99,6 +101,8 @@ def summarize(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
         parts.append(f"events: {', '.join(kinds)}")
     if facts:
         parts.append("learned: " + "; ".join(f"{f.key}={f.value}" for f in facts))
+    if described:
+        parts.append("noted: " + " ".join(described))
     if last_reply:
         parts.append(f"final answer: {_clip(last_reply.content)}")
     return ". ".join(parts) + "."

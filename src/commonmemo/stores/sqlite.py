@@ -60,9 +60,9 @@ class SQLiteStore(Store):
 
     # -- event tier ---------------------------------------------------------
 
-    def append(self, event: MemoryEvent) -> None:
+    def append(self, event: MemoryEvent) -> bool:
         with self._lock:
-            self._conn.execute(
+            cur = self._conn.execute(
                 "INSERT OR IGNORE INTO events (id, ts, kind, session_id, user_id, agent, body) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -76,6 +76,7 @@ class SQLiteStore(Store):
                 ),
             )
             self._conn.commit()
+        return cur.rowcount == 1
 
     def events(
         self,
@@ -173,6 +174,11 @@ class SQLiteStore(Store):
                 (_dumps(state), session_id),
             )
             self._conn.commit()
+
+    def session_ids(self, user_id: str) -> list[str]:
+        with self._lock:
+            rows = self._conn.execute("SELECT session_id FROM sessions WHERE user_id = ?", (user_id,)).fetchall()
+        return [r["session_id"] for r in rows]
 
     def close_session(self, session_id: str, closed_at: float) -> None:
         with self._lock:

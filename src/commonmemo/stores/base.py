@@ -39,9 +39,10 @@ class Store(ABC):
     # -- event tier ---------------------------------------------------------
 
     @abstractmethod
-    def append(self, event: MemoryEvent) -> None:
-        """Persist one event. Appending an id that already exists is a no-op
-        (ids are idempotency keys), never an overwrite."""
+    def append(self, event: MemoryEvent) -> bool:
+        """Persist one event; return whether it was new. Appending an id that
+        already exists is a no-op returning False (ids are idempotency
+        keys), never an overwrite."""
 
     @abstractmethod
     def events(
@@ -72,6 +73,10 @@ class Store(ABC):
     @abstractmethod
     def save_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Replace the session's state."""
+
+    @abstractmethod
+    def session_ids(self, user_id: str) -> list[str]:
+        """Every session id that belongs to `user_id`."""
 
     @abstractmethod
     def close_session(self, session_id: str, closed_at: float) -> None:

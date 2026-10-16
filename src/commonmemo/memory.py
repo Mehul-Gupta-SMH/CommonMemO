@@ -5,8 +5,12 @@
     @mem.track                                # event tier, automatically
     def search_web(query: str) -> str: ...
 
+    @mem.step(side_effects=True)              # resumable: replayed if done
+    def charge_card(order_id: str) -> str: ...
+
     async with mem.session(user_id="u1", agent="coordinator") as s:
-        ctx = await s.context(prompt)         # all four tiers, for this turn
+        ctx = await s.context(prompt)         # what memory pushes this turn
+        tools = mem.agent_tools(s)            # what agents can pull / write
         ...
     # on exit: consolidation -> episodic + user memory
 """
@@ -19,10 +23,14 @@ import time
 import uuid
 from typing import Any, Callable, Optional, TypeVar, Union, overload
 
-from .context import MemoryContext
-from .engines import Engine, LocalEngine, engine_from_name
-from .events import MemoryEvent, ToolInvoked
+from .agent_tools import build_agent_tools
+from .context import MemoryContext, MemoryPolicy
+from .engines import Engine, Fact, LocalEngine, engine_from_name
+from .events import MemoryEvent, Negative, NegativeRevoked, ToolInvoked, WorldFact
+from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, WorldRecord
+from .resume import make_step
 from .session import Session, current_session
+from .tool_memory import ToolProfile
 from .stores import SQLiteStore, Store, store_from_url
 from .stores.base import SessionRecord
 
@@ -47,6 +55,8 @@ class Memory:
         store: Union[str, Store] = "sqlite://:memory:",
         engine: Union[str, Engine] = "local",
         *,
+        project: Optional[str] = None,
+        policy: Optional[MemoryPolicy] = None,
         session_ttl: Optional[float] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
@@ -57,8 +67,23 @@ class Memory:
             engine = engine_from_name(engine, **options)
         engine.bind(self.store)
         self.engine = engine
+        self.knowledge = Knowledge(getattr(self.store, "path", ":memory:"))
+        """Tool memory, world facts, feedback, negatives, checkpoints and
+        steps -- projections of the event log (see `knowledge.py`)."""
+        self.project = project
+        """Names the `project:<name>` scope for world facts and negatives."""
+        self.policy = policy or MemoryPolicy()
+        """What is pushed per turn (see `MemoryPolicy`)."""
+        self.policy_for_recall = MemoryPolicy(
+            max_facts=50, max_world=50, max_lessons=20, episodes=5, min_episode_score=0.0, recent=0
+        )
+        """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
         """Default lifetime of a session in seconds (`None`: no expiry)."""
+
+    @property
+    def project_scope(self) -> str:
+        return f"project:{self.project}" if self.project else "global"
 
     # -- sessions -----------------------------------------------------------
 
@@ -104,8 +129,38 @@ class Memory:
         session = current_session()
         if session is not None and session.memory is self and not session.closed:
             return session.record(event)
-        self.store.append(event)
+        self._append(event)
         return event
+
+    def _append(self, event: MemoryEvent) -> None:
+        """Log `event`, then update the projections -- only when the log
+        actually took it, so a duplicate delivery (same event id) is not
+        counted twice."""
+        if self.store.append(event) is not False:
+            self.knowledge.apply(event)
+
+    def step(
+        self,
+        fn: Optional[F] = None,
+        *,
+        name: Optional[str] = None,
+        key: Optional[Callable[..., Any]] = None,
+        side_effects: bool = False,
+    ) -> Any:
+        """Decorator: make a function a resumable step (see `resume.py`).
+        Inside a session, a call that already finished in an earlier run of
+        the same session returns its stored result instead of running.
+        Outside a session it is a plain call."""
+
+        def decorate(func: F) -> F:
+            return make_step(self, func, name=name, key=key, side_effects=side_effects)  # type: ignore[return-value]
+
+        return decorate(fn) if fn is not None else decorate
+
+    def agent_tools(self, session: Session, *, writes: bool = True) -> list[Callable[..., str]]:
+        """Memory tools bound to `session`, for agents to pull memory and
+        (unless `writes=False`) write it -- see `agent_tools.py`."""
+        return build_agent_tools(session, writes=writes)
 
     @overload
     def track(self, fn: F) -> F: ...
@@ -199,22 +254,126 @@ class Memory:
         agent: Optional[str] = None,
         episodes: int = 3,
     ) -> MemoryContext:
-        """Long-term context only (user facts + matching episodes). Inside a
-        session, prefer `Session.context`, which adds the session tier."""
+        """Long-term context without a session (user facts, episodes,
+        negatives, world facts, lessons). Inside a session, prefer
+        `Session.context`, which adds the session tier."""
+        from dataclasses import replace
+
+        scopes = ["global"] + ([self.project_scope] if self.project else []) \
+            + ([f"agent:{agent}"] if agent else []) + ([f"user:{user_id}"] if user_id else [])
+        return await self._long_term(
+            query, user_id=user_id, agent=agent, policy=replace(self.policy, episodes=episodes), scopes=scopes
+        )
+
+    async def _long_term(
+        self,
+        query: Optional[str],
+        *,
+        user_id: Optional[str],
+        agent: Optional[str],
+        policy: MemoryPolicy,
+        scopes: list[str],
+        local_only: bool = False,
+    ) -> MemoryContext:
+        engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
         found = (
-            await self.engine.search_episodes(query or "", user_id=user_id, agent=agent, limit=episodes)
-            if episodes
+            await engine.search_episodes(query or "", user_id=user_id, agent=agent, limit=policy.episodes)
+            if policy.episodes
             else []
         )
-        facts = await self.engine.user_facts(user_id) if user_id is not None else []
-        return MemoryContext(episodes=found, facts=facts)
+        found = [e for e in found if (e.score or 0.0) >= policy.min_episode_score]
+        facts = self._visible_facts(user_id, await engine.user_facts(user_id)) if user_id is not None else []
+        world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
+        if query and len(world) > policy.max_world:
+            words = set(query.lower().split())
+            world.sort(key=lambda w: -len(words & set(f"{w.key} {w.value}".lower().split())))
+        return MemoryContext(
+            negatives=self.knowledge.negatives(scopes)[: policy.max_negatives],
+            facts=facts[: policy.max_facts],
+            world=world[: policy.max_world],
+            lessons=self.knowledge.lessons(user_id=user_id, agent=agent, limit=policy.max_lessons),
+            tool_notes=self.tool_notes(agent),
+            episodes=found,
+            policy=policy,
+        )
+
+    def _visible_facts(self, user_id: str, facts: list[Fact]) -> list[Fact]:
+        """`facts` minus what the user asked to forget. A tombstone hides
+        facts from before it; a fact stated again afterwards shows again."""
+        stones = self.knowledge.tombstones(user_id)
+        if not stones:
+            return facts
+        out = []
+        for f in facts:
+            hidden = False
+            for key, pattern, ts in stones:
+                before = f.valid_from <= ts
+                if f.key == key and before:
+                    hidden = True
+                elif pattern and pattern.lower() in f.value.lower() and (before or f.valid_from == 0):
+                    hidden = True
+            if not hidden:
+                out.append(f)
+        return out
+
+    # -- structured kinds ---------------------------------------------------
+
+    def learn(self, key: str, value: str, *, scope: Optional[str] = None, ttl: Optional[float] = None,
+              source: str = "explicit") -> MemoryEvent:
+        """Record a world fact outside any session (see `Session.learn`)."""
+        return self.record(WorldFact(key=key, value=value, scope=scope or self.project_scope,
+                                     valid_until=time.time() + ttl if ttl else None, source=source))
+
+    def world_facts(self, scopes: Optional[list[str]] = None, *, include_stale: bool = False) -> list[WorldRecord]:
+        """Current world facts in `scopes` (default: global + the project)."""
+        scopes = scopes or (["global"] + ([self.project_scope] if self.project else []))
+        return self.knowledge.world_facts(scopes, include_stale=include_stale)
+
+    def never(self, statement: str, *, scope: str = "global", reason: Optional[str] = None) -> MemoryEvent:
+        """Record a negative outside a session; `scope` is a full scope
+        string (`global`, `project:x`, `agent:x`, `user:x`)."""
+        user_id = scope.split(":", 1)[1] if scope.startswith("user:") else None
+        return self.record(Negative(statement=statement, scope=scope, reason=reason, user_id=user_id))
+
+    def revoke_negative(self, negative_id: str) -> MemoryEvent:
+        return self.record(NegativeRevoked(negative_id=negative_id))
+
+    def negatives(self, scopes: list[str]) -> list[NegativeRecord]:
+        return self.knowledge.negatives(scopes)
+
+    def feedback_summary(self, *, user_id: Optional[str] = None, agent: Optional[str] = None) -> FeedbackSummary:
+        return self.knowledge.feedback_summary(user_id=user_id, agent=agent)
+
+    def tool_profile(self, tool: str, agent: Optional[str] = None) -> ToolProfile:
+        """What tool memory knows about `tool` (for `agent`, or all agents)."""
+        return self.knowledge.tool_profile(tool, agent)
+
+    def tool_notes(self, agent: Optional[str] = None) -> dict[str, list[str]]:
+        """`{tool: advice lines}` for every tool with something worth saying.
+        An agent's own experience comes first, then what other agents saw."""
+        out: dict[str, list[str]] = {}
+        for tool in self.knowledge.tools():
+            notes = self.tool_profile(tool, agent).notes() if agent else []
+            for line in self.tool_profile(tool).notes():
+                if line not in notes:
+                    notes.append(line)
+            if notes:
+                out[tool] = notes
+        return out
+
+    def rebuild_knowledge(self) -> None:
+        """Recompute the structured projections from the event log."""
+        self.knowledge.rebuild(self.store.events())
 
     # -- lifecycle ----------------------------------------------------------
 
     async def forget_user(self, user_id: str) -> int:
-        """Delete everything about `user_id` from every tier. Returns the
-        number of rows removed."""
-        return self.store.forget_user(user_id) + await self.engine.forget_user(user_id)
+        """Delete everything about `user_id` from every tier and kind. Tool
+        memory (argument shapes and scrubbed error signatures only) and world
+        facts are not about the user and stay. Returns rows removed."""
+        sessions = self.store.session_ids(user_id)
+        n = self.knowledge.forget_user(user_id, sessions)
+        return n + self.store.forget_user(user_id) + await self.engine.forget_user(user_id)
 
     def prune(self, *, older_than_days: float) -> int:
         """Drop events older than `older_than_days` and expired sessions.
@@ -224,6 +383,7 @@ class Memory:
 
     async def aclose(self) -> None:
         await self.engine.aclose()
+        self.knowledge.close()
         self.store.close()
 
 

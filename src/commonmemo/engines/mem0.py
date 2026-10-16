@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Protocol, Sequence
 
-from ..events import ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact
+from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
 from .base import Engine, Episode, Fact
@@ -77,8 +77,10 @@ def to_messages(session: SessionRecord, events: Sequence[MemoryEvent]) -> list[d
         elif isinstance(e, ToolInvoked):
             outcome = f"failed with {e.error}" if e.error else f"returned {e.result}"
             out.append({"role": "assistant", "content": f"(tool {e.name}({e.arguments}) {outcome})"})
-        elif isinstance(e, ExternalEvent):
-            continue  # framework bookkeeping: noise for extraction, kept in the event tier
+        elif isinstance(e, BOOKKEEPING):
+            continue  # bookkeeping: noise for extraction, kept in the event tier
+        elif describe(e):
+            out.append({"role": "user", "content": describe(e)})
         else:
             out.append({"role": "user", "content": f"(event {e.kind}: {e.payload})"})
     return out

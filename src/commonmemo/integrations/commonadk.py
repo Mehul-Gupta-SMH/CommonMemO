@@ -25,10 +25,16 @@ How each CommonADK event lands in the event tier:
 Event ids are derived from CommonADK's `run_id` and `seq`, so a hook that
 fires twice for the same event never records it twice.
 
-Gap, until CommonADK grows a pre-run context step: its hooks are
-observe-only, so memory cannot be added to an agent's *instructions* yet.
-`run_with_memory` puts it in front of the prompt instead
-(`prompt_with_context`). See docs/design.md, "CommonADK integration".
+And into the run (`run_with_memory`), hybrid:
+
+- *push* -- stable memory to CommonADK's `context=` (instructions),
+  per-turn memory to `turn_context=` (in front of the prompt);
+- *pull* -- the memory tools added to the agent, and tool memory's notes
+  written into the agent's own tools' descriptions (`prepare_project`).
+
+A CommonADK release without `context=` / `turn_context=` gets all of the
+memory in front of the prompt instead. See docs/design.md, "CommonADK
+integration".
 
 CommonADK is imported lazily, only when a function here is called --
 `import commonmemo` never needs it installed.
@@ -36,9 +42,11 @@ CommonADK is imported lazily, only when a function here is called --
 
 from __future__ import annotations
 
+import functools
+import inspect
 from typing import Any, Optional
 
-from ..context import MemoryContext
+from ..context import MemoryContext, MemoryPolicy
 from ..events import ExternalEvent, MemoryEvent, Message, ToolInvoked
 from ..session import Session
 
@@ -106,12 +114,84 @@ def attach(session: Session, hooks: Optional[Any] = None) -> Any:
     return hooks
 
 
-def prompt_with_context(context: MemoryContext, prompt: str, *, max_chars: int = 4000) -> str:
-    """`prompt`, preceded by the rendered memory context when there is any."""
+def prompt_with_context(context: MemoryContext, prompt: str, *, max_chars: int = 8000) -> str:
+    """`prompt`, preceded by all of the rendered memory when there is any --
+    the delivery for a CommonADK without `context=` / `turn_context=`."""
     rendered = context.render(max_chars=max_chars)
     if not rendered:
         return prompt
-    return f"# Memory\n\n{rendered}\n\n# Request\n\n{prompt}"
+    return f"{rendered}\n\n# Request\n\n{prompt}"
+
+
+def _annotated(tool_spec: Any, notes: list[str]) -> Any:
+    """A copy of a CommonADK `ToolSpec` whose description -- and the
+    function's own docstring, which five of the six adapters read -- ends
+    with tool memory's notes. The function's behaviour is unchanged."""
+    func = tool_spec.func
+    doc = (tool_spec.description or "").rstrip() + "\n\nNotes from past calls of this tool:\n" + "\n".join(
+        f"- {n}" for n in notes
+    )
+    if inspect.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return await func(*args, **kwargs)
+
+    else:
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+    wrapper.__doc__ = doc
+    return tool_spec.model_copy(update={"func": wrapper, "description": doc})
+
+
+def prepare_project(
+    session: Session,
+    project: Any,
+    agent_name: str,
+    *,
+    memory_tools: bool = True,
+    writes: bool = True,
+    tool_notes: bool = True,
+) -> Any:
+    """A copy of `project` with memory built into `agent_name`:
+
+    - the memory tools (`memory_recall`, and unless `writes=False` the write
+      tools) added to the agent's tools -- the *pull* half of hybrid memory;
+    - tool memory's notes appended to each of the agent's own tools'
+      descriptions, where the model reads them exactly when deciding how to
+      call that tool (and where they stay stable, cache-friendly text).
+
+    `project` itself is never mutated. Needs commonadk installed.
+    """
+    try:
+        from commonadk.models import ToolSpec
+    except ImportError as exc:  # pragma: no cover -- exercised only without commonadk
+        raise ImportError(_INSTALL_HINT) from exc
+    if agent_name not in project.agents:
+        return project  # let CommonADK's build() report the unknown agent
+    spec = project.agents[agent_name]
+    tools = list(spec.tools)
+    if tool_notes:
+        notes = session.memory.tool_notes(session.agent or agent_name)
+        tools = [_annotated(t, notes[t.name]) if t.name in notes else t for t in tools]
+    if memory_tools:
+        taken = {t.name for t in tools}
+        tools += [ToolSpec.from_function(f) for f in session.memory.agent_tools(session, writes=writes)
+                  if f.__name__ not in taken]
+    agents = dict(project.agents)
+    agents[agent_name] = spec.model_copy(update={"tools": tools})
+    return project.model_copy(update={"agents": agents})
+
+
+def _takes_split_context(runner: Any) -> bool:
+    try:
+        params = inspect.signature(runner.run).parameters
+    except (TypeError, ValueError):
+        return False
+    return "context" in params and "turn_context" in params
 
 
 async def run_with_memory(
@@ -123,24 +203,41 @@ async def run_with_memory(
     *,
     run_session: Optional[Any] = None,
     hooks: Optional[Any] = None,
-    episodes: int = 3,
-    recent: int = 10,
+    policy: Optional[MemoryPolicy] = None,
+    memory_tools: bool = True,
+    writes: bool = True,
 ) -> Any:
-    """One CommonADK turn with all four tiers wired in: fetch context, run
-    with the memory hook attached, return CommonADK's `Trace` unchanged.
+    """One CommonADK turn with hybrid memory wired in, returning CommonADK's
+    `Trace` unchanged:
+
+    1. *push* -- the session's context, split: stable memory goes to
+       `context=` (the agent's instructions), per-turn memory to
+       `turn_context=` (in front of the prompt);
+    2. *pull* -- memory tools on the agent, and tool notes in its tools'
+       descriptions (`prepare_project`);
+    3. *capture* -- every event of the run recorded into the session.
 
     `run_session` is CommonADK's own `RunSession` (its per-SDK conversation
-    state); pass the same one on every turn of a conversation, exactly as
-    you would without memory.
+    state); pass the same one on every turn of a conversation. A CommonADK
+    without `context=` / `turn_context=` gets all of the memory in front of
+    the prompt instead.
     """
-    context = await session.context(prompt, episodes=episodes, recent=recent)
+    from dataclasses import replace
+
+    policy = replace(policy or session.memory.policy, tool_notes_in_text=False)
+    context = await session.context(prompt, policy=policy)
+    if run_session is not None and getattr(run_session, "user_id", "absent") is None:
+        run_session.user_id = session.user_id
+    built = prepare_project(session, project, agent_name, memory_tools=memory_tools, writes=writes)
+    registry = attach(session, hooks)
+    if _takes_split_context(runner):
+        return await runner.run(
+            built, agent_name, prompt, session=run_session, hooks=registry,
+            context=context.stable_text() or None, turn_context=context.turn_text() or None,
+        )
     return await runner.run(
-        project,
-        agent_name,
-        prompt_with_context(context, prompt),
-        session=run_session,
-        hooks=attach(session, hooks),
+        built, agent_name, prompt_with_context(context, prompt), session=run_session, hooks=registry
     )
 
 
-__all__ = ["translate", "attach", "prompt_with_context", "run_with_memory"]
+__all__ = ["translate", "attach", "prompt_with_context", "prepare_project", "run_with_memory"]

@@ -12,6 +12,18 @@ retrieval, context for the next turn) is built in.
 | **Episodic** | consolidated summaries of past sessions, retrieved by relevance | a wrapped engine |
 | **User** | durable facts about a user; a newer value supersedes, history is kept | a wrapped engine |
 
+Beside the tiers, CommonMemo keeps **structured kinds** of memory itself:
+**tool memory** (which tools fail, how, and what fixed it — never the
+users' data), **world facts** (with expiry), **feedback** (ratings and
+corrections), **negatives** ("never do X", and tombstones for "forget
+this"), and **resume points** (checkpoints and replayable steps, so a
+stopped process continues where it was).
+
+Agents use memory in **hybrid** mode: a bounded, stable part is pushed into
+their instructions, a per-turn part with the request, tool notes into the
+tools' own descriptions — and agents pull the rest, and write, through
+memory tools (`memory_recall`, `memory_remember`, ...).
+
 CommonMemo **wraps** memory engines rather than building one: extraction,
 retrieval and their optimizations belong to engines that specialize in them
 (Graphiti and Mem0). The built-in `local` engine is offline and
@@ -55,8 +67,28 @@ async with mem.session(user_id="u1", agent="support") as s:
 # on exit: the session's events are consolidated into an episode and user facts
 ```
 
-`ctx.render()` gives a block of text ready to put in front of an agent's
-instructions or prompt.
+`ctx.stable_text()` belongs in an agent's instructions and `ctx.turn_text()`
+with the turn's request (`ctx.render()` gives both). `mem.agent_tools(s)`
+returns the memory tools for an agent.
+
+## Resume a stopped process
+
+```python
+@mem.step                                  # finished calls replay on a rerun
+def fetch(order_id: str) -> dict: ...
+
+@mem.step(side_effects=True)               # never silently run twice
+def refund(order_id: str) -> str: ...
+
+with mem.session("job-42") as s:           # same id in a new process = resume
+    order = fetch("A1")
+    s.checkpoint("fetched", {"order": "A1"})
+    refund("A1")
+```
+
+Rerunning the same code after a crash skips what finished and continues at
+the first step that did not; a side-effecting step interrupted mid-way
+raises `StepInDoubt` instead of repeating itself.
 
 ## With Graphiti
 

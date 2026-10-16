@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
 
-from ..events import ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact
+from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
 from .base import Engine, Episode, Fact
@@ -90,10 +90,12 @@ def transcript(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
             lines.append(f"tool: {e.name}({e.arguments}) {outcome}")
         elif isinstance(e, UserFact):
             lines.append(f"user: my {e.key} is {e.value}")
-        elif isinstance(e, ExternalEvent):
-            # Framework bookkeeping (token counts, run boundaries) is noise
-            # for fact extraction; it stays in the event tier.
+        elif isinstance(e, BOOKKEEPING):
+            # Framework and step bookkeeping (token counts, run boundaries,
+            # tombstones) is noise for extraction; it stays in the event tier.
             continue
+        elif describe(e):
+            lines.append(f"user: {describe(e)}")
         else:
             lines.append(f"event: {e.kind} {e.payload}")
     return "\n".join(lines)

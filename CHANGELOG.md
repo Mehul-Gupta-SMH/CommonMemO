@@ -2,6 +2,32 @@
 
 ## 0.0.1 — unreleased
 
+Structured memory kinds and hybrid reads:
+
+- **Tool memory** from every `ToolInvoked` (and CommonADK `tool_call`): calls,
+  failures, durations, scrubbed error signatures, and the argument-shape
+  change that fixed a failure. Holds shapes, never values, so it is safe to
+  share across users. `tool_profile`, `tool_notes`.
+- **World memory**: `WorldFact` with `global` / `project:<name>` scopes,
+  superseding history and `valid_until` expiry. `learn`, `world_facts`.
+- **Feedback**: ratings, comments and corrections; summaries and lessons.
+- **Negatives** ("never X", scoped, revocable) and **tombstones** (`forget`)
+  that keep forgotten facts from being re-learned.
+- **Resume points**: `checkpoint` / `resume_point`, and `@mem.step` for
+  replayable steps; interrupted side-effecting steps raise `StepInDoubt`.
+- **Hybrid reads**: `MemoryPolicy`; context split into `stable_text()` and
+  `turn_text()`, framed as data; episodes pushed only above a relevance
+  threshold; recent events off by default.
+- **Agent tools**: `memory_recall`, `memory_remember`, `memory_note_fact`,
+  `memory_avoid`, `memory_save_progress` (sync, typed, documented; writes
+  marked `source="agent"`).
+- **CommonADK**: `prepare_project` adds the memory tools and writes tool
+  notes into the tools' own descriptions; `run_with_memory` passes stable
+  memory as `context=` and per-turn memory as `turn_context=` (CommonADK
+  PR #29), falling back to the prompt on older CommonADK.
+- Projections are kept per event, ignore duplicate deliveries, and can be
+  rebuilt from the log (`rebuild_knowledge`).
+
 Mem0 engine:
 
 - `Mem0Engine`: each closed session is one Mem0 `add`, tagged with its
