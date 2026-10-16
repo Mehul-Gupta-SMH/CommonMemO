@@ -55,6 +55,7 @@ class Memory:
             if engine == "local" and isinstance(self.store, SQLiteStore):
                 options["path"] = self.store.path
             engine = engine_from_name(engine, **options)
+        engine.bind(self.store)
         self.engine = engine
         self.session_ttl = session_ttl
         """Default lifetime of a session in seconds (`None`: no expiry)."""

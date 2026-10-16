@@ -145,6 +145,6 @@ def test_empty_session_produces_no_episode():
 
 def test_engine_registry_errors_are_distinct():
     with pytest.raises(NotImplementedError, match="planned"):
-        engine_from_name("graphiti")
+        engine_from_name("mem0")
     with pytest.raises(ValueError, match="unknown engine"):
         engine_from_name("nope")

@@ -4,6 +4,8 @@ name: CI
 #   integration test skips itself via pytest.importorskip).
 # commonadk: with the commonadk extra -- runs the integration against
 #   CommonADK's real event model and HookRegistry.
+# graphiti: with the graphiti extra -- runs GraphitiBackend against
+#   graphiti-core's real types (no graph database or LLM needed).
 
 on:
   push:
@@ -22,12 +24,12 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.10", "3.13"]
-        extras: ["dev", "dev,commonadk"]
+        extras: ["dev", "dev,commonadk", "dev,graphiti"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[${{ matrix.extras }}]"
-      - run: python -c "import sys, commonmemo; assert 'commonadk' not in sys.modules"
+      - run: python -c "import sys, commonmemo, commonmemo.engines.graphiti; assert not any(m.startswith(('commonadk', 'graphiti_core')) for m in sys.modules)"
       - run: pytest -q

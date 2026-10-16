@@ -102,11 +102,33 @@ always readable.
 | Engine | Status | Notes |
 |---|---|---|
 | `local` | shipped | offline and deterministic: rule-based episode digests, keyword retrieval, explicit facts only. For zero-setup use and reproducible tests |
-| `graphiti` | planned | temporal knowledge graph; native "episodes" and bi-temporal facts map directly onto the episodic and user tiers |
+| `graphiti` | shipped | temporal knowledge graph; see "The Graphiti engine" below |
 | `mem0` | planned | fact extraction and retrieval for the user tier |
 
 A planned engine raises `NotImplementedError` naming it; an unknown name
-raises `ValueError`.
+raises `ValueError`. `Engine.bind(store)` lets an engine keep local state in
+the store's SQLite file.
+
+### The Graphiti engine
+
+| CommonMemo | Graphiti |
+|---|---|
+| one closed session | one episode, uuid derived from the session id (`uuid5`) |
+| a user | one `group_id` (graph partition); ids outside `[A-Za-z0-9_-]` are sanitized and hash-suffixed |
+| episodic retrieval | hybrid `search` → facts → the episodes they came from, best first, with the matching facts appended |
+| extracted user facts | the group's currently valid entity edges |
+| `forget_user` | delete the group |
+
+What stays exact, in a local index next to the store: the session digest,
+explicit `UserFact`s and provenance. Re-ingesting a session removes its graph
+episode first, so nothing duplicates. Framework bookkeeping
+(`ExternalEvent`s such as token counts) stays out of the episode text; it is
+noise for extraction and remains in the event tier. Graphiti is reached
+through a small `GraphBackend` interface, so the engine's logic is tested
+without a graph database or an LLM.
+
+Packaging note: graphiti-core 0.31 imports `httpx` without declaring it
+(openai 3.x moved to `httpx2`), so the `graphiti` extra declares `httpx`.
 
 ## CommonADK integration
 
@@ -161,7 +183,7 @@ What exists, and what CommonMemo takes from it:
 
 1. **v0.0.1 (this):** event and session tiers, `@track`, `MemoryEvent`,
    local engine, CommonADK integration, tests.
-2. **Graphiti engine**, then **Mem0 engine**.
+2. **Graphiti engine** (shipped), then **Mem0 engine**.
 3. **CommonADK PR:** pre-run context step and optional `user_id`.
 4. **Framework adapters:** ADK `BaseMemoryService`, OpenAI `Session`,
    LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen `Memory`, Claude

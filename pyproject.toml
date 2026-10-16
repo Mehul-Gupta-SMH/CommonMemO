@@ -24,6 +24,13 @@ dev = [
 commonadk = [
     "commonadk>=0.0.3",
 ]
+graphiti = [
+    "graphiti-core>=0.31",
+    # graphiti-core imports httpx (llm_client/client.py) without declaring
+    # it; it used to arrive through openai, but openai 3.x moved to httpx2,
+    # so without this `import graphiti_core` raises ModuleNotFoundError.
+    "httpx",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commonmemo"]

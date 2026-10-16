@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from ..events import MemoryEvent
-from ..stores.base import SessionRecord
+from ..stores.base import SessionRecord, Store
 
 
 @dataclass(frozen=True)
@@ -90,6 +90,11 @@ class Engine(ABC):
     @abstractmethod
     async def forget_user(self, user_id: str) -> int:
         """Delete everything this engine holds about `user_id`."""
+
+    def bind(self, store: "Store") -> None:
+        """Called once by `Memory` with its store, before any other method.
+        An engine that keeps local state can colocate it with the store
+        (same SQLite file). Default: nothing to do."""
 
     async def aclose(self) -> None:
         """Release resources. Default: nothing to release."""

@@ -9,13 +9,12 @@ from .base import Engine, Episode, Fact
 from .local import LocalEngine
 
 _PLANNED = {
-    "graphiti": "the Graphiti engine (temporal knowledge graph)",
     "mem0": "the Mem0 engine",
 }
 
 
 def known_engines() -> list[str]:
-    return ["local"]
+    return ["local", "graphiti"]
 
 
 def engine_from_name(name: str, **options: Any) -> Engine:
@@ -24,6 +23,10 @@ def engine_from_name(name: str, **options: Any) -> Engine:
     raises `ValueError` -- two different problems, two different errors."""
     if name == "local":
         return LocalEngine(**options)
+    if name == "graphiti":
+        from .graphiti import GraphitiEngine
+
+        return GraphitiEngine(**options)
     if name in _PLANNED:
         raise NotImplementedError(
             f"commonmemo: engine {name!r} is planned but not shipped yet -- "

@@ -2,6 +2,16 @@
 
 ## 0.0.1 — unreleased
 
+Graphiti engine:
+
+- `GraphitiEngine`: one Graphiti episode per closed session in the user's
+  graph partition; retrieval ranked by matching graph facts; extracted facts
+  alongside explicit ones, with provenance; re-ingest replaces; `forget_user`
+  deletes the partition. `pip install "commonmemo[graphiti]"`.
+- `Engine.bind(store)` so an engine can keep local state in the store's file.
+- The `graphiti` extra declares `httpx`, which graphiti-core imports without
+  declaring.
+
 First skeleton:
 
 - Event tier: `MemoryEvent` (subclass to define events, no decorator needed),

@@ -14,7 +14,7 @@ retrieval, context for the next turn) is built in.
 
 CommonMemo **wraps** memory engines rather than building one: extraction,
 retrieval and their optimizations belong to engines that specialize in them
-(Graphiti, Mem0 -- planned). The built-in `local` engine is offline and
+(Graphiti shipped, Mem0 planned). The built-in `local` engine is offline and
 deterministic, so everything works out of the box and in tests.
 
 **Status:** v0.0.1 -- the design and the skeleton. See
@@ -25,6 +25,7 @@ deterministic, so everything works out of the box and in tests.
 ```bash
 pip install commonmemo                 # core: stdlib only, local engine
 pip install "commonmemo[commonadk]"    # + CommonADK integration
+pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 ```
 
 ## Use
@@ -56,6 +57,20 @@ async with mem.session(user_id="u1", agent="support") as s:
 `ctx.render()` gives a block of text ready to put in front of an agent's
 instructions or prompt.
 
+## With Graphiti
+
+```python
+from graphiti_core import Graphiti
+from commonmemo.engines.graphiti import GraphitiEngine
+
+mem = Memory("sqlite:///mem.db", engine=GraphitiEngine(graphiti=Graphiti(uri, user, password)))
+# or Memory("sqlite:///mem.db", engine="graphiti") with NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD set
+```
+
+Each closed session becomes one Graphiti episode in the user's graph
+partition; retrieval ranks past sessions by the graph facts that match, and
+extracted facts join the user's explicit ones.
+
 ## With CommonADK
 
 CommonADK normalizes all six of its targets (Google ADK, OpenAI Agents,
@@ -72,7 +87,7 @@ async with mem.session(user_id="u1", agent="coordinator") as s:
 ## Development
 
 ```bash
-pip install -e ".[dev,commonadk]"
+pip install -e ".[dev,commonadk,graphiti]"
 pytest
 ```
 
