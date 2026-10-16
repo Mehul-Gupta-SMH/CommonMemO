@@ -103,7 +103,7 @@ always readable.
 |---|---|---|
 | `local` | shipped | offline and deterministic: rule-based episode digests, keyword retrieval, explicit facts only. For zero-setup use and reproducible tests |
 | `graphiti` | shipped | temporal knowledge graph; see "The Graphiti engine" below |
-| `mem0` | planned | fact extraction and retrieval for the user tier |
+| `mem0` | shipped | LLM-extracted user memories; see "The Mem0 engine" below |
 
 A planned engine raises `NotImplementedError` naming it; an unknown name
 raises `ValueError`. `Engine.bind(store)` lets an engine keep local state in
@@ -129,6 +129,25 @@ without a graph database or an LLM.
 
 Packaging note: graphiti-core 0.31 imports `httpx` without declaring it
 (openai 3.x moved to `httpx2`), so the `graphiti` extra declares `httpx`.
+
+### The Mem0 engine
+
+| CommonMemo | Mem0 |
+|---|---|
+| one closed session | one `add(messages, user_id, metadata={commonmemo_session_id})` |
+| a user | Mem0 `user_id`; ids with whitespace are sanitized and hash-suffixed |
+| extracted user facts | `get_all(filters={"user_id"})`, as `Fact(key="memory")` after the explicit ones |
+| episodic retrieval | `search` → memories → the sessions that created them |
+| re-ingest | delete the memories tagged with the session, then add again |
+| `forget_user` | `delete_all(user_id=...)` |
+
+Same local index as the Graphiti engine for the exact parts. No `run_id` is
+passed, deliberately: Mem0 deduplicates within a scope, and per-session
+scoping would make it re-learn the same preference every session instead of
+updating one memory. Because Mem0 updates memories in place, a refined
+memory's provenance points at the session that first created it. Anonymous
+sessions (no `user_id`) stay local: Mem0 memory is per user. Both graph and
+memory engines share `rank_by_hits` (`engines/_ranking.py`).
 
 ## CommonADK integration
 
@@ -183,7 +202,8 @@ What exists, and what CommonMemo takes from it:
 
 1. **v0.0.1 (this):** event and session tiers, `@track`, `MemoryEvent`,
    local engine, CommonADK integration, tests.
-2. **Graphiti engine** (shipped), then **Mem0 engine**.
+2. **Graphiti engine** and **Mem0 engine** (both shipped); a live run of
+   each against a real backend and LLM.
 3. **CommonADK PR:** pre-run context step and optional `user_id`.
 4. **Framework adapters:** ADK `BaseMemoryService`, OpenAI `Session`,
    LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen `Memory`, Claude

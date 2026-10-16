@@ -44,12 +44,13 @@ import hashlib
 import os
 import re
 import uuid as uuidlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
 
 from ..events import ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact
 from ..stores.base import SessionRecord, Store
+from ._ranking import rank_by_hits
 from .base import Engine, Episode, Fact
 from .local import LocalEngine
 
@@ -276,31 +277,10 @@ class GraphitiEngine(Engine):
         group_ids = [group_id_for(user_id)] if user_id is not None else None
         facts = await self.backend.search(query, group_ids=group_ids, limit=self.search_facts)
         local = await self._local_episodes(user_id, agent)
-
-        order: list[str] = []
-        related: dict[str, list[str]] = {}
-        for fact in facts:  # best fact first -> its episodes rank first
-            for uid in fact.episode_ids:
-                if uid not in local:
-                    continue
-                if uid not in related:
-                    order.append(uid)
-                    related[uid] = []
-                if fact.fact not in related[uid]:
-                    related[uid].append(fact.fact)
-        if not order:
-            return await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
-        out = []
-        for rank, uid in enumerate(order[:limit]):
-            ep = local[uid]
-            out.append(
-                replace(
-                    ep,
-                    summary=f"{ep.summary} Related facts: {'; '.join(related[uid])}.",
-                    score=1.0 / (rank + 1),
-                )
-            )
-        return out
+        ranked = rank_by_hits(
+            ((f.fact, f.episode_ids) for f in facts), local, limit=limit, label="Related facts"
+        )
+        return ranked or await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
 
     async def user_facts(self, user_id: str) -> list[Fact]:
         explicit = await self.index.user_facts(user_id)

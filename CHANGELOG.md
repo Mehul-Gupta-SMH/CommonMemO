@@ -2,6 +2,16 @@
 
 ## 0.0.1 — unreleased
 
+Mem0 engine:
+
+- `Mem0Engine`: each closed session is one Mem0 `add`, tagged with its
+  session id; extracted memories join explicit facts (explicit first) with
+  provenance through the origin session; retrieval ranks past sessions by
+  matching memories; re-ingest replaces a session's memories;
+  `forget_user` reaches Mem0. `pip install "commonmemo[mem0]"`.
+- Episode ranking shared between the Graphiti and Mem0 engines
+  (`engines/_ranking.py`).
+
 Graphiti engine:
 
 - `GraphitiEngine`: one Graphiti episode per closed session in the user's
