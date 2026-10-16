@@ -2,8 +2,16 @@
 
 The event log stays the source of truth. Each kind here -- tool memory,
 world facts, feedback, negatives and tombstones, checkpoints and steps -- is
-a table kept up to date as events are recorded (`apply`), and can always be
-rebuilt from the log (`rebuild`). They live in the store's SQLite file.
+a table kept up to date from the log, and can always be rebuilt from it
+(`rebuild`). They live in the store's SQLite file.
+
+The projections are a **consumer of the log**: they record the last log
+position they applied (`applied_seq`), and `catch_up` applies everything
+after it, saving the new position in the same transaction as the changes.
+So a process that dies between writing an event and applying it loses
+nothing -- the next `catch_up`, from any process, applies the event -- and
+applying the same stretch of log twice is impossible, so nothing is counted
+twice.
 
 These kinds are exact by nature (a rule, a step result, a counted failure),
 so they are not handed to a wrapped engine the way episodic and user memory
@@ -18,13 +26,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from .events import (
     Checkpoint,
     Feedback,
     Forgotten,
-    MemoryEvent,
     Negative,
     NegativeRevoked,
     StepFailed,
@@ -41,6 +48,9 @@ from .tool_memory import (
     error_signature,
     shape_change,
 )
+
+if TYPE_CHECKING:
+    from .stores.base import Store
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tool_stats (
@@ -92,6 +102,9 @@ CREATE TABLE IF NOT EXISTS steps (
     error TEXT, side_effects INTEGER NOT NULL DEFAULT 0,
     started_at REAL, finished_at REAL,
     PRIMARY KEY (session_id, step_id)
+);
+CREATE TABLE IF NOT EXISTS knowledge_meta (
+    key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
@@ -197,23 +210,62 @@ class Knowledge:
 
     # -- applying events ----------------------------------------------------
 
-    def apply(self, event: MemoryEvent) -> None:
-        handler = _HANDLERS.get(type(event))
-        if handler is not None:
+    def catch_up(self, store: "Store") -> int:
+        """Apply every event the log holds past `applied_seq`; return how
+        many were applied. With no recorded position (a new file, or after
+        `rebuild`), every projection is recomputed from the whole log."""
+        while True:
+            # Read the log first, holding no lock: reading it while holding
+            # the write lock could deadlock with a writer on the store.
+            seen = self.applied_seq
+            batch = store.events_after(seen or 0)
             with self._lock:
-                handler(self, event)
-                self._conn.commit()
+                # Take the write lock, then re-read the position: another
+                # process may have applied part of the batch meanwhile.
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    row = self._conn.execute(
+                        "SELECT value FROM knowledge_meta WHERE key = 'applied_seq'"
+                    ).fetchone()
+                    if (row is None and seen is not None) or (row is not None and row["value"] < (seen or 0)):
+                        self._conn.rollback()
+                        continue  # rebuilt meanwhile: start over from the whole log
+                    if row is None:
+                        for table in _TABLES:
+                            self._conn.execute(f"DELETE FROM {table}")
+                    after = 0 if row is None else row["value"]
+                    applied = 0
+                    for seq, event in batch:
+                        if seq <= after:
+                            continue
+                        handler = _HANDLERS.get(type(event))
+                        if handler is not None:
+                            handler(self, event)
+                        after, applied = seq, applied + 1
+                    self._conn.execute(
+                        "INSERT INTO knowledge_meta (key, value) VALUES ('applied_seq', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (after,),
+                    )
+                    self._conn.commit()
+                except BaseException:
+                    self._conn.rollback()
+                    raise
+            return applied
 
-    def rebuild(self, events: Iterable[MemoryEvent]) -> None:
-        """Recompute every projection from `events` (oldest first)."""
+    @property
+    def applied_seq(self) -> Optional[int]:
+        """The last log position applied, or None before the first catch-up."""
         with self._lock:
-            for table in _TABLES:
-                self._conn.execute(f"DELETE FROM {table}")
-            for event in events:
-                handler = _HANDLERS.get(type(event))
-                if handler is not None:
-                    handler(self, event)
+            row = self._conn.execute("SELECT value FROM knowledge_meta WHERE key = 'applied_seq'").fetchone()
+        return None if row is None else row["value"]
+
+    def rebuild(self, store: "Store") -> None:
+        """Recompute every projection from the whole log."""
+        with self._lock:
+            self._conn.execute("DELETE FROM knowledge_meta WHERE key = 'applied_seq'")
             self._conn.commit()
+        self.catch_up(store)
 
     def _tool(self, e: ToolInvoked) -> None:
         agent, tool, c = _agent_key(e.agent), e.name, self._conn
@@ -263,7 +315,7 @@ class Knowledge:
     def _feedback(self, e: Feedback) -> None:
         self._conn.execute(
             'INSERT OR IGNORE INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (e.id, e.ts, e.user_id, e.agent, e.session_id, e.kind, e.rating, e.comment,
+            (e.id, e.ts, e.user_id, e.agent, e.session_id, e.feedback_kind, e.rating, e.comment,
              e.wrong, e.right, e.target_event_id),
         )
 

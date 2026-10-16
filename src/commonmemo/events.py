@@ -49,6 +49,15 @@ class MemoryEvent:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        own = cls.__dict__.get("__annotations__", {})
+        if "kind" in own and "ClassVar" not in str(own["kind"]):
+            # A field named `kind` would replace the discriminator on every
+            # instance, so the event would be logged under the field's value
+            # and come back from the log as some other kind.
+            raise TypeError(
+                f"commonmemo: {cls.__qualname__} declares a field named 'kind', which is reserved "
+                "for the event type; name the field something else"
+            )
         if "kind" not in cls.__dict__:
             cls.kind = _snake(cls.__name__)
         if cls.kind in _registry and _registry[cls.kind].__qualname__ != cls.__qualname__:
@@ -85,6 +94,9 @@ class MemoryEvent:
         return dataclasses.replace(self, **changes) if changes else self
 
 
+_OLD_FEEDBACK_KINDS = frozenset({"rating", "correction", "comment"})
+
+
 def event_from_dict(data: dict[str, Any]) -> MemoryEvent:
     """Inverse of `MemoryEvent.to_dict()`.
 
@@ -94,6 +106,10 @@ def event_from_dict(data: dict[str, Any]) -> MemoryEvent:
     """
     data = dict(data)
     kind = data.pop("kind", "event")
+    if kind in _OLD_FEEDBACK_KINDS and kind not in _registry and "wrong" in data:
+        # Logged before `Feedback.kind` was renamed `feedback_kind`: the
+        # field's value was written where the event type belongs.
+        data["feedback_kind"], kind = kind, Feedback.kind
     cls = _registry.get(kind)
     names = {f.name for f in dataclasses.fields(cls)} if cls else set()
     if cls is None or not set(data) <= names:
@@ -159,12 +175,12 @@ class WorldFact(MemoryEvent):
 class Feedback(MemoryEvent):
     """A judgement about the agent's work.
 
-    `kind` is `rating` (thumbs or a score), `correction` (`wrong` -> `right`:
+    `feedback_kind` is `rating` (thumbs or a score), `correction` (`wrong` -> `right`:
     "no, I meant..."), or `comment`. `rating` is in [-1, 1] when given.
     `target_event_id` points at what was judged, when known.
     """
 
-    kind: str = "rating"
+    feedback_kind: str = "rating"
     rating: Optional[float] = None
     comment: Optional[str] = None
     wrong: Optional[str] = None

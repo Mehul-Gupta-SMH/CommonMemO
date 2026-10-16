@@ -29,7 +29,7 @@ from .events import (
     event_from_dict,
 )
 from .memory import Memory
-from .resume import ResumePoint, StepInDoubt
+from .resume import ResumePoint, StepInDoubt, StepInProgress
 from .session import Session, current_session
 from .stores import SQLiteStore, Store
 from .tool_memory import ToolProfile
@@ -49,6 +49,7 @@ __all__ = [
     "Checkpoint",
     "ResumePoint",
     "StepInDoubt",
+    "StepInProgress",
     "ToolProfile",
     "MemoryEvent",
     "Message",

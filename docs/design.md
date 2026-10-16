@@ -143,16 +143,26 @@ index if an engine's client is bound to the caller's loop.
 ## Structured kinds
 
 Each structured kind is an event type in the log plus a projection table
-(`knowledge.py`) kept up to date as events are recorded and rebuildable from
-the log at any time (`Memory.rebuild_knowledge`). A duplicate delivery of
-the same event (same id) is ignored by the log *and* by the projections —
-`Store.append` reports whether it inserted — so nothing is counted twice.
+(`knowledge.py`), rebuildable from the log at any time
+(`Memory.rebuild_knowledge`).
 
-**Known gap ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15)):** the log and the projections commit in separate
-transactions, so a crash between the two leaves a projection missing that
-event until `rebuild_knowledge()` (a retry is seen as a duplicate and skips the
-apply). The fix — projections applied idempotently from the log with a
-checkpoint — is in [ADR 0001](adr/0001-storage.md).
+The projections are a **consumer of the log**
+([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15)). They store the last log position they applied, and
+`Knowledge.catch_up` applies everything after it, writing the new position
+in the same transaction as the changes. Catch-up runs after every write and
+whenever a `Memory` is opened. So:
+
+- a crash between logging an event and applying it loses nothing: the next
+  write or the next process applies it;
+- a duplicate delivery (same event id) is not logged twice, and a stretch of
+  log is never applied twice, so nothing is counted twice;
+- several handles or processes on one file share one position, and take
+  turns applying through the database's write lock.
+
+Positions come from the log in commit order (SQLite has one writer at a
+time). A store with concurrent writers, such as Postgres, needs to hand out
+positions in commit order too, or keep a small window of in-flight
+positions; that is part of [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11).
 
 ### Tool memory
 
@@ -220,9 +230,18 @@ it had at the time:
   wrongly.
 - Agents take part too: `memory_save_progress` records a checkpoint, and a
   resumed session's push says where the work stands.
-- **Known gap ([#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)):** the at-most-once guarantee holds for one
-  worker per session. Two workers resuming the *same* session concurrently
-  can both claim a step (check-then-act); step claims with a lease fix it.
+- **Side-effecting steps run at most once, across workers**
+  ([#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)). Before running, a worker *claims* the step: one atomic
+  store write (`Store.claim`) that records `StepStarted` only if nobody holds
+  the step. Of several workers resuming one session at once, exactly one
+  wins. The others get `StepInProgress` (a kind of `StepInDoubt`) while the
+  winner's lease (`@mem.step(lease=300)`) is live, and `StepInDoubt` once it
+  expires. An expired lease never means "run it again", since the holder may
+  have died after the effect. `StepFinished` with a stored result settles the
+  claim for good. `StepFailed` (the function raised, or
+  `resolve_step(failed=True)`) releases it, in the same write
+  (`Store.settle`). Pure steps are not claimed: running one twice is
+  harmless by definition.
 
 ## Developer surface
 
@@ -399,8 +418,8 @@ What exists, and what CommonMemo takes from it:
 
 - [ADR 0001 — storage](adr/0001-storage.md) (proposed): why the memory CommonMemo owns sits
   in a relational, ACID-per-partition store (SQLite by default, Postgres shared, distributed
-  SQL to scale, DynamoDB as the non-SQL backend), and two correctness gaps it found in today's
-  code ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)).
+  SQL to scale, DynamoDB as the non-SQL backend), and two correctness gaps it found
+  ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16), both fixed in [#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
 
 ## Roadmap
 
@@ -409,12 +428,11 @@ the index. Nothing gets coded without an issue.
 
 **Shipped:** the Log and Working tiers, `@mem.track`, `MemoryEvent`, the local
 engine and the CommonADK integration ([#1](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/1)); the Graphiti and Mem0 engines, the
-structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
+structured kinds and hybrid push/pull with agent tools, and the fixes for
+the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)) ([#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
 
 **Next**
 
-- [#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15) — **bug:** a crash between event append and projection apply loses the update
-- [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16) — **bug:** two workers resuming one session can both run a side-effecting step
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)

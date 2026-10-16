@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from ..events import MemoryEvent, event_from_dict
-from .base import SessionRecord, Store
+from .base import ClaimRecord, SessionRecord, Store
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     state      TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS claims (
+    key         TEXT PRIMARY KEY,
+    session_id  TEXT,
+    owner       TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    lease_until REAL
+);
+CREATE INDEX IF NOT EXISTS claims_session ON claims(session_id);
 """
 
 
@@ -60,23 +68,85 @@ class SQLiteStore(Store):
 
     # -- event tier ---------------------------------------------------------
 
+    def _insert(self, event: MemoryEvent) -> bool:
+        cur = self._conn.execute(
+            "INSERT OR IGNORE INTO events (id, ts, kind, session_id, user_id, agent, body) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                event.id,
+                event.ts,
+                event.kind,
+                event.session_id,
+                event.user_id,
+                event.agent,
+                _dumps(event.to_dict()),
+            ),
+        )
+        return cur.rowcount == 1
+
     def append(self, event: MemoryEvent) -> bool:
         with self._lock:
-            cur = self._conn.execute(
-                "INSERT OR IGNORE INTO events (id, ts, kind, session_id, user_id, agent, body) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    event.id,
-                    event.ts,
-                    event.kind,
-                    event.session_id,
-                    event.user_id,
-                    event.agent,
-                    _dumps(event.to_dict()),
-                ),
-            )
+            new = self._insert(event)
             self._conn.commit()
-        return cur.rowcount == 1
+        return new
+
+    def events_after(self, seq: int, *, limit: Optional[int] = None) -> list[tuple[int, MemoryEvent]]:
+        # SQLite has one writer at a time, so positions commit in order and
+        # "after seq" never skips an event that commits later.
+        sql, params = "SELECT seq, body FROM events WHERE seq > ? ORDER BY seq", [seq]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [(r["seq"], event_from_dict(json.loads(r["body"]))) for r in rows]
+
+    # -- claims -------------------------------------------------------------
+
+    def claim(self, key: str, *, session_id: Optional[str], owner: str, lease_until: float,
+              event: MemoryEvent) -> Optional[ClaimRecord]:
+        with self._lock:
+            # BEGIN IMMEDIATE takes the database's write lock before reading,
+            # so a second process checking the same key waits for this one
+            # to commit, then sees the claim.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute("SELECT * FROM claims WHERE key = ?", (key,)).fetchone()
+                if row is not None and row["status"] != "free":
+                    self._conn.rollback()
+                    return ClaimRecord(row["key"], row["owner"], row["status"], row["lease_until"])
+                self._conn.execute(
+                    "INSERT INTO claims (key, session_id, owner, status, lease_until) VALUES (?, ?, ?, 'held', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET session_id = excluded.session_id, owner = excluded.owner, "
+                    "status = 'held', lease_until = excluded.lease_until",
+                    (key, session_id, owner, lease_until),
+                )
+                self._insert(event)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+        return None
+
+    def get_claim(self, key: str) -> Optional[ClaimRecord]:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM claims WHERE key = ?", (key,)).fetchone()
+        return None if row is None else ClaimRecord(row["key"], row["owner"], row["status"], row["lease_until"])
+
+    def settle(self, key: str, *, session_id: Optional[str], status: str, event: MemoryEvent) -> None:
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(
+                    "INSERT INTO claims (key, session_id, owner, status, lease_until) VALUES (?, ?, '', ?, NULL) "
+                    "ON CONFLICT(key) DO UPDATE SET status = excluded.status, lease_until = NULL",
+                    (key, session_id, status),
+                )
+                self._insert(event)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     def events(
         self,
@@ -195,6 +265,10 @@ class SQLiteStore(Store):
             # Events recorded inside one of the user's sessions are the
             # user's too, even when the event itself carried no user_id.
             n = self._conn.execute(
+                "DELETE FROM claims WHERE session_id IN (SELECT session_id FROM sessions WHERE user_id = ?)",
+                (user_id,),
+            ).rowcount
+            n += self._conn.execute(
                 "DELETE FROM events WHERE user_id = ? OR session_id IN "
                 "(SELECT session_id FROM sessions WHERE user_id = ?)",
                 (user_id, user_id),

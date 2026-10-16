@@ -50,7 +50,7 @@ session, or a user. Nothing requires transactions *across* users. That single
 observation decides most of this ADR: we need strong consistency **per
 partition**, not globally — which every serious candidate offers.
 
-### What today's code gets wrong (found while writing this)
+### What the code got wrong (found while writing this; both fixed in [#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2))
 
 - **I4 is violated.** The log (`stores/sqlite.py`) and the projections
   (`knowledge.py`) use separate connections and separate transactions. A
@@ -63,6 +63,9 @@ partition**, not globally — which every serious candidate offers.
 
 These are bugs in how the code uses the store, not choices of database, and
 they have to be fixed on SQLite first. A different database fixes neither.
+Both are now fixed on SQLite, as described in the next section: the
+projections catch up from the log with a stored position, and
+side-effecting steps are claimed with a conditional write and a lease.
 
 ## 2. Access patterns
 

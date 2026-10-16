@@ -123,14 +123,18 @@ class Session:
 
     def record(self, event: MemoryEvent) -> MemoryEvent:
         """Append `event` to the log, stamped with this session's envelope."""
+        bound = self._bound(event)
+        self.memory._append(bound)
+        return bound
+
+    def _bound(self, event: MemoryEvent) -> MemoryEvent:
+        """`event` stamped with this session's envelope, not yet recorded."""
         if self._closed:
             raise RuntimeError(
                 f"commonmemo: session {self.session_id!r} is closed; open a new one "
                 "or resume it with Memory.session(session_id=...) before recording"
             )
-        bound = event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent)
-        self.memory._append(bound)
-        return bound
+        return event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent)
 
     def message(self, role: str, content: str) -> MemoryEvent:
         """Shorthand for recording a `Message`."""
@@ -179,11 +183,11 @@ class Session:
         if rating is not None and not -1.0 <= rating <= 1.0:
             raise ValueError("commonmemo: feedback rating must be in [-1, 1]")
         kind = "rating" if rating is not None else "comment"
-        return self.record(Feedback(kind=kind, rating=rating, comment=comment, target_event_id=target_event_id))
+        return self.record(Feedback(feedback_kind=kind, rating=rating, comment=comment, target_event_id=target_event_id))
 
     def correct(self, wrong: str, right: str, *, comment: Optional[str] = None) -> MemoryEvent:
         """Record a correction: "not `wrong`, but `right`"."""
-        return self.record(Feedback(kind="correction", wrong=wrong, right=right, comment=comment, rating=-1.0))
+        return self.record(Feedback(feedback_kind="correction", wrong=wrong, right=right, comment=comment, rating=-1.0))
 
     def never(self, statement: str, *, reason: Optional[str] = None, scope: str = "user") -> MemoryEvent:
         """Record a standing "never do this" rule. `scope` is `user` (this
@@ -232,9 +236,11 @@ class Session:
         later runs replay), or it did not (`failed=True`, so it runs again)."""
         import json
 
+        from .resume import settle_step
+
         if failed:
-            return self.record(StepFailed(step_id=step_id, error="resolved by hand: did not take effect"))
-        return self.record(StepFinished(step_id=step_id, result=json.dumps(result), replayable=True))
+            return settle_step(self, step_id, StepFailed(step_id=step_id, error="resolved by hand: did not take effect"))
+        return settle_step(self, step_id, StepFinished(step_id=step_id, result=json.dumps(result), replayable=True))
 
     def events(self, **filters: Any) -> list[MemoryEvent]:
         """This session's events, oldest first (filters as `Store.events`)."""

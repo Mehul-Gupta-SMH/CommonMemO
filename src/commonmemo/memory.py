@@ -70,6 +70,9 @@ class Memory:
         self.knowledge = Knowledge(getattr(self.store, "path", ":memory:"))
         """Tool memory, world facts, feedback, negatives, checkpoints and
         steps -- projections of the event log (see `knowledge.py`)."""
+        self.knowledge.catch_up(self.store)  # apply whatever an earlier process left unapplied
+        self.worker_id = uuid.uuid4().hex
+        """Names this handle when it claims a side-effecting step."""
         self.project = project
         """Names the `project:<name>` scope for world facts and negatives."""
         self.policy = policy or MemoryPolicy()
@@ -133,11 +136,12 @@ class Memory:
         return event
 
     def _append(self, event: MemoryEvent) -> None:
-        """Log `event`, then update the projections -- only when the log
-        actually took it, so a duplicate delivery (same event id) is not
-        counted twice."""
-        if self.store.append(event) is not False:
-            self.knowledge.apply(event)
+        """Log `event`, then bring the projections up to date with the log.
+        A duplicate delivery (same event id) is not logged again, so it is
+        never counted twice; catching up still runs, so an event an earlier
+        process logged but never applied is applied now."""
+        self.store.append(event)
+        self.knowledge.catch_up(self.store)
 
     def step(
         self,
@@ -146,14 +150,19 @@ class Memory:
         name: Optional[str] = None,
         key: Optional[Callable[..., Any]] = None,
         side_effects: bool = False,
+        lease: float = 300.0,
     ) -> Any:
         """Decorator: make a function a resumable step (see `resume.py`).
         Inside a session, a call that already finished in an earlier run of
         the same session returns its stored result instead of running.
-        Outside a session it is a plain call."""
+        Outside a session it is a plain call. A `side_effects=True` step is
+        claimed before it runs, so only one worker ever runs it; `lease` is
+        how many seconds the claim tells other workers it may still be
+        running."""
 
         def decorate(func: F) -> F:
-            return make_step(self, func, name=name, key=key, side_effects=side_effects)  # type: ignore[return-value]
+            return make_step(self, func, name=name, key=key, side_effects=side_effects,  # type: ignore[return-value]
+                             lease=lease)
 
         return decorate(fn) if fn is not None else decorate
 
@@ -363,7 +372,7 @@ class Memory:
 
     def rebuild_knowledge(self) -> None:
         """Recompute the structured projections from the event log."""
-        self.knowledge.rebuild(self.store.events())
+        self.knowledge.rebuild(self.store)
 
     # -- lifecycle ----------------------------------------------------------
 
