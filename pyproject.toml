@@ -22,7 +22,7 @@ dev = [
     "pytest",
 ]
 commonadk = [
-    "commonadk>=0.0.3",
+    "commonadk>=0.0.2",
 ]
 graphiti = [
     "graphiti-core>=0.31",
