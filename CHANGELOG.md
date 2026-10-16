@@ -22,9 +22,10 @@ Structured memory kinds and hybrid reads:
   `memory_avoid`, `memory_save_progress` (sync, typed, documented; writes
   marked `source="agent"`).
 - **CommonADK**: `prepare_project` adds the memory tools and writes tool
-  notes into the tools' own descriptions; `run_with_memory` passes stable
-  memory as `context=` and per-turn memory as `turn_context=` (CommonADK
-  PR #29), falling back to the prompt on older CommonADK.
+  notes into the tools' own descriptions; `run_with_memory` puts the memory
+  in front of the prompt, which is what released CommonADK supports. If a
+  runner accepts `context=` / `turn_context=` (proposed in CommonADK issue
+  #30), stable and per-turn memory go there instead, automatically.
 - Projections are kept per event, ignore duplicate deliveries, and can be
   rebuilt from the log (`rebuild_knowledge`).
 

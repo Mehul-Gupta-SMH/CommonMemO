@@ -27,13 +27,14 @@ fires twice for the same event never records it twice.
 
 And into the run (`run_with_memory`), hybrid:
 
-- *push* -- stable memory to CommonADK's `context=` (instructions),
-  per-turn memory to `turn_context=` (in front of the prompt);
+- *push* -- in front of the prompt, the only place released CommonADK can
+  take it. A runner that accepts `context=` / `turn_context=` (proposed in
+  CommonADK issue #30) gets stable memory as `context=` (instructions) and
+  per-turn memory as `turn_context=` instead -- detected from its signature;
 - *pull* -- the memory tools added to the agent, and tool memory's notes
   written into the agent's own tools' descriptions (`prepare_project`).
 
-A CommonADK release without `context=` / `turn_context=` gets all of the
-memory in front of the prompt instead. See docs/design.md, "CommonADK
+CommonMemo changes nothing in CommonADK; see docs/design.md, "CommonADK
 integration".
 
 CommonADK is imported lazily, only when a function here is called --
@@ -210,17 +211,16 @@ async def run_with_memory(
     """One CommonADK turn with hybrid memory wired in, returning CommonADK's
     `Trace` unchanged:
 
-    1. *push* -- the session's context, split: stable memory goes to
-       `context=` (the agent's instructions), per-turn memory to
-       `turn_context=` (in front of the prompt);
+    1. *push* -- the session's context, in front of the prompt; or, when
+       the runner accepts `context=` / `turn_context=` (CommonADK issue
+       #30), split: stable memory to the instructions, per-turn memory to
+       the prompt;
     2. *pull* -- memory tools on the agent, and tool notes in its tools'
        descriptions (`prepare_project`);
     3. *capture* -- every event of the run recorded into the session.
 
     `run_session` is CommonADK's own `RunSession` (its per-SDK conversation
-    state); pass the same one on every turn of a conversation. A CommonADK
-    without `context=` / `turn_context=` gets all of the memory in front of
-    the prompt instead.
+    state); pass the same one on every turn of a conversation.
     """
     from dataclasses import replace
 

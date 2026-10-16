@@ -325,8 +325,10 @@ CommonADK's `HookRegistry`, so all six CommonADK targets get the same memory:
 `run_with_memory(session, runner, project, agent, prompt)` does a whole
 hybrid turn and returns CommonADK's `Trace` unchanged:
 
-1. **push** — stable memory to CommonADK's `context=` (the agent's
-   instructions), per-turn memory to `turn_context=` (in front of the prompt);
+1. **push** — today, all of it in front of the prompt (stable part first),
+   since released CommonADK has no way to add to an agent's instructions;
+   if a runner accepts `context=` / `turn_context=`, stable memory goes to
+   the instructions and per-turn memory to the prompt instead (see below);
 2. **pull** — `prepare_project` adds the memory tools to the agent and
    writes tool memory's notes into the agent's own tools' descriptions
    (both the `ToolSpec.description` the Claude adapter reads and the
@@ -336,8 +338,13 @@ hybrid turn and returns CommonADK's `Trace` unchanged:
 Verified by building a real agent on all six targets from a prepared project
 and checking that the note reaches each SDK's tool description.
 
-A CommonADK release without `context=` / `turn_context=` (before CommonADK
-PR #29) gets all of the memory in front of the prompt instead.
+**Asked of CommonADK, not changed in it.** CommonMemo makes no changes to
+CommonADK. The split delivery above needs CommonADK to accept per-run
+context; that is proposed in [CommonADK issue
+#30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) (`context=` for
+the instructions, `turn_context=` for the prompt, and a `RunSession.user_id`).
+`run_with_memory` checks the runner's signature and uses the split only when
+it is there, so nothing breaks either way.
 
 ## Landscape (October 2026)
 
@@ -369,7 +376,8 @@ What exists, and what CommonMemo takes from it:
    local engine, CommonADK integration, tests.
 2. **Graphiti engine** and **Mem0 engine** (both shipped); a live run of
    each against a real backend and LLM.
-3. **CommonADK PR #29:** `context=` / `turn_context=` and `RunSession.user_id`.
+3. **CommonADK issue #30** (requested, not changed here): `context=` /
+   `turn_context=` and `RunSession.user_id`.
 4. **Structured kinds** (this): tool memory, world memory, feedback,
    negatives and tombstones, resume points; hybrid push/pull with agent
    tools.
