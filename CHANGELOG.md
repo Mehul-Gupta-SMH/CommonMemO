@@ -11,6 +11,19 @@ Mem0 engine:
   `forget_user` reaches Mem0. `pip install "commonmemo[mem0]"`.
 - Episode ranking shared between the Graphiti and Mem0 engines
   (`engines/_ranking.py`).
+- `scripts/live_engines.py`: a live run of both engines against real
+  backends and an LLM.
+
+### Fixed
+
+- **The Graphiti engine could not create any episode.** It passed a
+  session-derived `uuid=` to `Graphiti.add_episode`, which in Graphiti means
+  "reprocess this existing episode" and raises `NodeNotFoundError` when
+  there is none -- so every real ingest failed. The fake graph in the tests
+  accepted the argument, so only the first live run exposed it. The engine
+  now lets Graphiti assign the uuid and records it in the local index
+  (`LocalEngine.set_external_id`); the backend test binds the call against
+  graphiti-core's real signature.
 
 Graphiti engine:
 

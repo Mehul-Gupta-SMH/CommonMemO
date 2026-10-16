@@ -7,7 +7,7 @@ derived tiers:
 
 | CommonMemo            | Graphiti                                        |
 |-----------------------|-------------------------------------------------|
-| one closed session    | one episode (`add_episode`, uuid derived from the session id) |
+| one closed session    | one episode (`add_episode`; its uuid is recorded in the local index) |
 | a user                | one `group_id` (a graph partition)              |
 | episodic retrieval    | hybrid `search` -> facts -> the episodes they came from |
 | extracted user facts  | the group's currently valid entity edges        |
@@ -18,8 +18,14 @@ the per-session digest, explicit `UserFact`s and provenance. That keeps the
 engine rules (docs/design.md, "Rules every engine keeps") exact rather than
 best-effort: explicit facts are stored verbatim, every episode and fact keeps
 its `source_event_ids`, and re-ingesting a session replaces its graph episode
-(`remove_episode`, then `add_episode` with the same uuid) instead of
-duplicating it.
+(`remove_episode` on the recorded uuid, then a fresh `add_episode`) instead
+of duplicating it.
+
+Graphiti assigns episode uuids itself: `add_episode(uuid=...)` does not
+create an episode with that uuid, it *reprocesses an existing* one and
+raises `NodeNotFoundError` when there is none. So the engine never passes a
+uuid; it records the one Graphiti returns (`LocalEngine.set_external_id`)
+and maps graph facts back to sessions through it.
 
 Graphiti itself is reached through a small `GraphBackend` interface, so the
 engine's logic is testable without a graph database or an LLM, and
@@ -43,7 +49,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import uuid as uuidlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
@@ -54,15 +59,10 @@ from ._ranking import rank_by_hits
 from .base import Engine, Episode, Fact
 from .local import LocalEngine
 
-_NAMESPACE = uuidlib.UUID("5f0c2a52-8f43-4d0e-9a0d-6c1e0b7d4a11")
+SYSTEM = "graphiti"
+"""The local index's name for Graphiti episode ids."""
 _GROUP_OK = re.compile(r"^[A-Za-z0-9_-]+$")
 _INSTALL_HINT = 'commonmemo: the Graphiti engine needs graphiti-core -- pip install "commonmemo[graphiti]"'
-
-
-def episode_uuid(session_id: str) -> str:
-    """The graph episode uuid for a session -- deterministic, so a re-ingest
-    targets the same episode and an edge's episode list maps back to it."""
-    return str(uuidlib.uuid5(_NAMESPACE, session_id))
 
 
 def group_id_for(user_id: Optional[str]) -> str:
@@ -114,9 +114,10 @@ class GraphBackend(Protocol):
     """The slice of Graphiti the engine uses."""
 
     async def add_episode(
-        self, *, uuid: str, group_id: str, name: str, body: str, source_description: str,
+        self, *, group_id: str, name: str, body: str, source_description: str,
         reference_time: datetime,
-    ) -> None: ...
+    ) -> str:
+        """Create an episode; return the uuid the graph assigned it."""
 
     async def remove_episode(self, uuid: str) -> bool: ...
 
@@ -146,20 +147,20 @@ class GraphitiBackend:
         self.graphiti = graphiti
 
     async def add_episode(
-        self, *, uuid: str, group_id: str, name: str, body: str, source_description: str,
+        self, *, group_id: str, name: str, body: str, source_description: str,
         reference_time: datetime,
-    ) -> None:
+    ) -> str:
         from graphiti_core.nodes import EpisodeType
 
-        await self.graphiti.add_episode(
+        result = await self.graphiti.add_episode(
             name=name,
             episode_body=body,
             source_description=source_description,
             reference_time=reference_time,
             source=EpisodeType.message,
             group_id=group_id,
-            uuid=uuid,
         )
+        return result.episode.uuid
 
     async def remove_episode(self, uuid: str) -> bool:
         from graphiti_core.errors import NodeNotFoundError
@@ -246,11 +247,12 @@ class GraphitiEngine(Engine):
         if not episodes:
             return []
         body = transcript(session, events)
-        uid = episode_uuid(session.session_id)
-        await self.backend.remove_episode(uid)  # idempotent re-ingest
+        previous = self.index.external_id(session.session_id, SYSTEM)
+        if previous is not None:
+            await self.backend.remove_episode(previous)  # idempotent re-ingest
+            self.index.delete_external_id(session.session_id, SYSTEM)
         if body:
-            await self.backend.add_episode(
-                uuid=uid,
+            uid = await self.backend.add_episode(
                 group_id=group_id_for(session.user_id),
                 name=f"commonmemo session {session.session_id}",
                 body=body,
@@ -258,11 +260,15 @@ class GraphitiEngine(Engine):
                 + (f" with agent {session.agent}" if session.agent else ""),
                 reference_time=datetime.fromtimestamp(max(e.ts for e in events), tz=timezone.utc),
             )
+            self.index.set_external_id(session.session_id, SYSTEM, uid)
         return episodes
 
     async def _local_episodes(self, user_id: Optional[str], agent: Optional[str]) -> dict[str, Episode]:
+        """Local episodes keyed by their Graphiti episode uuid."""
         everything = await self.index.search_episodes("", user_id=user_id, agent=agent, limit=1_000_000)
-        return {episode_uuid(e.session_id): e for e in everything}
+        by_session = {e.session_id: e for e in everything}
+        graph_ids = self.index.external_ids(SYSTEM, list(by_session))
+        return {uid: by_session[sid] for uid, sid in graph_ids.items()}
 
     async def search_episodes(
         self,
@@ -317,7 +323,7 @@ __all__ = [
     "GraphitiBackend",
     "GraphBackend",
     "GraphFact",
-    "episode_uuid",
+    "SYSTEM",
     "group_id_for",
     "transcript",
 ]

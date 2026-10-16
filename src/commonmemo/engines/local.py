@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS facts (
     session_id TEXT
 );
 CREATE INDEX IF NOT EXISTS facts_user ON facts(user_id, key);
+CREATE TABLE IF NOT EXISTS external_ids (
+    session_id  TEXT NOT NULL,
+    system      TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    PRIMARY KEY (session_id, system)
+);
+CREATE INDEX IF NOT EXISTS external_ids_lookup ON external_ids(system, external_id);
 """
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -229,9 +236,50 @@ class LocalEngine(Engine):
             ).fetchall()
         return [(r["value"], r["valid_from"], r["valid_to"]) for r in rows]
 
+    # -- ids another system assigned to a session ------------------------
+    # A wrapped engine whose backend picks its own ids (a Graphiti episode
+    # uuid) records them here, next to the episode they belong to.
+
+    def set_external_id(self, session_id: str, system: str, external_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO external_ids VALUES (?, ?, ?)", (session_id, system, external_id)
+            )
+            self._conn.commit()
+
+    def delete_external_id(self, session_id: str, system: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM external_ids WHERE session_id = ? AND system = ?", (session_id, system)
+            )
+            self._conn.commit()
+
+    def external_id(self, session_id: str, system: str) -> Optional[str]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT external_id FROM external_ids WHERE session_id = ? AND system = ?", (session_id, system)
+            ).fetchone()
+        return row["external_id"] if row else None
+
+    def external_ids(self, system: str, session_ids: Sequence[str]) -> dict[str, str]:
+        """`{external_id: session_id}` for the given sessions."""
+        if not session_ids:
+            return {}
+        marks = ",".join("?" * len(session_ids))
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT session_id, external_id FROM external_ids WHERE system = ? AND session_id IN ({marks})",
+                (system, *session_ids),
+            ).fetchall()
+        return {r["external_id"]: r["session_id"] for r in rows}
+
     async def forget_user(self, user_id: str) -> int:
         with self._lock:
-            n = self._conn.execute("DELETE FROM episodes WHERE user_id = ?", (user_id,)).rowcount
+            n = self._conn.execute(
+                "DELETE FROM external_ids WHERE session_id IN (SELECT session_id FROM episodes WHERE user_id = ?)",
+                (user_id,),
+            ).rowcount
+            n += self._conn.execute("DELETE FROM episodes WHERE user_id = ?", (user_id,)).rowcount
             n += self._conn.execute("DELETE FROM facts WHERE user_id = ?", (user_id,)).rowcount
             self._conn.commit()
         return n

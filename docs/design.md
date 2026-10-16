@@ -113,7 +113,7 @@ the store's SQLite file.
 
 | CommonMemo | Graphiti |
 |---|---|
-| one closed session | one episode, uuid derived from the session id (`uuid5`) |
+| one closed session | one episode; the uuid Graphiti assigns is recorded in the local index |
 | a user | one `group_id` (graph partition); ids outside `[A-Za-z0-9_-]` are sanitized and hash-suffixed |
 | episodic retrieval | hybrid `search` → facts → the episodes they came from, best first, with the matching facts appended |
 | extracted user facts | the group's currently valid entity edges |
@@ -121,7 +121,11 @@ the store's SQLite file.
 
 What stays exact, in a local index next to the store: the session digest,
 explicit `UserFact`s and provenance. Re-ingesting a session removes its graph
-episode first, so nothing duplicates. Framework bookkeeping
+episode (by the recorded uuid) first, so nothing duplicates. The engine never
+passes `uuid=` to `add_episode`: in Graphiti that names an *existing* episode
+to reprocess, and raises `NodeNotFoundError` for a new one. (The first
+version did pass one; only the live run below caught it, which is why the
+backend tests now bind every call against graphiti-core's real signatures.) Framework bookkeeping
 (`ExternalEvent`s such as token counts) stays out of the episode text; it is
 noise for extraction and remains in the event tier. Graphiti is reached
 through a small `GraphBackend` interface, so the engine's logic is tested
@@ -129,6 +133,22 @@ without a graph database or an LLM.
 
 Packaging note: graphiti-core 0.31 imports `httpx` without declaring it
 (openai 3.x moved to `httpx2`), so the `graphiti` extra declares `httpx`.
+
+Backend notes: on Neo4j and Kuzu a `group_id` is a property inside one
+database (`GraphDriver.clone` returns the same driver); on FalkorDB each
+group is its own graph. graphiti-core 0.31.1's `KuzuDriver` never sets
+`_database`, so `add_episode` with a `group_id` raises `AttributeError` on
+Kuzu; `scripts/live_engines.py` shows the one-line workaround. Kuzu is
+deprecated upstream, so production use should be Neo4j or FalkorDB.
+
+### Live runs
+
+`scripts/live_engines.py` runs one scenario per engine against real
+backends and an LLM (a user states a city and a preference, then moves; a
+later session must see the new city and retrieve the move; `forget_user`
+must leave nothing). It is not part of the test suite because it spends
+model tokens. It needs `OPENAI_API_KEY` and network access to
+`api.openai.com`; Graphiti uses Neo4j when `NEO4J_*` is set, else embedded Kuzu.
 
 ### The Mem0 engine
 
