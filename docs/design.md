@@ -4,7 +4,9 @@
 
 One memory system that any agent framework or harness can use: an
 application installs one package, marks its events with a decorator or a
-subclass, and gets four tiers of memory without wiring any of them by hand.
+subclass, and gets four tiers of memory, plus the structured kinds (tool,
+world, feedback, negatives, resume), without wiring any of them by hand.
+Agents read it in hybrid mode (push plus pull) and can write it.
 
 First target: **CommonADK**, which already normalizes six agent SDKs into one
 event stream. Later targets: the frameworks' own memory interfaces (Google
@@ -105,6 +107,11 @@ in lessons and episodes.
 | **In the tools** | tool memory's notes | each tool's own description, read exactly when the model decides how to call it |
 | **Pull** | `memory_recall(query)` — every kind, wider limits, no threshold | a tool call |
 | **Write** | `memory_remember`, `memory_note_fact`, `memory_avoid`, `memory_save_progress` | tool calls, recorded `source="agent"` |
+
+"Where" is where each part is *meant* to go. An integration delivers it as
+far as its framework allows. Through released CommonADK, for one, all
+pushed memory goes in front of the prompt until [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) lands (see
+"CommonADK integration").
 
 `MemoryPolicy` sets the push: per-kind limits, the episode threshold, and
 `recent` (events of this session to push — **0 by default**, because every
@@ -372,22 +379,37 @@ What exists, and what CommonMemo takes from it:
 
 ## Roadmap
 
-1. **v0.0.1 (shipped):** event and session tiers, `@track`, `MemoryEvent`,
-   local engine, CommonADK integration, tests.
-2. **Graphiti engine** and **Mem0 engine** (both shipped); a live run of
-   each against a real backend and LLM.
-3. **CommonADK issue #30** (requested, not changed here): `context=` /
-   `turn_context=` and `RunSession.user_id`.
-4. **Structured kinds** (this): tool memory, world memory, feedback,
-   negatives and tombstones, resume points; hybrid push/pull with agent
-   tools.
-5. **Framework adapters:** ADK `BaseMemoryService`, OpenAI `Session`,
-   LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen `Memory`, Claude
-   `SessionStore`.
-6. **Harness adapters:** MCP server; Claude Code plugin, Codex hooks,
-   OpenCode plugin — one session continuing across harnesses. The memory
-   tools become the MCP server's tools.
-7. **Later kinds:** procedural memory and lessons distilled by an LLM at
-   consolidation (decision records: goal, plan, outcome), tasks / open loops
-   for proactive follow-ups, and agent-relationship memory from CommonADK
-   `Transfer` events.
+Tracked in GitHub issues, with the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) as
+the index. Nothing gets coded without an issue.
+
+**Shipped:** event and session tiers, `@mem.track`, `MemoryEvent`, the local
+engine and the CommonADK integration ([#1](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/1)); the Graphiti and Mem0 engines, the
+structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
+
+**Next**
+
+- [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
+  an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
+  `api.openai.com`)
+- [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
+- [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools
+- [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
+  capture and push, and one session continuing across harnesses
+
+**Planned**
+
+- [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6) — framework-native adapters (ADK `BaseMemoryService`, OpenAI
+  `Session`, LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen
+  `Memory`, Claude `SessionStore`)
+- [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) — task memory: open loops and commitments, for proactive follow-ups
+- [#9](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/9) — lessons and decision records distilled at consolidation (procedural
+  memory)
+- [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) — agent-relationship memory from multi-agent handoffs
+- [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — store backends beyond SQLite (Postgres), and projection scaling
+- [#13](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/13) — hardening follow-ups (tool-result TTLs, tool preconditions, implicit
+  feedback, per-engine episode thresholds, step identity, bulk review of agent
+  writes, pruning projections)
+
+**Waiting on CommonADK:** [#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7), split context delivery once [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30)
+lands. CommonMemo makes no changes to CommonADK; anything it needs from
+CommonADK is raised as a CommonADK issue.

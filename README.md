@@ -19,18 +19,24 @@ corrections), **negatives** ("never do X", and tombstones for "forget
 this"), and **resume points** (checkpoints and replayable steps, so a
 stopped process continues where it was).
 
-Agents use memory in **hybrid** mode: a bounded, stable part is pushed into
-their instructions, a per-turn part with the request, tool notes into the
-tools' own descriptions — and agents pull the rest, and write, through
-memory tools (`memory_recall`, `memory_remember`, ...).
+Agents use memory in **hybrid** mode: a bounded part is *pushed* each turn —
+a stable part (meant for the agent's instructions), a per-turn part with the
+request, and tool notes in the tools' own descriptions — and agents *pull*
+the rest, and write, through memory tools (`memory_recall`,
+`memory_remember`, ...). All pushed memory is framed as reference data, not
+instructions.
 
 CommonMemo **wraps** memory engines rather than building one: extraction,
 retrieval and their optimizations belong to engines that specialize in them
 (Graphiti and Mem0). The built-in `local` engine is offline and
 deterministic, so everything works out of the box and in tests.
 
-**Status:** v0.0.1 -- the design and the skeleton. See
-[`docs/design.md`](docs/design.md) for the design and the roadmap.
+**Status:** v0.0.1, not yet on PyPI ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). Four tiers, three engines
+(local, Graphiti, Mem0), the structured kinds, hybrid agent memory and the
+CommonADK integration are in. The Graphiti and Mem0 engines are tested
+against their real libraries' types but have not had a live run against a
+real backend and LLM yet ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). See [`docs/design.md`](docs/design.md) for
+the design and the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) for what's next.
 
 ## Install
 
@@ -46,7 +52,7 @@ pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memor
 ```python
 from commonmemo import Memory, MemoryEvent
 
-mem = Memory("sqlite:///mem.db")       # one path is the whole setup
+mem = Memory("sqlite:///mem.db", project="shop")   # one path is the whole setup
 
 # 1. Decorator: every call becomes an event (arguments, result/error, duration)
 @mem.track
@@ -58,18 +64,25 @@ class TicketOpened(MemoryEvent):
 
 # 3. Session: everything else is automatic
 async with mem.session(user_id="u1", agent="support") as s:
-    ctx = await s.context("where is my refund?")   # user facts + past episodes + session
+    ctx = await s.context("where is my refund?")   # what memory pushes this turn
     s.message("user", "where is my refund?")
-    lookup_order("42")                              # recorded into this session
+    lookup_order("42")                              # recorded into this session; feeds tool memory
     s.record(TicketOpened(ticket="T-9"))
     s.state["ticket"] = "T-9"                       # working memory, persisted
     s.remember("preferred_contact", "email")        # explicit user fact
+    s.learn("refund_window", "30 days")             # world fact (ttl= for ones that go stale)
+    s.feedback(-1, "too long")                      # rating / comment
+    s.correct("Pune", "Bangalore")                  # correction
+    s.never("suggest phone calls")                  # standing constraint
+    s.forget("old_address")                         # tombstone: stays forgotten
+    tools = mem.agent_tools(s)                      # memory_recall, memory_remember, ... for an agent
 # on exit: the session's events are consolidated into an episode and user facts
 ```
 
-`ctx.stable_text()` belongs in an agent's instructions and `ctx.turn_text()`
-with the turn's request (`ctx.render()` gives both). `mem.agent_tools(s)`
-returns the memory tools for an agent.
+`ctx.stable_text()` is meant for an agent's instructions and
+`ctx.turn_text()` for the turn's request (`ctx.render()` gives both).
+`mem.tool_notes(agent)` gives tool memory's advice per tool, and
+`mem.tool_profile(tool)` the numbers behind it.
 
 ## Resume a stopped process
 
@@ -130,12 +143,36 @@ async with mem.session(user_id="u1", agent="coordinator") as s:
     trace = await run_with_memory(s, runner, project, "coordinator", prompt)
 ```
 
+Each turn, on a copy of the project (CommonADK itself is never changed):
+
+- **capture:** every CommonADK event is recorded, and tool calls feed tool memory;
+- **pull:** the memory tools are added to the agent, and tool memory's notes are
+  written into the agent's own tools' descriptions;
+- **push:** memory goes in front of the prompt, the only place released
+  CommonADK can take it. Putting stable memory in the agent's instructions
+  instead is requested in [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30);
+  `run_with_memory` uses it automatically if a runner supports it ([#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7)).
+
+## Live runs
+
+`scripts/live_engines.py` runs a short scenario on the Graphiti and Mem0
+engines against real backends and an LLM. It is not part of the test
+suite because it spends model tokens:
+
+```bash
+pip install -e ".[graphiti,mem0]" kuzu
+OPENAI_API_KEY=... python scripts/live_engines.py      # Neo4j if NEO4J_* is set, else embedded Kuzu
+```
+
 ## Development
 
 ```bash
 pip install -e ".[dev,commonadk,graphiti,mem0]"
 pytest
 ```
+
+Planned work is tracked in issues. The [roadmap (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14)
+lists them; nothing gets coded without an issue.
 
 ## License
 
