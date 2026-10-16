@@ -409,6 +409,10 @@ structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite: with-memory versus without-memory runs on public
+  long-memory tasks and on scenarios only CommonMemo covers (resume after a
+  crash, a known tool failure, negatives, forgetting); deterministic in CI,
+  live after #3. New memory kinds (#8, #9, #10) are measured against it
 - [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
 - [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools
 - [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
