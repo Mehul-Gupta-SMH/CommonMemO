@@ -101,7 +101,9 @@ with mem.session("job-42") as s:           # same id in a new process = resume
 
 Rerunning the same code after a crash skips what finished and continues at
 the first step that did not; a side-effecting step interrupted mid-way
-raises `StepInDoubt` instead of repeating itself.
+raises `StepInDoubt` instead of repeating itself. (One worker per session
+for now: concurrent resumers of the same session are not yet guarded —
+[#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16).)
 
 ## With Graphiti
 

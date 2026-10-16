@@ -139,6 +139,12 @@ the log at any time (`Memory.rebuild_knowledge`). A duplicate delivery of
 the same event (same id) is ignored by the log *and* by the projections —
 `Store.append` reports whether it inserted — so nothing is counted twice.
 
+**Known gap ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15)):** the log and the projections commit in separate
+transactions, so a crash between the two leaves a projection missing that
+event until `rebuild_knowledge()` (a retry is seen as a duplicate and skips the
+apply). The fix — projections applied idempotently from the log with a
+checkpoint — is in [ADR 0001](adr/0001-storage.md).
+
 ### Tool memory
 
 Per `(agent, tool)`: calls, failures, durations; error **signatures**
@@ -205,6 +211,9 @@ it had at the time:
   wrongly.
 - Agents take part too: `memory_save_progress` records a checkpoint, and a
   resumed session's push says where the work stands.
+- **Known gap ([#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)):** the at-most-once guarantee holds for one
+  worker per session. Two workers resuming the *same* session concurrently
+  can both claim a step (check-then-act); step claims with a lease fix it.
 
 ## Developer surface
 
@@ -377,6 +386,13 @@ What exists, and what CommonMemo takes from it:
   enough — event capture must not depend on the model calling a tool, so each
   harness needs a small hook adapter.
 
+## Decision records
+
+- [ADR 0001 — storage](adr/0001-storage.md) (proposed): why the memory CommonMemo owns sits
+  in a relational, ACID-per-partition store (SQLite by default, Postgres shared, distributed
+  SQL to scale, DynamoDB as the non-SQL backend), and two correctness gaps it found in today's
+  code ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)).
+
 ## Roadmap
 
 Tracked in GitHub issues, with the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) as
@@ -388,6 +404,8 @@ structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/
 
 **Next**
 
+- [#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15) — **bug:** a crash between event append and projection apply loses the update
+- [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16) — **bug:** two workers resuming one session can both run a side-effecting step
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
@@ -405,7 +423,8 @@ structured kinds and hybrid push/pull with agent tools ([#2](https://github.com/
 - [#9](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/9) — lessons and decision records distilled at consolidation (procedural
   memory)
 - [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) — agent-relationship memory from multi-agent handoffs
-- [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — store backends beyond SQLite (Postgres), and projection scaling
+- [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) — benchmark the memory workload
+- [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — storage interface for projections, Postgres, DynamoDB (see ADR 0001)
 - [#13](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/13) — hardening follow-ups (tool-result TTLs, tool preconditions, implicit
   feedback, per-engine episode thresholds, step identity, bulk review of agent
   writes, pruning projections)
