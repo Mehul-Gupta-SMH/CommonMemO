@@ -143,8 +143,11 @@ def test_empty_session_produces_no_episode():
     assert s.episodes == []
 
 
-def test_engine_registry_errors_are_distinct():
+def test_engine_registry_errors_are_distinct(monkeypatch):
+    from commonmemo import engines
+
+    monkeypatch.setitem(engines._PLANNED, "future", "a future engine")
     with pytest.raises(NotImplementedError, match="planned"):
-        engine_from_name("mem0")
+        engine_from_name("future")
     with pytest.raises(ValueError, match="unknown engine"):
         engine_from_name("nope")

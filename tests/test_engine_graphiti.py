@@ -3,6 +3,7 @@ LLM), plus GraphitiBackend's calls into graphiti-core against a fake client
 when graphiti-core is installed."""
 
 import asyncio
+import inspect
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -11,9 +12,9 @@ import pytest
 
 from commonmemo import Memory
 from commonmemo.engines.graphiti import (
+    SYSTEM,
     GraphFact,
     GraphitiEngine,
-    episode_uuid,
     group_id_for,
     transcript,
 )
@@ -33,8 +34,9 @@ class FakeGraph:
         self.deleted_groups = []
         self.closed = False
 
-    async def add_episode(self, *, uuid, group_id, name, body, source_description, reference_time):
-        assert uuid not in self.episodes, "re-ingest must remove the old episode first"
+    async def add_episode(self, *, group_id, name, body, source_description, reference_time):
+        # Like Graphiti: the graph assigns the episode uuid.
+        uuid = f"ep-{len(self.episodes) + len(self.removed)}"
         assert re.match(r"^[A-Za-z0-9_-]+$", group_id)
         self.episodes[uuid] = dict(group_id=group_id, name=name, body=body, ref=reference_time)
         for line in body.splitlines():
@@ -46,6 +48,7 @@ class FakeGraph:
                 if g == group_id and f.name == key and f.invalid_at is None:
                     self.facts[i] = [g, GraphFact(f.name, f.fact, f.episode_ids, f.valid_at, reference_time)]
             self.facts.append([group_id, GraphFact(key, f"user {key} is {value}", (uuid,), reference_time)])
+        return uuid
 
     async def remove_episode(self, uuid):
         if uuid not in self.episodes:
@@ -102,18 +105,20 @@ def test_session_becomes_one_graph_episode_in_the_users_group(setup):
     assert "user: my city is Pune" in ep["body"]
     assert "support: Try holding the power button." in ep["body"]
     assert ep["ref"].tzinfo is timezone.utc
-    assert list(graph.episodes) == [episode_uuid(s.session_id)]
+    assert list(graph.episodes) == [mem.engine.index.external_id(s.session_id, SYSTEM)]
 
 
 def test_reingest_replaces_the_graph_episode(setup):
     mem, graph = setup
     with mem.session("s1", user_id="u1") as s:
         s.message("user", "first")
+    first = mem.engine.index.external_id("s1", SYSTEM)
     with mem.session("s1", user_id="u1") as s:
         s.message("user", "second")
-    assert graph.removed == [episode_uuid("s1")]
-    (ep,) = graph.episodes.values()
+    assert graph.removed == [first]
+    (uid, ep), = graph.episodes.items()
     assert "first" in ep["body"] and "second" in ep["body"]
+    assert mem.engine.index.external_id("s1", SYSTEM) == uid != first
 
 
 def test_search_ranks_episodes_by_graph_facts_and_explains_why(setup):
@@ -177,6 +182,7 @@ def test_forget_user_deletes_the_group_and_the_index(setup):
     run(mem.forget_user("u1"))
     assert graph.deleted_groups == ["u_u1"]
     assert run(mem.engine.user_facts("u1")) == []
+    assert mem.engine.index.external_id(s.session_id, SYSTEM) is None
 
 
 def test_group_ids_are_valid_and_collision_free():
@@ -215,6 +221,7 @@ class FakeGraphitiClient:
 
     async def add_episode(self, **kwargs):
         self.calls.append(("add_episode", kwargs))
+        return SimpleNamespace(episode=SimpleNamespace(uuid="graph-assigned"))
 
     async def remove_episode(self, uuid):
         from graphiti_core.errors import NodeNotFoundError
@@ -241,8 +248,8 @@ def test_graphiti_backend_maps_onto_graphiti_core():
     when = datetime(2026, 10, 16, tzinfo=timezone.utc)
 
     async def main():
-        await backend.add_episode(uuid="x", group_id="u_1", name="n", body="b",
-                                  source_description="d", reference_time=when)
+        assert await backend.add_episode(group_id="u_1", name="n", body="b",
+                                         source_description="d", reference_time=when) == "graph-assigned"
         assert await backend.remove_episode("missing") is False
         facts = await backend.search("tea", group_ids=["u_1"], limit=3)
         await backend.close()
@@ -250,8 +257,11 @@ def test_graphiti_backend_maps_onto_graphiti_core():
 
     facts = run(main())
     _, kwargs = client.calls[0]
+    # No `uuid`: in Graphiti that names an *existing* episode to reprocess.
     assert kwargs == dict(name="n", episode_body="b", source_description="d", reference_time=when,
-                          source=EpisodeType.message, group_id="u_1", uuid="x")
+                          source=EpisodeType.message, group_id="u_1")
+    from graphiti_core import Graphiti
+    inspect.signature(Graphiti.add_episode).bind(None, **kwargs)
     assert client.calls[1] == ("search", "tea", ["u_1"], 3)
     assert facts == [GraphFact("LIKES", "u likes tea", ("e1",))]
     assert client.calls[-1] == ("close",)

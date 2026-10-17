@@ -49,6 +49,15 @@ class MemoryEvent:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        own = cls.__dict__.get("__annotations__", {})
+        if "kind" in own and "ClassVar" not in str(own["kind"]):
+            # A field named `kind` would replace the discriminator on every
+            # instance, so the event would be logged under the field's value
+            # and come back from the log as some other kind.
+            raise TypeError(
+                f"commonmemo: {cls.__qualname__} declares a field named 'kind', which is reserved "
+                "for the event type; name the field something else"
+            )
         if "kind" not in cls.__dict__:
             cls.kind = _snake(cls.__name__)
         if cls.kind in _registry and _registry[cls.kind].__qualname__ != cls.__qualname__:
@@ -85,6 +94,9 @@ class MemoryEvent:
         return dataclasses.replace(self, **changes) if changes else self
 
 
+_OLD_FEEDBACK_KINDS = frozenset({"rating", "correction", "comment"})
+
+
 def event_from_dict(data: dict[str, Any]) -> MemoryEvent:
     """Inverse of `MemoryEvent.to_dict()`.
 
@@ -94,6 +106,10 @@ def event_from_dict(data: dict[str, Any]) -> MemoryEvent:
     """
     data = dict(data)
     kind = data.pop("kind", "event")
+    if kind in _OLD_FEEDBACK_KINDS and kind not in _registry and "wrong" in data:
+        # Logged before `Feedback.kind` was renamed `feedback_kind`: the
+        # field's value was written where the event type belongs.
+        data["feedback_kind"], kind = kind, Feedback.kind
     cls = _registry.get(kind)
     names = {f.name for f in dataclasses.fields(cls)} if cls else set()
     if cls is None or not set(data) <= names:
@@ -134,6 +150,102 @@ class UserFact(MemoryEvent):
 
     key: str
     value: str
+    source: str = "explicit"
+    """Who stated it: `explicit` (the application), `agent` (an agent's
+    `memory_remember` tool), or an integration's name."""
+
+
+class WorldFact(MemoryEvent):
+    """A fact about the world or a project rather than a user: "the refund
+    window is 30 days", "this repo targets Python 3.10".
+
+    `scope` is `global` or `project:<name>`. A later fact with the same
+    `(scope, key)` supersedes the earlier one (history is kept).
+    `valid_until` (epoch seconds) marks facts that go stale -- a price, an
+    order status: past it, the fact is no longer current and is not pushed.
+    """
+
+    key: str
+    value: str
+    scope: str = "global"
+    valid_until: Optional[float] = None
+    source: str = "explicit"
+
+
+class Feedback(MemoryEvent):
+    """A judgement about the agent's work.
+
+    `feedback_kind` is `rating` (thumbs or a score), `correction` (`wrong` -> `right`:
+    "no, I meant..."), or `comment`. `rating` is in [-1, 1] when given.
+    `target_event_id` points at what was judged, when known.
+    """
+
+    feedback_kind: str = "rating"
+    rating: Optional[float] = None
+    comment: Optional[str] = None
+    wrong: Optional[str] = None
+    right: Optional[str] = None
+    target_event_id: Optional[str] = None
+
+
+class Negative(MemoryEvent):
+    """A standing "never / avoid" rule: "never suggest phone calls".
+
+    `scope` is `user:<id>`, `agent:<name>`, `project:<name>` or `global`.
+    Negatives are pushed ahead of everything else and are never ranked out.
+    """
+
+    statement: str
+    scope: str = "global"
+    reason: Optional[str] = None
+    source: str = "explicit"
+
+
+class NegativeRevoked(MemoryEvent):
+    """Withdraws a `Negative` by its event id."""
+
+    negative_id: str
+
+
+class Forgotten(MemoryEvent):
+    """A tombstone: "forget my old address". Removes the user's fact with this
+    `key` and keeps it from coming back -- an engine that re-extracts the
+    same thing from old conversations is filtered against tombstones.
+    `pattern`, when given, also hides extracted facts containing it."""
+
+    key: str
+    pattern: Optional[str] = None
+
+
+class Checkpoint(MemoryEvent):
+    """An explicit restart point: what a process needs to continue from here.
+    `data` must be JSON-serializable."""
+
+    label: str
+    data: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+
+class StepStarted(MemoryEvent):
+    """`@mem.step` began running `step_id`."""
+
+    step_id: str
+    side_effects: bool = False
+
+
+class StepFinished(MemoryEvent):
+    """`step_id` completed; `result` is its JSON-serialized return value
+    (`replayable` is False when the value was not JSON-serializable)."""
+
+    step_id: str
+    result: Optional[str] = None
+    replayable: bool = True
+
+
+class StepFailed(MemoryEvent):
+    """`step_id` raised; a resumed run tries it again."""
+
+    step_id: str
+    error: str
 
 
 class ExternalEvent(MemoryEvent):
@@ -144,11 +256,47 @@ class ExternalEvent(MemoryEvent):
     data: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
+BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
+    Checkpoint, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
+)
+"""Events that record mechanics, not content. They stay in the event log
+but are left out of episode text and of what engines extract facts from --
+a forgotten fact must not be re-learned from its own tombstone."""
+
+
+def describe(event: MemoryEvent) -> Optional[str]:
+    """One plain-language line for the structured kinds, from the user's
+    point of view; None for kinds without one."""
+    if isinstance(event, Feedback):
+        if event.kind == "correction":
+            return f"No, not '{event.wrong}' but '{event.right}'." + (f" {event.comment}" if event.comment else "")
+        mood = {1: "That was helpful.", -1: "That was not helpful."}.get(
+            None if event.rating is None else (1 if event.rating > 0 else -1 if event.rating < 0 else 0), ""
+        )
+        return " ".join(p for p in (mood, event.comment or "") if p) or None
+    if isinstance(event, Negative):
+        return f"Never {event.statement}." + (f" ({event.reason})" if event.reason else "")
+    if isinstance(event, WorldFact):
+        return f"Note: {event.key} is {event.value}."
+    return None
+
+
 __all__ = [
+    "BOOKKEEPING",
+    "describe",
     "MemoryEvent",
     "Message",
     "ToolInvoked",
     "UserFact",
+    "WorldFact",
+    "Feedback",
+    "Negative",
+    "NegativeRevoked",
+    "Forgotten",
+    "Checkpoint",
+    "StepStarted",
+    "StepFinished",
+    "StepFailed",
     "ExternalEvent",
     "event_from_dict",
 ]

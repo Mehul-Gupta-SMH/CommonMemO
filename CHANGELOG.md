@@ -2,6 +2,78 @@
 
 ## 0.0.1 — unreleased
 
+Correctness fixes:
+
+- **Projections can no longer fall behind the log**
+  ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15)). They store the last log position applied and
+  catch up after every write and on open, in the same transaction as the
+  changes, so a crash between logging and applying loses nothing and nothing
+  is counted twice. New `Store.events_after`.
+- **Side-effecting steps run at most once across concurrent workers**
+  ([#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)). The step is claimed with an atomic conditional
+  write before it runs; losers get `StepInProgress` (a `StepInDoubt`) while
+  the winner's lease is live, and `StepInDoubt` after. New `Store.claim`,
+  `Store.get_claim`, `Store.settle`, and `@mem.step(lease=...)`.
+- `Feedback`'s `kind` field is renamed `feedback_kind`. As `kind` it replaced
+  the event type, so feedback came back from the log as another kind and
+  `rebuild_knowledge` dropped corrections and comments. Feedback logged under
+  the old name still reads back. A field named `kind` on any event is now
+  refused.
+
+Tier names: the four tiers are now **Log**, **Working**, **Recaps** and
+**UserProfile** (before: event, session, episodic, user). Docs only so far;
+the code follows in [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
+
+Structured memory kinds and hybrid reads:
+
+- **Tool memory** from every `ToolInvoked` (and CommonADK `tool_call`): calls,
+  failures, durations, scrubbed error signatures, and the argument-shape
+  change that fixed a failure. Holds shapes, never values, so it is safe to
+  share across users. `tool_profile`, `tool_notes`.
+- **World memory**: `WorldFact` with `global` / `project:<name>` scopes,
+  superseding history and `valid_until` expiry. `learn`, `world_facts`.
+- **Feedback**: ratings, comments and corrections; summaries and lessons.
+- **Negatives** ("never X", scoped, revocable) and **tombstones** (`forget`)
+  that keep forgotten facts from being re-learned.
+- **Resume points**: `checkpoint` / `resume_point`, and `@mem.step` for
+  replayable steps; interrupted side-effecting steps raise `StepInDoubt`.
+- **Hybrid reads**: `MemoryPolicy`; context split into `stable_text()` and
+  `turn_text()`, framed as data; episodes pushed only above a relevance
+  threshold; recent events off by default.
+- **Agent tools**: `memory_recall`, `memory_remember`, `memory_note_fact`,
+  `memory_avoid`, `memory_save_progress` (sync, typed, documented; writes
+  marked `source="agent"`).
+- **CommonADK**: `prepare_project` adds the memory tools and writes tool
+  notes into the tools' own descriptions; `run_with_memory` puts the memory
+  in front of the prompt, which is what released CommonADK supports. If a
+  runner accepts `context=` / `turn_context=` (proposed in CommonADK issue
+  #30), stable and per-turn memory go there instead, automatically.
+- Projections are kept per event, ignore duplicate deliveries, and can be
+  rebuilt from the log (`rebuild_knowledge`).
+
+Mem0 engine:
+
+- `Mem0Engine`: each closed session is one Mem0 `add`, tagged with its
+  session id; extracted memories join explicit facts (explicit first) with
+  provenance through the origin session; retrieval ranks past sessions by
+  matching memories; re-ingest replaces a session's memories;
+  `forget_user` reaches Mem0. `pip install "commonmemo[mem0]"`.
+- Episode ranking shared between the Graphiti and Mem0 engines
+  (`engines/_ranking.py`).
+- `scripts/live_engines.py`: a live run of both engines against real
+  backends and an LLM.
+
+### Fixed
+
+- **The Graphiti engine could not create any episode.** It passed a
+  session-derived `uuid=` to `Graphiti.add_episode`, which in Graphiti means
+  "reprocess this existing episode" and raises `NodeNotFoundError` when
+  there is none -- so every real ingest failed. The fake graph in the tests
+  accepted the argument, so only the first live run exposed it. The engine
+  now lets Graphiti assign the uuid and records it in the local index
+  (`LocalEngine.set_external_id`); the backend test binds the call against
+  graphiti-core's real signature.
+
 Graphiti engine:
 
 - `GraphitiEngine`: one Graphiti episode per closed session in the user's

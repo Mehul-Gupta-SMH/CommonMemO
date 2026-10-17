@@ -11,6 +11,11 @@ A session is one conversation or one workflow run. While it is open:
 
 Closing it hands the session's events to the engine for consolidation into
 episodic and user memory.
+
+Beyond the four tiers, a session is where the structured kinds are written:
+`learn` (world facts), `feedback` / `correct`, `never` (negatives),
+`forget` (tombstones) and `checkpoint` (resume points) -- see
+`knowledge.py` for how each is kept.
 """
 
 from __future__ import annotations
@@ -21,9 +26,21 @@ import time
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Iterator, Optional
 
-from .context import MemoryContext
+from .context import MemoryContext, MemoryPolicy
 from .engines.base import Episode, Fact
-from .events import MemoryEvent, Message, UserFact
+from .events import (
+    Checkpoint,
+    Feedback,
+    Forgotten,
+    MemoryEvent,
+    Message,
+    Negative,
+    StepFailed,
+    StepFinished,
+    UserFact,
+    WorldFact,
+)
+from .resume import ResumePoint
 from .stores.base import SessionRecord
 
 if TYPE_CHECKING:
@@ -106,14 +123,18 @@ class Session:
 
     def record(self, event: MemoryEvent) -> MemoryEvent:
         """Append `event` to the log, stamped with this session's envelope."""
+        bound = self._bound(event)
+        self.memory._append(bound)
+        return bound
+
+    def _bound(self, event: MemoryEvent) -> MemoryEvent:
+        """`event` stamped with this session's envelope, not yet recorded."""
         if self._closed:
             raise RuntimeError(
                 f"commonmemo: session {self.session_id!r} is closed; open a new one "
                 "or resume it with Memory.session(session_id=...) before recording"
             )
-        bound = event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent)
-        self.memory.store.append(bound)
-        return bound
+        return event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent)
 
     def message(self, role: str, content: str) -> MemoryEvent:
         """Shorthand for recording a `Message`."""
@@ -128,24 +149,148 @@ class Session:
             )
         return self.record(UserFact(key=key, value=value))
 
+    def learn(
+        self,
+        key: str,
+        value: str,
+        *,
+        scope: Optional[str] = None,
+        ttl: Optional[float] = None,
+        source: str = "explicit",
+    ) -> MemoryEvent:
+        """Record a world fact (not about the user). `scope` defaults to the
+        memory's project (`project:<name>`), else `global`. `ttl` in seconds
+        marks it time-sensitive."""
+        return self.record(
+            WorldFact(
+                key=key,
+                value=value,
+                scope=scope or self.memory.project_scope,
+                valid_until=time.time() + ttl if ttl else None,
+                source=source,
+            )
+        )
+
+    def feedback(
+        self,
+        rating: Optional[float] = None,
+        comment: Optional[str] = None,
+        *,
+        target_event_id: Optional[str] = None,
+    ) -> MemoryEvent:
+        """Record a rating in [-1, 1] (or a thumbs: 1 / -1) and/or a comment
+        on the agent's work."""
+        if rating is not None and not -1.0 <= rating <= 1.0:
+            raise ValueError("commonmemo: feedback rating must be in [-1, 1]")
+        kind = "rating" if rating is not None else "comment"
+        return self.record(Feedback(feedback_kind=kind, rating=rating, comment=comment, target_event_id=target_event_id))
+
+    def correct(self, wrong: str, right: str, *, comment: Optional[str] = None) -> MemoryEvent:
+        """Record a correction: "not `wrong`, but `right`"."""
+        return self.record(Feedback(feedback_kind="correction", wrong=wrong, right=right, comment=comment, rating=-1.0))
+
+    def never(self, statement: str, *, reason: Optional[str] = None, scope: str = "user") -> MemoryEvent:
+        """Record a standing "never do this" rule. `scope` is `user` (this
+        user), `agent` (this agent, every user), `project`, or `global`."""
+        resolved = {
+            "user": f"user:{self.user_id}" if self.user_id else None,
+            "agent": f"agent:{self.agent}" if self.agent else None,
+            "project": self.memory.project_scope if self.memory.project else None,
+            "global": "global",
+        }.get(scope)
+        if resolved is None:
+            raise ValueError(f"commonmemo: never(scope={scope!r}) needs a session with that scope set")
+        return self.record(Negative(statement=statement, scope=resolved, reason=reason))
+
+    def forget(self, key: str, *, pattern: Optional[str] = None) -> MemoryEvent:
+        """Forget the user's fact `key` (and any extracted fact containing
+        `pattern`), and keep it from being re-learned from old sessions."""
+        if self.user_id is None:
+            raise ValueError("commonmemo: forget() needs a user")
+        return self.record(Forgotten(key=key, pattern=pattern))
+
+    def checkpoint(self, label: str, data: Optional[dict[str, Any]] = None) -> MemoryEvent:
+        """Record a restart point: what a process needs to continue from
+        here. `data` must be JSON-serializable."""
+        return self.record(Checkpoint(label=label, data=dict(data or {})))
+
+    def resume_point(self) -> ResumePoint:
+        """Where this session's process stands: latest checkpoint, steps that
+        completed, were interrupted or failed, and events since the
+        checkpoint."""
+        k = self.memory.knowledge
+        cp = k.latest_checkpoint(self.session_id)
+        steps = k.steps(self.session_id)
+        since = self.events(since=cp.ts) if cp else []
+        return ResumePoint(
+            session_id=self.session_id,
+            checkpoint=cp,
+            completed=[s for s in steps if s.status == "finished"],
+            in_doubt=[s for s in steps if s.status == "started"],
+            failed=[s for s in steps if s.status == "failed"],
+            since_checkpoint=[e for e in since if not (cp and e.id == cp.event_id)],
+        )
+
+    def resolve_step(self, step_id: str, *, result: Any = None, failed: bool = False) -> MemoryEvent:
+        """Settle an interrupted step by hand: it took effect (`result`, which
+        later runs replay), or it did not (`failed=True`, so it runs again)."""
+        import json
+
+        from .resume import settle_step
+
+        if failed:
+            return settle_step(self, step_id, StepFailed(step_id=step_id, error="resolved by hand: did not take effect"))
+        return settle_step(self, step_id, StepFinished(step_id=step_id, result=json.dumps(result), replayable=True))
+
     def events(self, **filters: Any) -> list[MemoryEvent]:
         """This session's events, oldest first (filters as `Store.events`)."""
         return self.memory.store.events(session_id=self.session_id, **filters)
 
     # -- reading ------------------------------------------------------------
 
+    @property
+    def scopes(self) -> list[str]:
+        """The scopes this session can see, broadest first."""
+        out = ["global"]
+        if self.memory.project:
+            out.append(self.memory.project_scope)
+        if self.agent:
+            out.append(f"agent:{self.agent}")
+        if self.user_id:
+            out.append(f"user:{self.user_id}")
+        return out
+
     async def context(
-        self, query: Optional[str] = None, *, episodes: int = 3, recent: int = 10
+        self,
+        query: Optional[str] = None,
+        *,
+        policy: Optional[MemoryPolicy] = None,
+        episodes: Optional[int] = None,
+        recent: Optional[int] = None,
+        local_only: bool = False,
     ) -> MemoryContext:
-        """Everything the four tiers know that is relevant to `query`: user
-        facts, the best-matching past episodes (excluding this session),
-        this session's state and its `recent` latest events."""
-        ctx = await self.memory.context(
-            query, user_id=self.user_id, agent=self.agent, episodes=episodes
+        """What memory pushes for a turn about `query` (see `MemoryPolicy`):
+        negatives, user facts, world facts, lessons and tool notes (stable);
+        relevant past episodes, session state, recent events and where a
+        resumed process stands (turn). `episodes` / `recent` override the
+        policy. `local_only` skips the wrapped engine's own search."""
+        policy = policy or self.memory.policy
+        if episodes is not None or recent is not None:
+            from dataclasses import replace
+
+            policy = replace(
+                policy,
+                **({"episodes": episodes} if episodes is not None else {}),
+                **({"recent": recent} if recent is not None else {}),
+            )
+        ctx = await self.memory._long_term(
+            query, user_id=self.user_id, agent=self.agent, policy=policy,
+            scopes=self.scopes, local_only=local_only,
         )
         ctx.episodes = [e for e in ctx.episodes if e.session_id != self.session_id]
         # Facts stated in this session reach the engine only at close, but
-        # they are true now: overlay them (latest per key wins).
+        # they are true now: overlay them (latest per key wins), then apply
+        # tombstones again -- a fact forgotten in this session stays gone.
         if self.user_id is not None:
             facts = {f.key: f for f in ctx.facts}
             for e in self.events(kinds=[UserFact.kind]):
@@ -153,9 +298,12 @@ class Session:
                     user_id=self.user_id, key=e.key, value=e.value,
                     valid_from=e.ts, source_event_ids=(e.id,),
                 )
-            ctx.facts = sorted(facts.values(), key=lambda f: f.key)
+            ctx.facts = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
+            ctx.facts = ctx.facts[: policy.max_facts]
         ctx.state = self.state.to_dict()
-        ctx.recent = self.events(limit=recent) if recent else []
+        ctx.recent = self.events(limit=policy.recent) if policy.recent else []
+        resume = self.resume_point()
+        ctx.resume = None if resume.is_fresh else resume
         return ctx
 
     # -- closing ------------------------------------------------------------

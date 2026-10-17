@@ -8,13 +8,12 @@ from typing import Any
 from .base import Engine, Episode, Fact
 from .local import LocalEngine
 
-_PLANNED = {
-    "mem0": "the Mem0 engine",
-}
+_PLANNED: dict[str, str] = {}
+"""Engines with a reserved name but no implementation yet (none today)."""
 
 
 def known_engines() -> list[str]:
-    return ["local", "graphiti"]
+    return ["local", "graphiti", "mem0"]
 
 
 def engine_from_name(name: str, **options: Any) -> Engine:
@@ -27,6 +26,10 @@ def engine_from_name(name: str, **options: Any) -> Engine:
         from .graphiti import GraphitiEngine
 
         return GraphitiEngine(**options)
+    if name == "mem0":
+        from .mem0 import Mem0Engine
+
+        return Mem0Engine(**options)
     if name in _PLANNED:
         raise NotImplementedError(
             f"commonmemo: engine {name!r} is planned but not shipped yet -- "

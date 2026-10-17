@@ -31,6 +31,9 @@ graphiti = [
     # so without this `import graphiti_core` raises ModuleNotFoundError.
     "httpx",
 ]
+mem0 = [
+    "mem0ai>=2.2",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commonmemo"]

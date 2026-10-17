@@ -15,14 +15,36 @@ from commonmemo import ExternalEvent, Memory, Message, ToolInvoked  # noqa: E402
 from commonmemo.integrations.commonadk import attach, run_with_memory, translate  # noqa: E402
 
 
+def lookup(item_id: int) -> str:
+    """Look up an item by id."""
+    return f"item {item_id}"
+
+
+def make_project():
+    from commonadk.models import AgentConfig, AgentSpec, Project, ProjectConfig, ToolSpec
+
+    return Project(
+        config=ProjectConfig(name="p", default_model="anthropic/claude-haiku-4-5"),
+        agents={
+            "coordinator": AgentSpec(
+                config=AgentConfig(name="coordinator"),
+                instructions="You coordinate.",
+                tools=[ToolSpec.from_function(lookup)],
+            )
+        },
+    )
+
+
 class FakeRunner:
-    """Fires a realistic event sequence through whatever hooks it is given."""
+    """Fires a realistic event sequence through whatever hooks it is given,
+    and records what it was asked to run. Has CommonADK's split-context
+    signature (`context=`, `turn_context=`)."""
 
     def __init__(self):
-        self.prompts = []
+        self.calls = []
 
-    async def run(self, project, agent_name, prompt, *, session=None, hooks=None):
-        self.prompts.append(prompt)
+    async def run(self, project, agent_name, prompt, *, session=None, hooks=None, context=None, turn_context=None):
+        self.calls.append(dict(project=project, prompt=prompt, context=context, turn_context=turn_context))
         events = [
             RunStarted(run_id="r1", target="openai", agent_name=agent_name, prompt=prompt),
             ToolCall(run_id="r1", agent_name=agent_name, tool_name="lookup", arguments={"id": 7},
@@ -33,6 +55,13 @@ class FakeRunner:
         for e in events:
             hooks.fire(e)
         return "trace"
+
+
+class LegacyRunner(FakeRunner):
+    """A CommonADK runner from before `context=` / `turn_context=`."""
+
+    async def run(self, project, agent_name, prompt, *, session=None, hooks=None):
+        return await super().run(project, agent_name, prompt, session=session, hooks=hooks)
 
 
 def test_translate_maps_tool_calls_and_keeps_everything_else_verbatim():
@@ -46,26 +75,68 @@ def test_translate_maps_tool_calls_and_keeps_everything_else_verbatim():
     assert isinstance(finished[1], Message) and finished[1].role == "assistant"
 
 
-def test_run_with_memory_records_and_injects_context():
+def test_run_with_memory_splits_stable_and_turn_memory_and_records():
     mem = Memory()
     runner = FakeRunner()
+    project = make_project()
+
+    async def main():
+        async with mem.session("s0", user_id="u1", agent="coordinator") as old:
+            old.message("user", "where is item 7?")
+        async with mem.session(user_id="u1", agent="coordinator") as s:
+            s.remember("name", "Ada")
+            s.never("suggest phone calls")
+            await run_with_memory(s, runner, project, "coordinator", "find item 7")
+        return s
+
+    s = asyncio.run(main())
+    (call,) = runner.calls
+    # Stable memory to the instructions, per-turn memory to the prompt; the prompt itself untouched.
+    assert "name: Ada" in call["context"] and "Never: suggest phone calls" in call["context"]
+    assert "item 7" in call["turn_context"] and "name: Ada" not in call["turn_context"]
+    assert call["prompt"] == "find item 7"
+    # The pull half: memory tools on the agent, the caller's project untouched.
+    names = [t.name for t in call["project"].agents["coordinator"].tools]
+    assert names[0] == "lookup" and "memory_recall" in names and "memory_remember" in names
+    assert [t.name for t in project.agents["coordinator"].tools] == ["lookup"]
+    # Capture.
+    events = mem.store.events(session_id=s.session_id)
+    assert [e.kind for e in events].count("tool_invoked") == 1
+    assert "transfer" in {e.source.split(".")[1] for e in events if isinstance(e, ExternalEvent)}
+    assert [m.content for m in events if isinstance(m, Message)] == ["find item 7", "Done: item 7 found."]
+    (episode,) = s.episodes
+    assert "lookup" in episode.summary
+
+
+def test_run_with_memory_falls_back_to_the_prompt_on_older_commonadk():
+    mem = Memory()
+    runner = LegacyRunner()
 
     async def main():
         async with mem.session(user_id="u1", agent="coordinator") as s:
             s.remember("name", "Ada")
-            await run_with_memory(s, runner, object(), "coordinator", "find item 7")
-        return s
+            await run_with_memory(s, runner, make_project(), "coordinator", "find item 7")
 
-    s = asyncio.run(main())
-    events = mem.store.events(session_id=s.session_id)
-    kinds = [e.kind for e in events]
-    assert kinds.count("tool_invoked") == 1
-    assert "transfer" in {e.source.split(".")[1] for e in events if isinstance(e, ExternalEvent)}
-    assert [m.content for m in events if isinstance(m, Message)] == [runner.prompts[0], "Done: item 7 found."]
-    # The fact recorded before the run reached the agent's prompt.
-    assert "name: Ada" in runner.prompts[0] and runner.prompts[0].endswith("find item 7")
-    (episode,) = s.episodes
-    assert "lookup" in episode.summary
+    asyncio.run(main())
+    (call,) = runner.calls
+    assert "name: Ada" in call["prompt"] and call["prompt"].endswith("find item 7")
+
+
+def test_prepare_project_writes_tool_notes_into_the_tools_own_docs():
+    from commonmemo import ToolInvoked
+    from commonmemo.integrations.commonadk import prepare_project
+
+    mem = Memory()
+    with mem.session(user_id="u1", agent="coordinator") as s:
+        s.record(ToolInvoked(name="lookup", arguments={"item_id": "7/10/2026"}, error="ValueError: bad id '7/10'"))
+        s.record(ToolInvoked(name="lookup", arguments={"item_id": 7}, result="item 7"))
+    with mem.session(user_id="u2", agent="coordinator") as s2:
+        built = prepare_project(s2, make_project(), "coordinator", memory_tools=False)
+    (tool,) = built.agents["coordinator"].tools
+    assert "was fixed by: item_id: dmy_or_mdy_date -> int" in tool.description
+    assert tool.func.__doc__ == tool.description  # what five of six adapters read
+    assert tool.func(item_id=3) == "item 3"  # behaviour unchanged
+    assert "u1" not in tool.description and "7/10" not in tool.description  # no user data crosses users
 
 
 def test_attach_adds_to_an_existing_registry_and_deduplicates():
