@@ -69,6 +69,8 @@ def translate(event: Any) -> list[MemoryEvent]:
     run_id, seq, ts = data.get("run_id", ""), data.get("seq"), data.get("ts")
     base_id = f"commonadk_{run_id}_{seq}"
     common: dict[str, Any] = {"ts": ts} if ts is not None else {}
+    if run_id:
+        common["run_id"] = f"commonadk:{run_id}"
 
     if kind == "tool_call":
         return [

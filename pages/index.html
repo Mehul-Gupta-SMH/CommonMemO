@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommonMemo Inspector (mockup)</title>
+<meta name="description" content="A mockup of the CommonMemo inspector: memory history, world-fact review, turn traces, user pages and snapshots. Sample data.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f2f1ed;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --accent-ink: #1c5cab;
+  --s1: #2a78d6; /* operator */
+  --s2: #eb6834; /* agent */
+  --s3: #1baf7a; /* tool */
+  --s4: #eda100; /* extracted */
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --critical-ink: #b42f2f;
+  --chip: #ecebe6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #222220;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #a3a198;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-ink: #86b6ef;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --good-ink: #0ca30c;
+    --critical-ink: #e66767;
+    --chip: #2a2a28;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #a3a198;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --accent-ink: #86b6ef;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --good-ink: #0ca30c;
+  --critical-ink: #e66767;
+  --chip: #2a2a28;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent-ink); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+
+.banner {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-2);
+  font-size: 13px;
+  padding: 8px 16px;
+  text-align: center;
+}
+header.top {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.brand { font-weight: 650; font-size: 17px; letter-spacing: -0.01em; }
+.brand span { color: var(--muted); font-weight: 450; }
+.file { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+.theme-btn {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
+  border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer;
+}
+
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 100px); }
+nav.side { border-right: 1px solid var(--border); padding: 16px 12px; background: var(--surface); }
+nav.side a {
+  display: block; padding: 8px 12px; border-radius: 8px; color: var(--ink-2);
+  text-decoration: none; font-size: 14px; margin-bottom: 2px;
+}
+nav.side a:hover { background: var(--surface-2); color: var(--ink); }
+nav.side a[aria-current="page"] { background: var(--chip); color: var(--ink); font-weight: 600; }
+nav.side .section { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 12px 6px; }
+nav.side .soon { color: var(--muted); font-size: 11px; margin-left: 4px; }
+
+main { padding: 24px 32px 48px; max-width: 1180px; min-width: 0; }
+.grid2 > *, .tiles > * { min-width: 0; }
+.table-wrap { overflow-x: auto; }
+.table-wrap table { min-width: 520px; }
+td.mono { word-break: break-all; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+.lede { color: var(--ink-2); margin: 0 0 20px; max-width: 760px; }
+.view { display: none; }
+.view.active { display: block; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile, .card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+}
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 26px; font-weight: 650; letter-spacing: -0.01em; margin-top: 2px; }
+.tile .sub { color: var(--muted); font-size: 12px; }
+.card { margin-bottom: 16px; }
+.card-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.card-head h2 { margin: 0; }
+.card-head .hint { color: var(--muted); font-size: 13px; }
+.card-head .right { margin-left: auto; display: flex; gap: 8px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 550; }
+.status svg { flex: none; }
+.status.critical { color: var(--critical-ink); }
+.status.good { color: var(--good-ink); }
+.status.warning { color: var(--ink); }
+
+.alert {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--border); border-left: 4px solid var(--critical);
+  background: var(--surface); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+}
+.alert p { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
+
+.btn {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
+  border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.btn:focus-visible, .theme-btn:focus-visible, nav.side a:focus-visible, .seg button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.phase { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--chip); color: var(--ink); font-weight: 600; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: var(--ink-2); font-weight: 550; font-size: 12px; border-bottom: 1px solid var(--grid); padding: 6px 8px; }
+td { border-bottom: 1px solid var(--grid); padding: 8px; vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; background: var(--chip); color: var(--ink-2); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+.muted { color: var(--muted); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+.chart-wrap { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tooltip {
+  position: absolute; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-width: 160px; display: none; z-index: 5;
+}
+.tooltip .t-title { font-weight: 600; margin-bottom: 4px; }
+.tooltip .t-row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+
+.trace-step { border-left: 2px solid var(--grid); padding: 0 0 14px 16px; position: relative; }
+.trace-step::before { content: ""; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--axis); }
+.trace-step h3 { font-size: 14px; margin: 0 0 6px; }
+.item { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--grid); font-size: 14px; flex-wrap: wrap; }
+.item:last-child { border-bottom: 0; }
+.item .what { flex: 1; min-width: 240px; }
+.item .meta { color: var(--muted); font-size: 12px; }
+.item.cut .what { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--axis); }
+.quote { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
+
+.diff-add { color: var(--good-ink); font-weight: 600; }
+.diff-del { color: var(--critical-ink); font-weight: 600; }
+.diff-chg { color: var(--accent-ink); font-weight: 600; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.side { border-right: 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px; }
+  nav.side .section { display: none; }
+  main { padding: 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+  header.top { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="banner">Mockup with sample data. The read-only inspector proposed in <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25">#25</a>, with history from <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27">#27</a>. Buttons marked “phase 2” are not built yet.</div>
+<header class="top">
+  <div class="brand">CommonMemo <span>inspector</span></div>
+  <div class="file mono">sqlite:///support-bot/memory.db · project:shop</div>
+  <div class="spacer"></div>
+  <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle light or dark theme">Theme</button>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Views">
+    <div class="section">Memory</div>
+    <a href="#history">History</a>
+    <a href="#world">World facts</a>
+    <a href="#trace">Turn trace</a>
+    <a href="#user">User page</a>
+    <a href="#timeline">Snapshots &amp; diff</a>
+    <div class="section">Later</div>
+    <a href="#procedures">Procedures <span class="soon">#26</span></a>
+  </nav>
+  <main>
+
+  <!-- ============ HISTORY ============ -->
+  <section class="view" id="view-history" aria-labelledby="h-history">
+    <h1 id="h-history">History</h1>
+    <p class="lede">How memory is changing, read from the Log. Last 14 days. Every number here comes from <code>mem.history()</code>.</p>
+
+    <div class="alert" role="status">
+      <span class="status critical" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="currentColor"/><rect x="7.2" y="5.5" width="1.6" height="4.5" fill="var(--surface)"/><rect x="7.2" y="11" width="1.6" height="1.6" fill="var(--surface)"/></svg></span>
+      <div>
+        <strong>Spike in agent writes on Oct 14: 412 world-fact proposals in one hour</strong>
+        <p>All from run <code>commonadk:r-8812</code>, user <code>mallory</code>. Proposals reached no other user (ADR 0002). Velocity is 31× the 14-day median.</p>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn" type="button" data-goto="world">Review proposals</button>
+          <button class="btn" type="button" disabled>Reject all from this run <span class="phase">phase 2</span></button>
+          <button class="btn" type="button" disabled>Freeze agent writes <span class="phase">phase 2</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="label">Writes, 14 days</div><div class="value" id="t-writes">–</div><div class="sub">velocity()</div></div>
+      <div class="tile"><div class="label">From agents</div><div class="value" id="t-agent">–</div><div class="sub">source_mix()</div></div>
+      <div class="tile"><div class="label">Waiting for review</div><div class="value">418</div><div class="sub">6 disputed · median wait 3.2 h</div></div>
+      <div class="tile"><div class="label">Keys churning</div><div class="value">7</div><div class="sub">3 flip-flopping</div></div>
+      <div class="tile"><div class="label">World facts expired</div><div class="value">4 <span style="font-size:15px;color:var(--muted)">of 63</span></div><div class="sub">staleness()</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Writes per day, by source</h2>
+        <span class="hint">World facts, profile facts and negatives</span>
+        <div class="right">
+          <div class="seg" role="group" aria-label="Chart or table">
+            <button type="button" aria-pressed="true" id="vChart">Chart</button>
+            <button type="button" aria-pressed="false" id="vTable">Table</button>
+          </div>
+        </div>
+      </div>
+      <div class="legend" id="vLegend"></div>
+      <div class="chart-wrap">
+        <div class="chart" id="velocity" role="img" aria-label="Stacked bars of memory writes per day by source, Oct 3 to Oct 16. Agent writes spike to 431 on Oct 14."></div>
+        <div class="tooltip" id="vTip" role="tooltip"></div>
+      </div>
+      <div id="velocityTable" hidden></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><h2>Churn</h2><span class="hint">churn(min_changes=2)</span></div>
+        <table>
+          <thead><tr><th>Key</th><th class="num">Changes</th><th class="num">Flip-flops</th><th>Values</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">u_4471/preferred_contact</td><td class="num">6</td><td class="num">3</td><td class="muted">email → phone → email → sms → email → phone</td></tr>
+            <tr><td class="mono">project:shop/support_hours</td><td class="num">4</td><td class="num">1</td><td class="muted">9–5 → 8–4 → 9–5 → 9–6</td></tr>
+            <tr><td class="mono">u_2210/timezone</td><td class="num">3</td><td class="num">1</td><td class="muted">CET → PST → CET → IST</td></tr>
+            <tr><td class="mono">project:shop/shipping_fee</td><td class="num">2</td><td class="num">0</td><td class="muted">€4.90 → €5.90 → €6.50</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Age of current world facts</h2><span class="hint">staleness()</span></div>
+        <div class="chart-wrap">
+          <div class="chart" id="ages" role="img" aria-label="Bars of world facts by age: under 1 day 5, 1 to 7 days 14, 7 to 30 days 21, 30 to 90 days 15, over 90 days 8."></div>
+          <div class="tooltip" id="aTip" role="tooltip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Runs</h2><span class="hint">by_run(run_id): what each run wrote</span></div>
+      <table>
+        <thead><tr><th>Run</th><th>When</th><th class="num">World facts</th><th class="num">Profile facts</th><th class="num">Negatives</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mono">commonadk:r-8812</td><td>Oct 14, 14:02</td><td class="num">412</td><td class="num">3</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
+          <tr><td class="mono">deploy-2026-10-12</td><td>Oct 12, 09:30</td><td class="num">18</td><td class="num">0</td><td class="num">2</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
+          <tr><td class="mono">import-faq-v7</td><td>Oct 9, 17:11</td><td class="num">27</td><td class="num">0</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ WORLD FACTS ============ -->
+  <section class="view" id="view-world" aria-labelledby="h-world">
+    <h1 id="h-world">World facts</h1>
+    <p class="lede">Facts every user in a scope is told. Agent writes wait here until someone approves them (ADR 0002). A less trusted source never overwrites a more trusted fact; it shows up as disputed instead.</p>
+
+    <div class="card">
+      <div class="card-head"><h2>Waiting for review</h2><span class="hint" id="pendingCount"></span></div>
+      <table>
+        <thead><tr><th>Fact</th><th>Proposed by</th><th>Status</th><th>When</th><th></th></tr></thead>
+        <tbody id="pendingRows"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Current</h2><span class="hint">project:shop and global</span></div>
+      <table>
+        <thead><tr><th>Key</th><th>Value</th><th>Source</th><th>As of</th><th>Scope</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mono">refund_window</td><td>30 days</td><td><span class="swatch" style="background:var(--s1)"></span>operator</td><td>Oct 2</td><td class="mono">project:shop</td><td><button class="btn" type="button" disabled>Retract</button></td></tr>
+          <tr><td class="mono">support_hours</td><td>9–6 CET</td><td><span class="swatch" style="background:var(--s1)"></span>confirmed by operator</td><td>Oct 15</td><td class="mono">project:shop</td><td><button class="btn" type="button" disabled>Retract</button></td></tr>
+          <tr><td class="mono">shipping_fee</td><td>€6.50</td><td><span class="swatch" style="background:var(--s3)"></span>tool result</td><td>Oct 11</td><td class="mono">project:shop</td><td><button class="btn" type="button" disabled>Retract</button></td></tr>
+          <tr><td class="mono">eur_usd</td><td>1.08 <span class="status warning"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.5" fill="var(--warning)"/><rect x="5.3" y="2.5" width="1.4" height="4.2" fill="#0b0b0b"/><rect x="5.3" y="7.6" width="1.4" height="1.4" fill="#0b0b0b"/></svg>expired</span></td><td><span class="swatch" style="background:var(--s3)"></span>tool result</td><td>Sep 30</td><td class="mono">global</td><td><button class="btn" type="button" disabled>Retract</button></td></tr>
+        </tbody>
+      </table>
+      <p class="muted" style="font-size:13px;margin:10px 0 0">Retract, approve and reject write memory, so the inspector will only offer them when it runs with operator rights. This mockup makes approve and reject work on sample data.</p>
+    </div>
+  </section>
+
+  <!-- ============ TURN TRACE ============ -->
+  <section class="view" id="view-trace" aria-labelledby="h-trace">
+    <h1 id="h-trace">Turn trace</h1>
+    <p class="lede">Everything memory gave the agent for one turn, and why: score, source and the events each item came from. Items that were cut are shown struck through, with the reason.</p>
+
+    <div class="card">
+      <div class="card-head"><h2>Session <span class="mono">s_91c2</span> · turn 3</h2><span class="hint">user <span class="mono">u_4471</span> · agent <span class="mono">support</span> · run <span class="mono">commonadk:r-9001</span></span></div>
+      <p class="quote">“Can I still return the charger I bought on the 20th? And email me the label please.”</p>
+
+      <div class="trace-step">
+        <h3>Stable push <span class="muted" style="font-weight:400">· 1,240 of 4,000 chars</span></h3>
+        <div class="item"><span class="what">Never: suggest phone calls (reason: prefers email)</span><span class="chip">negative</span><span class="meta">user · <a href="#user">evt 7c1e</a></span></div>
+        <div class="item"><span class="what">preferred_contact: email</span><span class="chip">profile</span><span class="meta">stated Oct 16 · <a href="#user">evt 1a90</a></span></div>
+        <div class="item"><span class="what">refund_window: 30 days (as of 2026-10-02, operator)</span><span class="chip">world fact</span><span class="meta">project:shop · evt 33fd</span></div>
+        <div class="item"><span class="what">Corrected: not ‘Pune’ but ‘Bangalore’</span><span class="chip">lesson</span><span class="meta">feedback Oct 9</span></div>
+        <div class="item cut"><span class="what">eur_usd: 1.08</span><span class="chip">world fact</span><span class="meta">cut: expired Oct 1</span></div>
+      </div>
+      <div class="trace-step">
+        <h3>Per-turn push</h3>
+        <div class="item"><span class="what">Oct 14: asked about a charger that would not charge; replacement offered</span><span class="chip">recap</span><span class="meta">score 0.67 · session s_7a03</span></div>
+        <div class="item cut"><span class="what">Sep 28: updated billing address</span><span class="chip">recap</span><span class="meta">cut: score 0.11, below 0.25</span></div>
+        <div class="item cut"><span class="what">Aug 30: asked about gift wrapping</span><span class="chip">recap</span><span class="meta">cut: limit of 2 recaps</span></div>
+      </div>
+      <div class="trace-step">
+        <h3>Tool notes in descriptions</h3>
+        <div class="item"><span class="what"><code>create_return_label</code>: fails on DD/MM dates (3 of 41 calls); ISO dates work</span><span class="chip">tool memory</span><span class="meta">fix learned Oct 5</span></div>
+      </div>
+      <div class="trace-step">
+        <h3>Agent pulled</h3>
+        <div class="item"><span class="what"><code>memory_recall("charger order date")</code> → 1 result: [past session] Oct 14 charger</span><span class="chip">recall</span><span class="meta">12 ms</span></div>
+      </div>
+      <div class="trace-step" style="border-left-color:transparent">
+        <h3>Agent wrote</h3>
+        <div class="item"><span class="what"><code>memory_note_fact("charger_return_window", "60 days")</code></span><span class="chip">proposal</span><span class="meta">not shown to other users until reviewed</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ USER PAGE ============ -->
+  <section class="view" id="view-user" aria-labelledby="h-user">
+    <h1 id="h-user">User <span class="mono">u_4471</span></h1>
+    <p class="lede">What memory holds about one user, and where each part came from.</p>
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><h2>UserProfile</h2><span class="hint">engine: graphiti</span></div>
+        <table>
+          <thead><tr><th>Key</th><th>Value</th><th>From</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">preferred_contact</td><td>email</td><td>stated · Oct 16</td></tr>
+            <tr><td class="mono">city</td><td>Bangalore</td><td>correction · Oct 9</td></tr>
+            <tr><td class="mono">owns</td><td>ThinkPad X1</td><td>extracted · Oct 14</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Negatives and tombstones</h2></div>
+        <div class="item"><span class="what">Never: suggest phone calls</span><span class="meta">user · Oct 3</span></div>
+        <div class="item"><span class="what">Forgotten: <code>home_address</code></span><span class="meta">tombstone · Sep 21</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Recaps</h2><span class="hint">12 sessions</span></div>
+      <div class="item"><span class="what">Oct 14: charger would not charge; replacement offered, accepted</span><span class="meta">s_7a03 · 18 events</span></div>
+      <div class="item"><span class="what">Oct 9: corrected city to Bangalore; reshipped order 4411</span><span class="meta">s_6610 · 25 events</span></div>
+      <div class="item"><span class="what">Sep 28: updated billing address</span><span class="meta">s_5b2c · 9 events</span></div>
+    </div>
+    <div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><strong>Forget this user</strong><div class="muted" style="font-size:13px">Removes every tier and kind, including engine memory and unapproved proposals. Cannot be reverted, by design.</div></div>
+      <button class="btn" type="button" disabled>Forget user <span class="phase">needs operator rights</span></button>
+    </div>
+  </section>
+
+  <!-- ============ TIMELINE & DIFF ============ -->
+  <section class="view" id="view-timeline" aria-labelledby="h-timeline">
+    <h1 id="h-timeline">Snapshots &amp; diff</h1>
+    <p class="lede">A snapshot names a log position; nothing is copied. Any two points can be compared with <code>mem.diff(a, b)</code>, and <code>mem.as_of(point)</code> shows memory as it was.</p>
+    <div class="card">
+      <div class="card-head"><h2>Snapshots</h2></div>
+      <table>
+        <thead><tr><th>Label</th><th>Log position</th><th>When</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>before refund-flow v3</td><td class="mono">#48,211</td><td>Oct 12, 09:28</td><td><button class="btn" type="button" data-diff>Diff to now</button></td></tr>
+          <tr><td>weekly 2026-W41</td><td class="mono">#45,902</td><td>Oct 6, 00:00</td><td><button class="btn" type="button" data-diff>Diff to now</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Diff: “before refund-flow v3” → now</h2><span class="hint">world facts +3 · ~2 · −1 · negatives +1 · tools ~2</span>
+        <div class="right"><button class="btn" type="button" disabled>Revert to this snapshot <span class="phase">phase 2</span></button></div>
+      </div>
+      <table>
+        <thead><tr><th></th><th>Kind</th><th>Key</th><th>Before</th><th>After</th></tr></thead>
+        <tbody>
+          <tr><td class="diff-chg" aria-label="changed">~</td><td>world fact</td><td class="mono">project:shop/support_hours</td><td>9–5</td><td>9–6 CET</td></tr>
+          <tr><td class="diff-chg" aria-label="changed">~</td><td>world fact</td><td class="mono">project:shop/shipping_fee</td><td>€5.90</td><td>€6.50</td></tr>
+          <tr><td class="diff-add" aria-label="added">+</td><td>world fact</td><td class="mono">project:shop/gift_wrap</td><td class="muted">–</td><td>free over €50</td></tr>
+          <tr><td class="diff-add" aria-label="added">+</td><td>world fact</td><td class="mono">project:shop/charger_recall</td><td class="muted">–</td><td>models A12, A13</td></tr>
+          <tr><td class="diff-add" aria-label="added">+</td><td>world fact</td><td class="mono">global/holiday_closure</td><td class="muted">–</td><td>Dec 24–26</td></tr>
+          <tr><td class="diff-del" aria-label="removed">−</td><td>world fact</td><td class="mono">project:shop/express_shipping</td><td>available</td><td class="muted">retracted</td></tr>
+          <tr><td class="diff-add" aria-label="added">+</td><td>negative</td><td class="mono">project:shop</td><td class="muted">–</td><td>Never: promise delivery dates</td></tr>
+          <tr><td class="diff-chg" aria-label="changed">~</td><td>tool</td><td class="mono">create_return_label</td><td>calls=12 failures=3</td><td>calls=41 failures=3</td></tr>
+          <tr><td class="diff-chg" aria-label="changed">~</td><td>tool</td><td class="mono">lookup_order</td><td>calls=88 failures=1</td><td>calls=203 failures=9</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="view" id="view-procedures" aria-labelledby="h-procedures">
+    <h1 id="h-procedures">Procedures</h1>
+    <p class="lede">Templates, rules, procedures and exemplars per task type, with outcomes per version. Planned in <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26">#26</a> (ADR 0003); nothing to show yet.</p>
+  </section>
+
+  </main>
+</div>
+
+<script>
+(() => {
+  // ---------- theme ----------
+  const root = document.documentElement;
+  const themeBtn = document.getElementById("themeBtn");
+  const stored = (() => { try { return localStorage.getItem("cm-theme"); } catch { return null; } })();
+  if (stored) root.dataset.theme = stored;
+  const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const label = () => { themeBtn.textContent = isDark() ? "Light theme" : "Dark theme"; };
+  themeBtn.addEventListener("click", () => {
+    root.dataset.theme = isDark() ? "light" : "dark";
+    try { localStorage.setItem("cm-theme", root.dataset.theme); } catch {}
+    label(); drawAll();
+  });
+  label();
+
+  // Tables scroll on their own on narrow screens instead of widening the page.
+  document.querySelectorAll("main table").forEach(tbl => {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    tbl.parentNode.insertBefore(wrap, tbl);
+    wrap.appendChild(tbl);
+  });
+
+  // ---------- routing ----------
+  const views = ["history", "world", "trace", "user", "timeline", "procedures"];
+  function route() {
+    const id = views.includes(location.hash.slice(1)) ? location.hash.slice(1) : "history";
+    views.forEach(v => document.getElementById("view-" + v).classList.toggle("active", v === id));
+    document.querySelectorAll("nav.side a").forEach(a => { if (a.getAttribute("href") !== "#" + id) a.removeAttribute("aria-current"); else a.setAttribute("aria-current", "page"); });
+    if (id === "history") drawAll();
+  }
+  addEventListener("hashchange", route);
+  document.querySelectorAll("[data-goto]").forEach(b => b.addEventListener("click", () => { location.hash = b.dataset.goto; }));
+  document.querySelectorAll("[data-diff]").forEach(b => b.addEventListener("click", () => {
+    document.querySelector("#view-timeline .card:nth-of-type(2)").scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+
+  // ---------- sample data ----------
+  const days = ["Oct 3","Oct 4","Oct 5","Oct 6","Oct 7","Oct 8","Oct 9","Oct 10","Oct 11","Oct 12","Oct 13","Oct 14","Oct 15","Oct 16"];
+  const sources = [
+    { key: "operator", label: "Operator", color: "--s1" },
+    { key: "agent", label: "Agent", color: "--s2" },
+    { key: "tool", label: "Tool result", color: "--s3" },
+    { key: "extracted", label: "Extracted", color: "--s4" },
+  ];
+  const data = {
+    operator:  [3, 1, 0, 2, 4, 1, 28, 2, 1, 21, 3, 2, 4, 1],
+    agent:     [9, 11, 7, 6, 12, 10, 8, 13, 9, 11, 12, 431, 14, 10],
+    tool:      [4, 5, 3, 2, 6, 4, 5, 6, 7, 5, 4, 6, 5, 4],
+    extracted: [14, 17, 12, 9, 19, 16, 15, 18, 20, 17, 16, 19, 22, 18],
+  };
+  const total = days.map((_, i) => sources.reduce((s, src) => s + data[src.key][i], 0));
+  const all = total.reduce((a, b) => a + b, 0);
+  const agentAll = data.agent.reduce((a, b) => a + b, 0);
+  document.getElementById("t-writes").textContent = all.toLocaleString();
+  document.getElementById("t-agent").textContent = Math.round(100 * agentAll / all) + "%";
+
+  const css = name => getComputedStyle(root).getPropertyValue(name).trim();
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  // A bar segment whose top corners are rounded (the data end); the bottom stays square.
+  const topRounded = (x, y, w, h, r) => {
+    r = Math.min(r, h, w / 2);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  };
+  const niceMax = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p) * p; };
+
+  // legend (always present for >= 2 series)
+  document.getElementById("vLegend").innerHTML = sources.map(s =>
+    `<span><span class="swatch" style="background:var(${s.color})"></span>${s.label}</span>`).join("");
+
+  // table view (relief for the sub-3:1 light-mode colors)
+  document.getElementById("velocityTable").innerHTML =
+    `<div class="table-wrap"><table><thead><tr><th>Day</th>${sources.map(s => `<th class="num">${s.label}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>` +
+    days.map((d, i) => `<tr><td>${d}</td>${sources.map(s => `<td class="num">${data[s.key][i]}</td>`).join("")}<td class="num">${total[i]}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+  const vChart = document.getElementById("vChart"), vTable = document.getElementById("vTable");
+  const setView = table => {
+    vChart.setAttribute("aria-pressed", String(!table)); vTable.setAttribute("aria-pressed", String(table));
+    document.getElementById("velocity").parentElement.hidden = table;
+    document.getElementById("vLegend").hidden = table;
+    document.getElementById("velocityTable").hidden = !table;
+  };
+  vChart.onclick = () => setView(false); vTable.onclick = () => setView(true);
+
+  function tooltipAt(tip, wrap, x, y, html) {
+    tip.innerHTML = html; tip.style.display = "block";
+    const w = wrap.clientWidth, tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(w - tw, x + 14)) + "px";
+    tip.style.top = Math.max(0, y - tip.offsetHeight - 10) + "px";
+  }
+
+  function drawVelocity() {
+    const host = document.getElementById("velocity");
+    if (!host.offsetParent) return;
+    host.innerHTML = "";
+    const W = Math.max(280, host.clientWidth), H = 280, m = { t: 16, r: 8, b: 28, l: 40 };
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H }, host);
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const max = niceMax(Math.max(...total));
+    const y = v => m.t + ih - (v / max) * ih;
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const v = (max / ticks) * i, yy = y(v);
+      el("line", { x1: m.l, x2: W - m.r, y1: yy, y2: yy, stroke: css(i ? "--grid" : "--axis"), "stroke-width": 1 }, svg);
+      const t = el("text", { x: m.l - 8, y: yy + 4, "text-anchor": "end", "font-size": 11, fill: css("--muted") }, svg);
+      t.textContent = v;
+    }
+    const band = iw / days.length, bw = Math.max(6, Math.min(28, band * 0.62));
+    const surface = css("--surface");
+    days.forEach((d, i) => {
+      const cx = m.l + band * i + band / 2, x = cx - bw / 2;
+      let acc = 0;
+      const stack = sources.filter(s => data[s.key][i] > 0);
+      stack.forEach((s, j) => {
+        const v = data[s.key][i], y0 = y(acc), y1 = y(acc + v);
+        const h = y0 - y1, top = j === stack.length - 1;
+        // 2px surface gap between stacked segments
+        const gap = j > 0 ? 2 : 0;
+        if (h - gap <= 0) { acc += v; return; }
+        if (top) el("path", { d: topRounded(x, y1, bw, h - gap, 4), fill: css(s.color) }, svg);
+        else el("rect", { x, y: y1, width: bw, height: h - gap, fill: css(s.color) }, svg);
+        acc += v;
+      });
+      if (i % 2 === 1 || days.length < 10) {
+        const t = el("text", { x: cx, y: H - 8, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg);
+        t.textContent = d;
+      }
+      // hit target: the whole column, bigger than the mark
+      const hit = el("rect", { x: m.l + band * i, y: m.t, width: band, height: ih, fill: "transparent", tabindex: 0, "aria-label": `${d}: ${total[i]} writes` }, svg);
+      const show = ev => {
+        const r = host.getBoundingClientRect();
+        const px = ev.clientX ? ev.clientX - r.left : cx, py = ev.clientY ? ev.clientY - r.top : y(total[i]);
+        tooltipAt(document.getElementById("vTip"), host.parentElement, px, py,
+          `<div class="t-title">${d} · ${total[i]} writes</div>` +
+          sources.map(s => `<div class="t-row"><span><span class="swatch" style="background:var(${s.color})"></span>${s.label}</span><span>${data[s.key][i]}</span></div>`).join(""));
+      };
+      hit.addEventListener("mousemove", show); hit.addEventListener("focus", show);
+      hit.addEventListener("mouseleave", () => { document.getElementById("vTip").style.display = "none"; });
+      hit.addEventListener("blur", () => { document.getElementById("vTip").style.display = "none"; });
+    });
+    // selective direct label on the spike only
+    const si = data.agent.indexOf(Math.max(...data.agent));
+    const sx = m.l + band * si + band / 2;
+    const lab = el("text", { x: sx - bw / 2 - 6, y: y(total[si]) + 12, "text-anchor": "end", "font-size": 12, fill: css("--ink-2") }, svg);
+    lab.textContent = W < 600 ? `Agent ${data.agent[si]}` : `Agent: ${data.agent[si]} · run commonadk:r-8812`;
+  }
+
+  function drawAges() {
+    const host = document.getElementById("ages");
+    if (!host.offsetParent) return;
+    host.innerHTML = "";
+    const buckets = [["< 1 day", 5], ["1–7 days", 14], ["7–30 days", 21], ["30–90 days", 15], ["> 90 days", 8]];
+    const W = Math.max(280, host.clientWidth), H = 200, m = { t: 18, r: 8, b: 26, l: 8 };
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H }, host);
+    const iw = W - m.l - m.r, ih = H - m.t - m.b, max = Math.max(...buckets.map(b => b[1]));
+    const band = iw / buckets.length, bw = Math.min(48, band * 0.6);
+    el("line", { x1: m.l, x2: W - m.r, y1: m.t + ih, y2: m.t + ih, stroke: css("--axis") }, svg);
+    buckets.forEach(([name, v], i) => {
+      const cx = m.l + band * i + band / 2, h = (v / max) * ih, x = cx - bw / 2, yy = m.t + ih - h;
+      el("path", { d: topRounded(x, yy, bw, h, 4), fill: css("--s1") }, svg);
+      const val = el("text", { x: cx, y: yy - 5, "text-anchor": "middle", "font-size": 12, fill: css("--ink-2") }, svg);
+      val.textContent = v;
+      const t = el("text", { x: cx, y: H - 7, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg);
+      t.textContent = name;
+      const hit = el("rect", { x: m.l + band * i, y: m.t, width: band, height: ih, fill: "transparent", tabindex: 0, "aria-label": `${name}: ${v} facts` }, svg);
+      const show = ev => {
+        const r = host.getBoundingClientRect();
+        tooltipAt(document.getElementById("aTip"), host.parentElement, ev.clientX ? ev.clientX - r.left : cx, ev.clientY ? ev.clientY - r.top : yy,
+          `<div class="t-title">${name}</div><div class="t-row"><span>World facts</span><span>${v}</span></div>`);
+      };
+      hit.addEventListener("mousemove", show); hit.addEventListener("focus", show);
+      hit.addEventListener("mouseleave", () => { document.getElementById("aTip").style.display = "none"; });
+      hit.addEventListener("blur", () => { document.getElementById("aTip").style.display = "none"; });
+    });
+  }
+
+  function drawAll() { drawVelocity(); drawAges(); }
+  addEventListener("resize", () => { clearTimeout(drawAll._t); drawAll._t = setTimeout(drawAll, 120); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { label(); drawAll(); });
+
+  // ---------- review queue (works on sample data) ----------
+  const pending = [
+    { key: "refund_window", value: "90 days", by: "agent · u mallory", status: "proposed", when: "Oct 14, 14:02", note: "+411 more from run commonadk:r-8812" },
+    { key: "charger_return_window", value: "60 days", by: "agent · u_4471", status: "proposed", when: "Oct 16, 10:41" },
+    { key: "shipping_fee", value: "€4.90", by: "agent · u_2210", status: "disputed", when: "Oct 15, 16:20", note: "conflicts with a tool result (€6.50)" },
+    { key: "warranty_years", value: "2", by: "agent · u_3307", status: "proposed", when: "Oct 15, 09:05" },
+  ];
+  const statusIcon = s => s === "disputed"
+    ? `<span class="status warning"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.5" fill="var(--warning)"/><rect x="5.3" y="2.5" width="1.4" height="4.2" fill="#0b0b0b"/><rect x="5.3" y="7.6" width="1.4" height="1.4" fill="#0b0b0b"/></svg>disputed</span>`
+    : `<span class="chip">proposed</span>`;
+  function renderPending() {
+    const rows = document.getElementById("pendingRows");
+    document.getElementById("pendingCount").textContent = pending.filter(p => !p.done).length + " shown · 418 in total";
+    rows.innerHTML = pending.map((p, i) => `<tr>
+      <td><span class="mono">${p.key}</span> = ${p.value}${p.note ? `<div class="muted" style="font-size:12px">${p.note}</div>` : ""}</td>
+      <td>${p.by}</td><td>${p.done ? `<span class="status ${p.done === "approved" ? "good" : "critical"}">${p.done}</span>` : statusIcon(p.status)}</td>
+      <td>${p.when}</td>
+      <td style="white-space:nowrap">${p.done ? "" : `<button class="btn primary" type="button" data-act="approved" data-i="${i}">Approve</button> <button class="btn" type="button" data-act="rejected" data-i="${i}">Reject</button>`}</td>
+    </tr>`).join("");
+    rows.querySelectorAll("button[data-act]").forEach(b => b.addEventListener("click", () => {
+      pending[+b.dataset.i].done = b.dataset.act; renderPending();
+    }));
+  }
+  renderPending();
+
+  route();
+})();
+</script>
+</body>
+</html>

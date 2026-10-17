@@ -2,6 +2,19 @@
 
 ## 0.0.1 — unreleased
 
+Memory history, phase 1 ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27), [ADR 0004](docs/adr/0004-history-analytics-and-reversion.md)), read-only:
+
+- **`run_id`** on every event's envelope: `with mem.run(...)`,
+  `mem.session(run_id=...)`, and `commonadk:<run id>` from the CommonADK
+  integration. Store files from before it get the column on open.
+- **`mem.history()`:** `velocity`, `source_mix`, `churn` (with
+  flip-flops), `review_flow`, `staleness`, `growth`, `by_run`.
+  `Store.event_counts`; `prune` keeps daily rollups of what it deletes.
+- **`mem.snapshot(label)`, `mem.as_of(point)`, `mem.diff(a, b)`** for the
+  kinds CommonMemo owns, replayed into a scratch projection; forgotten data
+  stays gone from past views. `Store.position`, and a `run_id` filter on
+  `Store.events`.
+
 World facts: who may change them ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24), [ADR 0002](docs/adr/0002-world-fact-trust.md)):
 
 - **Fix: one user's conversation could change the world facts every user

@@ -551,6 +551,15 @@ class Knowledge:
             ).fetchall()
         return [_world_record(r) for r in rows]
 
+    def scopes_in_use(self) -> list[str]:
+        """Every scope that holds a current world fact or an active negative."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT scope FROM world_facts WHERE status = 'current' "
+                "UNION SELECT scope FROM negatives WHERE active = 1 ORDER BY 1"
+            ).fetchall()
+        return [r["scope"] for r in rows]
+
     def world_fact(self, event_id: str) -> Optional[WorldRecord]:
         with self._lock:
             r = self._conn.execute("SELECT * FROM world_facts WHERE event_id = ?", (event_id,)).fetchone()

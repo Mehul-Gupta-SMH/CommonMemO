@@ -28,8 +28,10 @@ from .events import (
     WorldFact,
     event_from_dict,
 )
+from .history import Diff, History, MemoryView
 from .memory import Memory
 from .resume import ResumePoint, StepInDoubt, StepInProgress
+from .runs import Run, current_run
 from .session import Session, current_session
 from .stores import SQLiteStore, Store
 from .tool_memory import ToolProfile
@@ -51,6 +53,11 @@ __all__ = [
     "StepInDoubt",
     "StepInProgress",
     "ToolProfile",
+    "History",
+    "MemoryView",
+    "Diff",
+    "Run",
+    "current_run",
     "MemoryEvent",
     "Message",
     "ToolInvoked",

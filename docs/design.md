@@ -262,6 +262,37 @@ it had at the time:
   (`Store.settle`). Pure steps are not claimed: running one twice is
   harmless by definition.
 
+## Memory history
+
+Memory is event-sourced, so how it changes is already recorded: the Log is
+append-only and ordered, and every projection is rebuilt from it
+([ADR 0004](adr/0004-history-analytics-and-reversion.md), [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)). Phase 1 is read-only:
+
+- **`run_id`** on every event's envelope says what produced it: a deploy,
+  an import, a consolidation pass, a framework run. It's set by
+  `with mem.run("deploy-42"):`, `mem.session(run_id=...)`, or automatically
+  by the CommonADK integration (`commonadk:<run id>`). A session's own run
+  wins over an enclosing one; an event that already has a `run_id` keeps it.
+- **Metrics** (`mem.history()`):
+  - `velocity` — events per bucket by kind, source and scope;
+  - `source_mix`;
+  - `churn` — keys that keep changing, including A → B → A flip-flops;
+  - `review_flow` — world-fact proposals, approvals, rejections, time to review;
+  - `staleness`, `growth`;
+  - `by_run(run_id)`.
+
+  Counts come from the store (`Store.event_counts`). `prune` writes daily
+  rollups of what it deletes first, so history outlives the events.
+- **Point in time:** `mem.snapshot(label)` names a log position (nothing is
+  copied). `mem.as_of(point)` replays the Log up to a position, time or
+  snapshot into a scratch projection. `mem.diff(a, b)` lists what was added,
+  changed and removed in between. These cover the kinds CommonMemo owns;
+  Recaps and engine-held profile facts aren't replayed. Since every view
+  replays today's Log, data forgotten since is gone from past views too.
+
+Reverting (by time or by cause, with compensating events), freezes and
+budgets are phase 2.
+
 ## Developer surface
 
 ```python
