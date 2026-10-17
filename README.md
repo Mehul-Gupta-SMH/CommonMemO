@@ -126,6 +126,8 @@ mem.diff("before v3")                       # what changed since
 ```
 
 Read-only for now; reverting is next ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
+A mockup of the inspector these feed ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)), with sample data, is at
+<https://mehul-gupta-smh.github.io/CommonMemO/> (source: `pages/index.html`).
 
 ## With Graphiti
 
