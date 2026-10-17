@@ -75,7 +75,7 @@ def _line(event: MemoryEvent) -> str:
 
 
 _SOURCE_LABEL = {"explicit": "operator", "confirmed": "confirmed by an operator", "agent": "agent",
-                 "tool": "tool result", "extracted": "extracted"}
+                 "tool": "tool result", "extracted": "extracted", "revert": "restored by a revert"}
 
 
 def world_line(w: "WorldRecord") -> str:

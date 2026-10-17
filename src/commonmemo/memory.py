@@ -21,7 +21,7 @@ import functools
 import inspect
 import time
 import uuid
-from typing import Any, Callable, Optional, TypeVar, Union, overload
+from typing import Any, Callable, Iterable, Optional, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
@@ -36,8 +36,21 @@ from .events import (
     WorldFactRejected,
     WorldFactRetracted,
     Snapshot,
+    Freeze,
+    Unfreeze,
 )
-from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, WorldRecord, source_rank
+from .knowledge import FeedbackSummary, FreezeRecord, Knowledge, NegativeRecord, WorldRecord, source_rank
+from .reins import (
+    REVERTIBLE,
+    Alert,
+    AlertPolicy,
+    Budget,
+    RevertResult,
+    after_write,
+    check_alerts,
+    over_budget,
+    revert,
+)
 from .history import Diff, History, MemoryView, Point, as_of, diff
 from .resume import make_step
 from .runs import Run, current_run
@@ -71,6 +84,8 @@ class Memory:
         policy: Optional[MemoryPolicy] = None,
         session_ttl: Optional[float] = None,
         world_fact_approval: bool = True,
+        budgets: Optional[dict[str, Union[Budget, int]]] = None,
+        alerts: Optional[AlertPolicy] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -101,6 +116,14 @@ class Memory:
         the user or session that proposed them sees them (default). A world
         fact reaches every user in its scope; without approval, one
         conversation could change what everyone is told."""
+        self.budgets: dict[str, Budget] = {
+            src: b if isinstance(b, Budget) else Budget(writes=b) for src, b in (budgets or {}).items()
+        }
+        """Per-source caps on direct world-fact writes (`{"agent": 100}` is 100
+        an hour); writes past a cap become proposals. None by default."""
+        self.alert_policy = alerts or AlertPolicy()
+        """When memory warns: on by default, logged to `commonmemo.alerts`."""
+        self._last_alert_check = 0.0
 
     @property
     def project_scope(self) -> str:
@@ -169,6 +192,7 @@ class Memory:
             event = event.bind(run_id=run_id)
         self.store.append(event)
         self.knowledge.catch_up(self.store)
+        after_write(self, event)
         return event
 
     def step(
@@ -364,7 +388,12 @@ class Memory:
                     source: str) -> WorldFact:
         # Decided now and recorded in the event, so rebuilding the
         # projections from the log gives the same answer under any setting.
-        proposed = self.world_fact_approval and source_rank(source) <= 1
+        scope = scope or self.project_scope
+        proposed = (
+            (self.world_fact_approval and source_rank(source) <= 1)
+            or self.knowledge.frozen(scope, source) is not None
+            or over_budget(self, source)
+        )
         return WorldFact(key=key, value=value, scope=scope or self.project_scope,
                          valid_until=time.time() + ttl if ttl else None, source=source, proposed=proposed)
 
@@ -465,6 +494,37 @@ class Memory:
     def diff(self, since: Point, until: Point = None) -> Diff:
         """What changed between two points (`until` defaults to now)."""
         return diff(self, since, until)
+
+    # -- reins (ADR 0004, phase 2) ---------------------------------------------
+
+    def revert(self, *, to: Point = None, run_id: Optional[str] = None, source: Optional[str] = None,
+               session_id: Optional[str] = None, kinds: Iterable[str] = REVERTIBLE, scope: Optional[str] = None,
+               reason: Optional[str] = None, dry_run: bool = False) -> RevertResult:
+        """Bring world facts and negatives back: `to=` a point (log position,
+        time or snapshot), or undo a cause (`run_id=`, `source=`,
+        `session_id=`). Appends compensating events tagged
+        `run_id="revert:<id>"`; never deletes. `dry_run=True` only plans.
+        See `reins.py`."""
+        return revert(self, to=to, run_id=run_id, source=source, session_id=session_id, kinds=kinds,
+                      scope=scope, reason=reason, dry_run=dry_run)
+
+    def freeze(self, *, scope: Optional[str] = None, source: Optional[str] = None,
+               reason: Optional[str] = None) -> MemoryEvent:
+        """Until `unfreeze`, direct world-fact writes in `scope` from `source`
+        (either may be None for "any") are recorded as proposals."""
+        return self._append_outside_session(Freeze(scope=scope, source=source, reason=reason))
+
+    def unfreeze(self, freeze_id: str) -> MemoryEvent:
+        return self._append_outside_session(Unfreeze(freeze_id=freeze_id))
+
+    def freezes(self) -> list[FreezeRecord]:
+        """Active freezes."""
+        return self.knowledge.freezes()
+
+    def alerts(self, *, now: Optional[float] = None) -> list[Alert]:
+        """Check now for velocity spikes, churn and a review backlog
+        (thresholds in `alert_policy`)."""
+        return check_alerts(self, now=now)
 
     def rebuild_knowledge(self) -> None:
         """Recompute the structured projections from the event log."""
