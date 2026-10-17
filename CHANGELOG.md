@@ -2,6 +2,29 @@
 
 ## 0.0.1 — unreleased
 
+World facts: who may change them ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24), [ADR 0002](docs/adr/0002-world-fact-trust.md)):
+
+- **Fix: one user's conversation could change the world facts every user
+  was told.** An agent's `memory_note_fact` wrote at project scope, and the
+  newest value won. Agent-written world facts are now **proposals**: shown
+  only to the user who caused them, marked as unconfirmed, until an operator
+  approves them. New `Memory.pending_world_facts`, `confirm_fact`
+  (optionally correcting the value), `reject_fact`;
+  `Memory(world_fact_approval=False)` turns approval off.
+- **Source decides before recency:** `extracted` < `agent` < `tool` <
+  application code. A less trusted write never supersedes a more trusted
+  fact; it is kept as *disputed* for review.
+- `Memory.retract_fact` ends a fact with nothing replacing it.
+- The push shows each world fact's age and source (`as of 2026-10-14,
+  operator`).
+- Approvals carry a copy of the fact, so they outlive `forget_user` of the
+  proposer; unapproved proposals are deleted with their user. Proposals are
+  not fed to engines as things the user said.
+- Projection tables carry a schema version; a file from an older release
+  rebuilds them from the log on open.
+- Fix: `describe()` checked `Feedback.kind` after the field became
+  `feedback_kind`, so engines got corrections as plain negative ratings.
+
 Correctness fixes:
 
 - **Projections can no longer fall behind the log**

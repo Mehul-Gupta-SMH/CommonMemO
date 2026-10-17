@@ -32,6 +32,7 @@ from .events import (
     Checkpoint,
     Feedback,
     Forgotten,
+    MemoryEvent,
     Negative,
     NegativeRevoked,
     StepFailed,
@@ -39,6 +40,9 @@ from .events import (
     StepStarted,
     ToolInvoked,
     WorldFact,
+    WorldFactConfirmed,
+    WorldFactRejected,
+    WorldFactRetracted,
 )
 from .tool_memory import (
     ToolError,
@@ -71,11 +75,13 @@ CREATE TABLE IF NOT EXISTS tool_last (
     PRIMARY KEY (session_id, agent, tool)
 );
 CREATE TABLE IF NOT EXISTS world_facts (
-    scope TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+    event_id TEXT PRIMARY KEY, scope TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
     valid_from REAL NOT NULL, valid_to REAL, valid_until REAL,
-    source TEXT NOT NULL, event_id TEXT NOT NULL
+    source TEXT NOT NULL, rank INTEGER NOT NULL,
+    status TEXT NOT NULL,  -- current | superseded | retracted | proposed | disputed | confirmed | rejected
+    user_id TEXT, session_id TEXT, note TEXT
 );
-CREATE INDEX IF NOT EXISTS world_current ON world_facts(scope, key, valid_to);
+CREATE INDEX IF NOT EXISTS world_current ON world_facts(scope, key, status);
 CREATE TABLE IF NOT EXISTS feedback (
     event_id TEXT PRIMARY KEY, ts REAL NOT NULL,
     user_id TEXT, agent TEXT, session_id TEXT,
@@ -108,6 +114,10 @@ CREATE TABLE IF NOT EXISTS knowledge_meta (
 );
 """
 
+SCHEMA_VERSION = 2
+"""Bumped whenever a projection table changes shape. Projections are derived
+from the log, so a file with another version drops them and rebuilds."""
+
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
            "negatives", "tombstones", "checkpoints", "steps"]
 
@@ -118,9 +128,37 @@ class WorldRecord:
     key: str
     value: str
     valid_from: float
+    """When it became current: written, or confirmed. Shown as its age."""
     valid_until: Optional[float]
     source: str
     event_id: str
+    status: str = "current"
+    """`current`, or for a pending fact `proposed` / `disputed`."""
+    user_id: Optional[str] = None
+    """Who proposed it, for a pending fact."""
+    note: Optional[str] = None
+
+    @property
+    def pending(self) -> bool:
+        return self.status in PENDING
+
+
+PENDING = ("proposed", "disputed")
+
+_RANKS = {"extracted": 0, "agent": 1, "tool": 2}
+
+
+def source_rank(source: str) -> int:
+    """How much a world fact's source is trusted: `extracted` 0, `agent` 1,
+    `tool` (checked against a tool result) 2, and anything else -- `explicit`,
+    `operator`, an integration's name -- 3, since application code wrote it.
+    A fact can only supersede a current fact of equal or lower rank."""
+    return _RANKS.get(source, 3)
+
+
+def _world_record(r: sqlite3.Row) -> WorldRecord:
+    return WorldRecord(r["scope"], r["key"], r["value"], r["valid_from"], r["valid_until"], r["source"],
+                       r["event_id"], r["status"], r["user_id"], r["note"])
 
 
 @dataclass(frozen=True)
@@ -205,6 +243,18 @@ class Knowledge:
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         with self._lock:
+            self._conn.execute("CREATE TABLE IF NOT EXISTS knowledge_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+            row = self._conn.execute("SELECT value FROM knowledge_meta WHERE key = 'schema'").fetchone()
+            if row is None or row["value"] != SCHEMA_VERSION:
+                for table in _TABLES:
+                    self._conn.execute(f"DROP TABLE IF EXISTS {table}")
+                # No position: the next catch_up recomputes everything from the log.
+                self._conn.execute("DELETE FROM knowledge_meta WHERE key = 'applied_seq'")
+                self._conn.execute(
+                    "INSERT INTO knowledge_meta (key, value) VALUES ('schema', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (SCHEMA_VERSION,),
+                )
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
 
@@ -302,15 +352,63 @@ class Knowledge:
                 (e.session_id, agent, tool, int(not failed), signature, dumps_shape(shape)),
             )
 
+    def _world_insert(self, e: MemoryEvent, scope: str, key: str, value: str, valid_until: Optional[float],
+                      source: str, rank: int, status: str, note: Optional[str] = None) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO world_facts VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+            (e.id, scope, key, value, e.ts, valid_until, source, rank, status, e.user_id, e.session_id, note),
+        )
+
+    def _world_current(self, scope: str, key: str) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM world_facts WHERE scope = ? AND key = ? AND status = 'current'", (scope, key)
+        ).fetchone()
+
+    def _world_end(self, row: sqlite3.Row, ts: float, status: str, note: Optional[str] = None) -> None:
+        self._conn.execute(
+            "UPDATE world_facts SET status = ?, valid_to = ?, note = COALESCE(?, note) WHERE event_id = ?",
+            (status, ts, note, row["event_id"]),
+        )
+
     def _world(self, e: WorldFact) -> None:
+        rank = source_rank(e.source)
+        proposed = e.proposed if e.proposed is not None else rank <= 1
+        if proposed:
+            self._world_insert(e, e.scope, e.key, e.value, e.valid_until, e.source, rank, "proposed")
+            return
+        current = self._world_current(e.scope, e.key)
+        if current is not None and current["rank"] > rank:
+            # A less trusted source cannot overwrite a more trusted fact; it
+            # waits for review instead of silently losing or silently winning.
+            self._world_insert(e, e.scope, e.key, e.value, e.valid_until, e.source, rank, "disputed",
+                               note=f"conflicts with a {current['source']} fact")
+            return
+        if current is not None:
+            self._world_end(current, e.ts, "superseded")
+        self._world_insert(e, e.scope, e.key, e.value, e.valid_until, e.source, rank, "current")
+
+    def _world_confirmed(self, e: WorldFactConfirmed) -> None:
         self._conn.execute(
-            "UPDATE world_facts SET valid_to = ? WHERE scope = ? AND key = ? AND valid_to IS NULL",
-            (e.ts, e.scope, e.key),
+            "UPDATE world_facts SET status = 'confirmed' WHERE event_id = ? AND status IN ('proposed', 'disputed')",
+            (e.fact_id,),
         )
+        current = self._world_current(e.scope, e.key)
+        if current is not None:
+            self._world_end(current, e.ts, "superseded")
+        # An operator's approval: the fact now carries an operator's rank.
+        self._world_insert(e, e.scope, e.key, e.value, e.valid_until, "confirmed", 3, "current",
+                           note=f"confirmed {e.fact_id}")
+
+    def _world_rejected(self, e: WorldFactRejected) -> None:
         self._conn.execute(
-            "INSERT INTO world_facts VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
-            (e.scope, e.key, e.value, e.ts, e.valid_until, e.source, e.id),
+            "UPDATE world_facts SET status = 'rejected', note = ? WHERE event_id = ? AND status IN ('proposed', 'disputed')",
+            (e.reason, e.fact_id),
         )
+
+    def _world_retracted(self, e: WorldFactRetracted) -> None:
+        current = self._world_current(e.scope, e.key)
+        if current is not None and source_rank(e.source) >= current["rank"]:
+            self._world_end(current, e.ts, "retracted", note=e.reason)
 
     def _feedback(self, e: Feedback) -> None:
         self._conn.execute(
@@ -410,14 +508,15 @@ class Knowledge:
     def world_facts(self, scopes: Sequence[str], *, now: Optional[float] = None,
                     include_stale: bool = False) -> list[WorldRecord]:
         """Current facts in `scopes` (later scopes win on equal keys).
-        Facts past `valid_until` are left out unless `include_stale`."""
+        Facts past `valid_until` are left out unless `include_stale`.
+        Pending facts are never included (see `pending_world_facts`)."""
         if not scopes:
             return []
         now = time.time() if now is None else now
         marks = ",".join("?" * len(scopes))
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM world_facts WHERE valid_to IS NULL AND scope IN ({marks})", tuple(scopes)
+                f"SELECT * FROM world_facts WHERE status = 'current' AND scope IN ({marks})", tuple(scopes)
             ).fetchall()
         order = {s: i for i, s in enumerate(scopes)}
         best: dict[str, sqlite3.Row] = {}
@@ -425,13 +524,44 @@ class Knowledge:
             if not include_stale and r["valid_until"] is not None and r["valid_until"] <= now:
                 continue
             best[r["key"]] = r
-        return [WorldRecord(r["scope"], r["key"], r["value"], r["valid_from"], r["valid_until"], r["source"],
-                            r["event_id"]) for r in sorted(best.values(), key=lambda r: r["key"])]
+        return [_world_record(r) for r in sorted(best.values(), key=lambda r: r["key"])]
 
-    def world_history(self, scope: str, key: str) -> list[tuple[str, float, Optional[float]]]:
+    def pending_world_facts(self, scopes: Optional[Sequence[str]] = None, *, user_id: Optional[str] = None,
+                            session_id: Optional[str] = None) -> list[WorldRecord]:
+        """Proposed and disputed facts, oldest first: all of them, or only
+        those proposed by `user_id` or in `session_id` when either is given."""
+        where, params = [f"status IN ({','.join('?' * len(PENDING))})"], list(PENDING)
+        if scopes is not None:
+            if not scopes:
+                return []
+            where.append(f"scope IN ({','.join('?' * len(scopes))})")
+            params.extend(scopes)
+        who = []
+        if user_id is not None:
+            who.append("user_id = ?")
+            params.append(user_id)
+        if session_id is not None:
+            who.append("session_id = ?")
+            params.append(session_id)
+        if who:
+            where.append("(" + " OR ".join(who) + ")")
         with self._lock:
             rows = self._conn.execute(
-                "SELECT value, valid_from, valid_to FROM world_facts WHERE scope = ? AND key = ? ORDER BY valid_from",
+                "SELECT * FROM world_facts WHERE " + " AND ".join(where) + " ORDER BY valid_from", params
+            ).fetchall()
+        return [_world_record(r) for r in rows]
+
+    def world_fact(self, event_id: str) -> Optional[WorldRecord]:
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM world_facts WHERE event_id = ?", (event_id,)).fetchone()
+        return _world_record(r) if r else None
+
+    def world_history(self, scope: str, key: str) -> list[tuple[str, float, Optional[float]]]:
+        """`(value, valid_from, valid_to)` for every value that was current."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT value, valid_from, valid_to FROM world_facts WHERE scope = ? AND key = ? "
+                "AND status IN ('current', 'superseded', 'retracted') ORDER BY valid_from",
                 (scope, key),
             ).fetchall()
         return [(r["value"], r["valid_from"], r["valid_to"]) for r in rows]
@@ -522,10 +652,15 @@ class Knowledge:
 
     def forget_user(self, user_id: str, session_ids: Sequence[str]) -> int:
         """Remove everything user-specific. Tool memory holds only shapes and
-        scrubbed signatures, and world facts are not about the user, so both
-        stay."""
+        scrubbed signatures, and current world facts are not about the user,
+        so both stay; world facts the user's conversations proposed and nobody
+        approved go."""
         with self._lock:
             n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
+            n += self._conn.execute(
+                "DELETE FROM world_facts WHERE user_id = ? AND status IN ('proposed', 'disputed', 'rejected')",
+                (user_id,),
+            ).rowcount
             n += self._conn.execute(
                 "DELETE FROM negatives WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
             ).rowcount
@@ -552,6 +687,9 @@ def _step(r: sqlite3.Row) -> StepRecord:
 _HANDLERS = {
     ToolInvoked: Knowledge._tool,
     WorldFact: Knowledge._world,
+    WorldFactConfirmed: Knowledge._world_confirmed,
+    WorldFactRejected: Knowledge._world_rejected,
+    WorldFactRetracted: Knowledge._world_retracted,
     Feedback: Knowledge._feedback,
     Negative: Knowledge._negative,
     NegativeRevoked: Knowledge._revoke,
@@ -565,6 +703,7 @@ _HANDLERS = {
 __all__ = [
     "Knowledge",
     "WorldRecord",
+    "source_rank",
     "FeedbackRecord",
     "FeedbackSummary",
     "NegativeRecord",
