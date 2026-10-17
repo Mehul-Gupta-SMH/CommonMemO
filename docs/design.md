@@ -442,6 +442,9 @@ What exists, and what CommonMemo takes from it:
 - [ADR 0002 — who may change a world fact](adr/0002-world-fact-trust.md) (accepted): agent-written
   world facts are proposals until an operator approves them; a less trusted source never
   supersedes a more trusted one ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)).
+- [ADR 0003 — procedural memory](adr/0003-procedural-memory.md) (proposed): templates, rules,
+  procedures and exemplars keyed by task type; how a request finds its procedure; learned and
+  agent-written entries are proposals ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26)).
 
 ## Roadmap
 
@@ -475,8 +478,9 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   `Session`, LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen
   `Memory`, Claude `SessionStore`)
 - [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) — task memory: open loops and commitments, for proactive follow-ups
-- [#9](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/9) — lessons and decision records distilled at consolidation (procedural
-  memory)
+- [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory: templates, rules, procedures and exemplars per
+  task type, written by people or learned from runs (absorbs #9: decision records and lessons
+  distilled at consolidation); see ADR 0003
 - [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) — agent-relationship memory from multi-agent handoffs
 - [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) — benchmark the memory workload
 - [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — storage interface for projections, Postgres, DynamoDB (see ADR 0001)
