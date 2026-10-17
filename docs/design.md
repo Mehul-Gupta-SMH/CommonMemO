@@ -445,6 +445,9 @@ What exists, and what CommonMemo takes from it:
 - [ADR 0003 — procedural memory](adr/0003-procedural-memory.md) (proposed): templates, rules,
   procedures and exemplars keyed by task type; how a request finds its procedure; learned and
   agent-written entries are proposals ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26)).
+- [ADR 0004 — memory history](adr/0004-history-analytics-and-reversion.md) (proposed): metrics from the
+  Log, point-in-time reads, and reverting by appending compensating events, never deleting;
+  freeze and budgets reuse proposals; `forget_user` always wins ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
 
 ## Roadmap
 
@@ -478,6 +481,8 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   `Session`, LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen
   `Memory`, Claude `SessionStore`)
 - [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) — task memory: open loops and commitments, for proactive follow-ups
+- [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27) — memory analytics and reins: velocity, delta, churn; point-in-time
+  reads, diff and snapshots; revert by time or cause; freeze and budgets; see ADR 0004
 - [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory: templates, rules, procedures and exemplars per
   task type, written by people or learned from runs (absorbs #9: decision records and lessons
   distilled at consolidation); see ADR 0003
