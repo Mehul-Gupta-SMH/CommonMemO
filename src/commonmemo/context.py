@@ -8,7 +8,7 @@ in different places:
 - **stable** -- negatives, user facts, world facts, lessons from feedback.
   Changes rarely, so it can sit in an agent's instructions without breaking
   prompt caching from turn to turn.
-- **turn** -- relevant past episodes, session state, where a resumed process
+- **turn** -- recaps of relevant past sessions, working state, where a resumed process
   left off. Changes every turn, so it belongs with the turn's message.
 
 Everything rendered is framed as *reference data*, not instructions: memory
@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
-from .engines.base import Episode, Fact
+from .engines.base import Recap, Fact
 from .events import MemoryEvent, Message, ToolInvoked, UserFact
 
 if TYPE_CHECKING:
@@ -47,9 +47,9 @@ class MemoryPolicy:
     max_facts: int = 20
     max_world: int = 20
     max_lessons: int = 5
-    episodes: int = 2
-    min_episode_score: float = 0.25
-    """Episodes scoring below this are not pushed: an unrelated past session
+    recaps: int = 2
+    min_recap_score: float = 0.25
+    """Recaps scoring below this are not pushed: an unrelated past session
     is noise. (Retrieval tools have no threshold.)"""
     recent: int = 0
     """Recent events of this session to push. 0 by default: every SDK with a
@@ -87,7 +87,7 @@ class MemoryContext:
     world: list["WorldRecord"] = field(default_factory=list)
     lessons: list["FeedbackRecord"] = field(default_factory=list)
     tool_notes: dict[str, list[str]] = field(default_factory=dict)
-    episodes: list[Episode] = field(default_factory=list)
+    recaps: list[Recap] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
     recent: list[MemoryEvent] = field(default_factory=list)
     resume: Optional["ResumePoint"] = None
@@ -127,8 +127,8 @@ class MemoryContext:
         sections = []
         if self.resume is not None and not self.resume.is_fresh:
             sections.append("## Resuming earlier work\n" + "\n".join(f"- {line}" for line in self.resume.lines()))
-        if self.episodes:
-            sections.append("## Relevant past sessions\n" + "\n".join(f"- {e.summary}" for e in self.episodes))
+        if self.recaps:
+            sections.append("## Relevant past sessions\n" + "\n".join(f"- {e.summary}" for e in self.recaps))
         if self.state:
             sections.append("## Session state\n" + "\n".join(f"- {k}: {v}" for k, v in self.state.items()))
         if self.recent:

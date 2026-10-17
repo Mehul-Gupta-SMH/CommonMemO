@@ -121,13 +121,13 @@ def test_reingest_replaces_the_graph_episode(setup):
     assert mem.engine.index.external_id("s1", SYSTEM) == uid != first
 
 
-def test_search_ranks_episodes_by_graph_facts_and_explains_why(setup):
+def test_search_ranks_recaps_by_graph_facts_and_explains_why(setup):
     mem, _ = setup
     with mem.session("a", user_id="u1") as s:
         s.remember("editor", "vim")
     with mem.session("b", user_id="u1") as s:
         s.remember("language", "python")
-    eps = run(mem.engine.search_episodes("which python version", user_id="u1"))
+    eps = run(mem.engine.search_recaps("which python version", user_id="u1"))
     assert [e.session_id for e in eps] == ["b"]
     assert "Related facts: user language is python." in eps[0].summary
     assert eps[0].score == 1.0
@@ -140,7 +140,7 @@ def test_search_is_scoped_to_the_user(setup):
         s.remember("language", "python")
     with mem.session(user_id="u2") as s:
         s.remember("language", "python")
-    eps = run(mem.engine.search_episodes("python", user_id="u2"))
+    eps = run(mem.engine.search_recaps("python", user_id="u2"))
     assert len(eps) == 1 and eps[0].user_id == "u2"
 
 
@@ -148,7 +148,7 @@ def test_no_graph_hit_falls_back_to_local_keyword_search(setup):
     mem, _ = setup
     with mem.session(user_id="u1") as s:
         s.message("user", "refund for order 42")
-    eps = run(mem.engine.search_episodes("refund", user_id="u1"))
+    eps = run(mem.engine.search_recaps("refund", user_id="u1"))
     assert len(eps) == 1 and "refund" in eps[0].summary
 
 
@@ -159,7 +159,7 @@ def test_user_facts_explicit_first_then_extracted_with_provenance(setup):
     # A fact only the graph knows (extracted from conversation, not stated).
     (uid,) = graph.episodes
     graph.facts.append(["u_u1", GraphFact("WORKS_AT", "user works at Acme", (uid,))])
-    facts = run(mem.engine.user_facts("u1"))
+    facts = run(mem.engine.user_profile("u1"))
     assert [(f.key, f.value) for f in facts][0] == ("units", "metric")
     extracted = {f.key: f for f in facts[1:]}
     assert extracted["WORKS_AT"].value == "user works at Acme"
@@ -171,7 +171,7 @@ def test_invalidated_graph_facts_are_not_current(setup):
     for city in ["Delhi", "Pune"]:
         with mem.session(user_id="u1") as s:
             s.remember("city", city)
-    extracted = [f.value for f in run(mem.engine.user_facts("u1")) if f.key == "city" and f.value.startswith("user")]
+    extracted = [f.value for f in run(mem.engine.user_profile("u1")) if f.key == "city" and f.value.startswith("user")]
     assert extracted == ["user city is Pune"]
 
 
@@ -181,7 +181,7 @@ def test_forget_user_deletes_the_group_and_the_index(setup):
         s.remember("name", "Ada")
     run(mem.forget_user("u1"))
     assert graph.deleted_groups == ["u_u1"]
-    assert run(mem.engine.user_facts("u1")) == []
+    assert run(mem.engine.user_profile("u1")) == []
     assert mem.engine.index.external_id(s.session_id, SYSTEM) is None
 
 

@@ -1,4 +1,4 @@
-"""End to end through all four tiers with the local engine."""
+"""End to end through all four tiers (Log, Working, Recaps, UserProfile) with the local engine."""
 
 import asyncio
 
@@ -35,10 +35,10 @@ def test_four_tiers_end_to_end(tmp_path):
 
     s1 = run(first_session())
 
-    # Episodic tier: one episode, with provenance back to every event.
-    (episode,) = s1.episodes
-    assert "refund" in episode.summary and "lookup_order" in episode.summary
-    assert set(episode.source_event_ids) == {e.id for e in mem.store.events(session_id=s1.session_id)}
+    # Recaps: one recap, with provenance back to every event.
+    (recap,) = s1.recaps
+    assert "refund" in recap.summary and "lookup_order" in recap.summary
+    assert set(recap.source_event_ids) == {e.id for e in mem.store.events(session_id=s1.session_id)}
 
     async def second_session():
         async with mem.session(user_id="u1", agent="support") as s:
@@ -46,7 +46,7 @@ def test_four_tiers_end_to_end(tmp_path):
 
     ctx = run(second_session())
     assert [(f.key, f.value) for f in ctx.facts] == [("preferred_contact", "email")]
-    assert [e.session_id for e in ctx.episodes] == [s1.session_id]
+    assert [e.session_id for e in ctx.recaps] == [s1.session_id]
     text = ctx.render()
     assert "preferred_contact: email" in text and "refund" in text
     run(mem.aclose())
@@ -65,7 +65,7 @@ def test_newer_fact_supersedes_and_history_is_kept():
         for value in ["imperial", "metric"]:
             async with mem.session(user_id="u1") as s:
                 s.remember("units", value)
-        return await mem.engine.user_facts("u1"), await mem.engine.fact_history("u1", "units")
+        return await mem.engine.user_profile("u1"), await mem.engine.fact_history("u1", "units")
 
     facts, history = run(main())
     assert [(f.key, f.value) for f in facts] == [("units", "metric")]
@@ -86,8 +86,8 @@ def test_session_state_survives_resume_across_handles(tmp_path):
         assert s.state["plan"] == ["read", "edit"]
         assert s.agent == "claude-code"  # owner record is not rewritten
         s.message("user", "continue")
-    # Re-consolidation on the second close replaces the episode, never duplicates it.
-    eps = run(b.engine.search_episodes("", user_id="u1"))
+    # Re-consolidation on the second close replaces the recap, never duplicates it.
+    eps = run(b.engine.search_recaps("", user_id="u1"))
     assert len(eps) == 1 and len(eps[0].source_event_ids) == 2
     run(b.aclose())
 
@@ -120,9 +120,9 @@ def test_forget_user_clears_every_tier():
 
     assert run(mem.forget_user("u1")) > 0
     assert mem.store.events(user_id="u1") == []
-    assert run(mem.engine.user_facts("u1")) == []
-    assert run(mem.engine.search_episodes("", user_id="u1")) == []
-    assert len(run(mem.engine.search_episodes("", user_id="u2"))) == 1
+    assert run(mem.engine.user_profile("u1")) == []
+    assert run(mem.engine.search_recaps("", user_id="u1")) == []
+    assert len(run(mem.engine.search_recaps("", user_id="u2"))) == 1
 
 
 def test_plain_with_inside_a_running_loop_is_a_clear_error():
@@ -136,11 +136,11 @@ def test_plain_with_inside_a_running_loop_is_a_clear_error():
         run(main())
 
 
-def test_empty_session_produces_no_episode():
+def test_empty_session_produces_no_recap():
     mem = Memory()
     with mem.session(user_id="u1") as s:
         pass
-    assert s.episodes == []
+    assert s.recaps == []
 
 
 def test_engine_registry_errors_are_distinct(monkeypatch):

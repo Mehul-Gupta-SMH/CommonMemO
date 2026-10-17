@@ -1,16 +1,16 @@
-"""`Mem0Engine` -- user memory (and memory-backed retrieval) on Mem0.
+"""`Mem0Engine` -- the UserProfile (and memory-backed recap retrieval) on Mem0.
 
 Mem0 (mem0ai) extracts short natural-language memories ("Prefers email
 follow-ups") from conversation with an LLM, deduplicates and updates them
 against what it already holds, and retrieves them by vector search. That is
-the user tier's job, done well:
+the UserProfile's job, done well:
 
 | CommonMemo            | Mem0                                                 |
 |-----------------------|------------------------------------------------------|
 | one closed session    | one `add(messages, user_id=..., metadata={commonmemo_session_id})` |
 | a user                | Mem0's `user_id`                                     |
-| extracted user facts  | `get_all(filters={"user_id"})`                       |
-| episodic retrieval    | `search` -> memories -> the sessions they came from  |
+| extracted profile facts | `get_all(filters={"user_id"})`                     |
+| recap retrieval       | `search` -> memories -> the sessions they came from  |
 | re-ingest a session   | delete the memories tagged with that session, then add again |
 | `forget_user`         | `delete_all(user_id=...)`                            |
 
@@ -48,7 +48,7 @@ from typing import Any, Optional, Protocol, Sequence
 from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
-from .base import Engine, Episode, Fact
+from .base import Engine, Recap, Fact
 from .local import LocalEngine
 
 SESSION_KEY = "commonmemo_session_id"
@@ -78,7 +78,7 @@ def to_messages(session: SessionRecord, events: Sequence[MemoryEvent]) -> list[d
             outcome = f"failed with {e.error}" if e.error else f"returned {e.result}"
             out.append({"role": "assistant", "content": f"(tool {e.name}({e.arguments}) {outcome})"})
         elif isinstance(e, BOOKKEEPING):
-            continue  # bookkeeping: noise for extraction, kept in the event tier
+            continue  # bookkeeping: noise for extraction, kept in the Log
         elif describe(e):
             out.append({"role": "user", "content": describe(e)})
         else:
@@ -201,11 +201,11 @@ class Mem0Engine(Engine):
             self._index = LocalEngine(":memory:")
         return self._index
 
-    async def ingest(self, session: SessionRecord, events: Sequence[MemoryEvent]) -> list[Episode]:
-        episodes = await self.index.ingest(session, events)
-        if not episodes or session.user_id is None:
+    async def ingest(self, session: SessionRecord, events: Sequence[MemoryEvent]) -> list[Recap]:
+        recaps = await self.index.ingest(session, events)
+        if not recaps or session.user_id is None:
             # Mem0 memory is per user; an anonymous session stays local only.
-            return episodes
+            return recaps
         uid = mem0_user_id(session.user_id)
         # Idempotent re-ingest: drop what this session produced last time.
         for old in await self.backend.list(user_id=uid, limit=self.max_memories, session_id=session.session_id):
@@ -213,36 +213,36 @@ class Mem0Engine(Engine):
         messages = to_messages(session, events)
         if messages:
             await self.backend.add(messages, user_id=uid, session_id=session.session_id)
-        return episodes
+        return recaps
 
-    async def _local_episodes(self, user_id: Optional[str], agent: Optional[str]) -> dict[str, Episode]:
-        everything = await self.index.search_episodes("", user_id=user_id, agent=agent, limit=1_000_000)
+    async def _local_recaps(self, user_id: Optional[str], agent: Optional[str]) -> dict[str, Recap]:
+        everything = await self.index.search_recaps("", user_id=user_id, agent=agent, limit=1_000_000)
         return {e.session_id: e for e in everything}
 
-    async def search_episodes(
+    async def search_recaps(
         self,
         query: str,
         *,
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
         limit: int = 5,
-    ) -> list[Episode]:
+    ) -> list[Recap]:
         if not query.strip() or user_id is None:
             # Mem0 search must be scoped to a user; unscoped stays local.
-            return await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
+            return await self.index.search_recaps(query, user_id=user_id, agent=agent, limit=limit)
         hits = await self.backend.search(query, user_id=mem0_user_id(user_id), limit=self.search_memories)
-        local = await self._local_episodes(user_id, agent)
+        local = await self._local_recaps(user_id, agent)
         ranked = rank_by_hits(
             ((h.text, [h.session_id] if h.session_id else []) for h in hits),
             local,
             limit=limit,
             label="Related memories",
         )
-        return ranked or await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
+        return ranked or await self.index.search_recaps(query, user_id=user_id, agent=agent, limit=limit)
 
-    async def user_facts(self, user_id: str) -> list[Fact]:
-        explicit = await self.index.user_facts(user_id)
-        local = await self._local_episodes(user_id, None)
+    async def user_profile(self, user_id: str) -> list[Fact]:
+        explicit = await self.index.user_profile(user_id)
+        local = await self._local_recaps(user_id, None)
         extracted = []
         for hit in await self.backend.list(user_id=mem0_user_id(user_id), limit=self.max_memories):
             origin = local.get(hit.session_id) if hit.session_id else None

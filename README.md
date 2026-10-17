@@ -12,8 +12,9 @@ retrieval, context for the next turn) is built in.
 | **Recaps** | short summaries of finished sessions, retrieved by relevance | a wrapped engine |
 | **UserProfile** | durable facts about one user; a newer value supersedes, history is kept | a wrapped engine |
 
-These names are new (before: event, session, episodic, user). The code still
-uses the old names until [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
+These names are new (before: event, session, episodic, user). In code, a
+recap is a `Recap` (`ctx.recaps`, `engine.search_recaps`) and the profile is
+`engine.user_profile(user_id)`, a list of `Fact`s ([#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19)).
 
 Beside the tiers, CommonMemo keeps **structured kinds** of memory itself:
 **tool memory** (which tools fail, how, and what fixed it — never the
@@ -79,7 +80,7 @@ async with mem.session(user_id="u1", agent="support") as s:
     s.never("suggest phone calls")                  # standing constraint
     s.forget("old_address")                         # tombstone: stays forgotten
     tools = mem.agent_tools(s)                      # memory_recall, memory_remember, ... for an agent
-# on exit: the session's events are consolidated into an episode and user facts
+# on exit: the session's events are consolidated into a recap and UserProfile facts
 ```
 
 `ctx.stable_text()` is meant for an agent's instructions and

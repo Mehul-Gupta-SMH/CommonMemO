@@ -98,7 +98,7 @@ def test_extracted_memories_join_explicit_facts_with_provenance(setup):
     mem, _ = setup
     with mem.session(user_id="u1") as s:
         s.remember("editor", "vim")
-    facts = run(mem.engine.user_facts("u1"))
+    facts = run(mem.engine.user_profile("u1"))
     assert (facts[0].key, facts[0].value) == ("editor", "vim")  # explicit first
     extracted = [f for f in facts if f.key == "memory"]
     assert [f.value for f in extracted] == ["editor is vim"]
@@ -111,7 +111,7 @@ def test_mem0_updates_in_place_across_sessions(setup):
         with mem.session(user_id="u1") as s:
             s.remember("city", city)
     assert [m["text"] for m in fake.memories.values()] == ["city is Pune"]
-    assert [f.value for f in run(mem.engine.user_facts("u1")) if f.key == "city"] == ["Pune"]
+    assert [f.value for f in run(mem.engine.user_profile("u1")) if f.key == "city"] == ["Pune"]
 
 
 def test_reingest_replaces_the_sessions_memories(setup):
@@ -130,7 +130,7 @@ def test_search_ranks_sessions_by_memories(setup):
         s.remember("editor", "vim")
     with mem.session("b", user_id="u1") as s:
         s.remember("language", "python")
-    eps = run(mem.engine.search_episodes("python tips", user_id="u1"))
+    eps = run(mem.engine.search_recaps("python tips", user_id="u1"))
     assert [e.session_id for e in eps] == ["b"]
     assert eps[0].summary.endswith("Related memories: language is python.")
 
@@ -139,15 +139,15 @@ def test_unscoped_or_empty_search_stays_local(setup):
     mem, _ = setup
     with mem.session(user_id="u1") as s:
         s.message("user", "refund please")
-    assert len(run(mem.engine.search_episodes("refund"))) == 1
-    assert len(run(mem.engine.search_episodes("", user_id="u1"))) == 1
+    assert len(run(mem.engine.search_recaps("refund"))) == 1
+    assert len(run(mem.engine.search_recaps("", user_id="u1"))) == 1
 
 
 def test_anonymous_session_never_reaches_mem0(setup):
     mem, fake = setup
     with mem.session() as s:
         s.message("user", "hi")
-    assert fake.adds == [] and len(s.episodes) == 1
+    assert fake.adds == [] and len(s.recaps) == 1
 
 
 def test_forget_user_reaches_mem0(setup):
@@ -156,7 +156,7 @@ def test_forget_user_reaches_mem0(setup):
         s.remember("name", "Ada")
     run(mem.forget_user("u1"))
     assert fake.deleted_users == ["u1"] and fake.memories == {}
-    assert run(mem.engine.user_facts("u1")) == []
+    assert run(mem.engine.user_profile("u1")) == []
 
 
 def test_user_ids_with_whitespace_are_mapped_without_collisions():

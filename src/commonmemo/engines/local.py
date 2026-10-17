@@ -1,6 +1,6 @@
 """`LocalEngine` -- the offline, deterministic engine.
 
-No LLM, no network, no install: episodes are rule-based digests of a
+No LLM, no network, no install: recaps are rule-based digests of a
 session's events, retrieval is keyword overlap, and user facts come only
 from explicit `UserFact` events. It exists so CommonMemo works end to end
 out of the box and so tests are reproducible -- it is not trying to compete
@@ -22,7 +22,7 @@ from typing import Optional, Sequence
 
 from ..events import BOOKKEEPING, ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord
-from .base import Engine, Episode, Fact
+from .base import Engine, Recap, Fact
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS episodes (
@@ -126,10 +126,10 @@ class LocalEngine(Engine):
 
     async def ingest(
         self, session: SessionRecord, events: Sequence[MemoryEvent]
-    ) -> list[Episode]:
+    ) -> list[Recap]:
         if not events:
             return []
-        episode = Episode(
+        recap = Recap(
             id=f"ep_{session.session_id}",
             session_id=session.session_id,
             user_id=session.user_id,
@@ -144,14 +144,14 @@ class LocalEngine(Engine):
             self._conn.execute(
                 "INSERT OR REPLACE INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    episode.id,
-                    episode.session_id,
-                    episode.user_id,
-                    episode.agent,
-                    episode.summary,
-                    episode.started_at,
-                    episode.ended_at,
-                    json.dumps(list(episode.source_event_ids)),
+                    recap.id,
+                    recap.session_id,
+                    recap.user_id,
+                    recap.agent,
+                    recap.summary,
+                    recap.started_at,
+                    recap.ended_at,
+                    json.dumps(list(recap.source_event_ids)),
                 ),
             )
             self._conn.execute("DELETE FROM facts WHERE session_id = ?", (session.session_id,))
@@ -168,10 +168,10 @@ class LocalEngine(Engine):
                     (user_id, fact.key, fact.value, fact.ts, json.dumps([fact.id]), session.session_id),
                 )
             self._conn.commit()
-        return [episode]
+        return [recap]
 
-    def _row_to_episode(self, row: sqlite3.Row, score: Optional[float] = None) -> Episode:
-        return Episode(
+    def _row_to_recap(self, row: sqlite3.Row, score: Optional[float] = None) -> Recap:
+        return Recap(
             id=row["id"],
             session_id=row["session_id"],
             user_id=row["user_id"],
@@ -183,14 +183,14 @@ class LocalEngine(Engine):
             score=score,
         )
 
-    async def search_episodes(
+    async def search_recaps(
         self,
         query: str,
         *,
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
         limit: int = 5,
-    ) -> list[Episode]:
+    ) -> list[Recap]:
         where, params = [], []
         if user_id is not None:
             where.append("user_id = ?")
@@ -211,9 +211,9 @@ class LocalEngine(Engine):
             scored.append((score, row["ended_at"], row))
         # Best match first; recency breaks ties (and orders an empty query).
         scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        return [self._row_to_episode(r, s) for s, _, r in scored[:limit]]
+        return [self._row_to_recap(r, s) for s, _, r in scored[:limit]]
 
-    async def user_facts(self, user_id: str) -> list[Fact]:
+    async def user_profile(self, user_id: str) -> list[Fact]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM facts WHERE user_id = ? AND valid_to IS NULL ORDER BY key",
@@ -242,7 +242,7 @@ class LocalEngine(Engine):
 
     # -- ids another system assigned to a session ------------------------
     # A wrapped engine whose backend picks its own ids (a Graphiti episode
-    # uuid) records them here, next to the episode they belong to.
+    # uuid) records them here, next to the recap they belong to.
 
     def set_external_id(self, session_id: str, system: str, external_id: str) -> None:
         with self._lock:

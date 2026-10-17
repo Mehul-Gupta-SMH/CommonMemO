@@ -14,7 +14,7 @@ applying the same stretch of log twice is impossible, so nothing is counted
 twice.
 
 These kinds are exact by nature (a rule, a step result, a counted failure),
-so they are not handed to a wrapped engine the way episodic and user memory
+so they are not handed to a wrapped engine the way Recaps and the UserProfile
 are.
 """
 

@@ -48,8 +48,10 @@ Each name says what the tier holds. They replace event, session, episodic and
 user, which clashed with the event types (`MemoryEvent`), with the `Session`
 handle and every harness's own sessions, and with plain English ("episodic").
 "Session" now means only one run. World facts are not part of UserProfile;
-they stay a separate kind with their own scopes. The code still uses the old
-names until [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
+they stay a separate kind with their own scopes. The code uses the same names
+([#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19)): `Recap`, `MemoryContext.recaps`, `Engine.search_recaps`,
+`Engine.user_profile`. Event types keep theirs (`UserFact` is an event, not a
+tier), and so do Graphiti's own "episodes".
 
 ### Why this split of ownership
 
@@ -62,7 +64,7 @@ resolution) — exactly what engines specialize in, so they are delegated.
 
 ### Rules every engine keeps
 
-1. **Provenance.** Every episode and fact carries `source_event_ids`, so any
+1. **Provenance.** Every recap and fact carries `source_event_ids`, so any
    memory can be traced back to what actually happened.
 2. **Explicit facts win.** A `UserFact` event is stored as-is; the latest
    value per key supersedes the previous one, whose history is kept
@@ -112,7 +114,7 @@ in lessons and recaps.
 | Mode | What | Where |
 |---|---|---|
 | **Push, stable** | negatives, user facts, world facts, lessons from feedback | the agent's instructions — changes rarely, so it keeps prompt caching intact |
-| **Push, turn** | recaps above `min_episode_score`, working state, where a resumed process stands | in front of the turn's prompt |
+| **Push, turn** | recaps above `min_recap_score`, working state, where a resumed process stands | in front of the turn's prompt |
 | **In the tools** | tool memory's notes | each tool's own description, read exactly when the model decides how to call it |
 | **Pull** | `memory_recall(query)` — every kind, wider limits, no threshold | a tool call |
 | **Write** | `memory_remember`, `memory_note_fact`, `memory_avoid`, `memory_save_progress` | tool calls, recorded `source="agent"` |
@@ -122,7 +124,7 @@ far as its framework allows. Through released CommonADK, for one, all
 pushed memory goes in front of the prompt until [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) lands (see
 "CommonADK integration").
 
-`MemoryPolicy` sets the push: per-kind limits, the episode threshold, and
+`MemoryPolicy` sets the push: per-kind limits, the recap threshold, and
 `recent` (events of this session to push — **0 by default**, because every
 SDK with a session already resends the conversation, and pushing it again
 doubles it).
@@ -191,7 +193,7 @@ that go stale — a price, a status — which stop being pushed once past it.
 Ratings in [-1, 1], comments, and corrections (`wrong` → `right`).
 `feedback_summary` gives counts and approval; *lessons* — corrections, and
 anything negative or commented — are pushed so the agent applies them next
-time. Feedback also lands in the session's episode text, so engines learn
+time. Feedback also lands in the session's recap text, so engines learn
 from it.
 
 ### Negatives and tombstones
@@ -255,7 +257,7 @@ class OrderPlaced(MemoryEvent):    # becomes a frozen kw-only dataclass, kind "o
     order_id: str
 
 async with mem.session(user_id="u1", agent="a") as s:   # or plain `with` outside an event loop
-    ctx = await s.context(query)   # MemoryContext: facts, episodes, state, recent events
+    ctx = await s.context(query)   # MemoryContext: facts, recaps, state, recent events
     s.record(OrderPlaced(order_id="A1"))
     s.message("user", "...")
     s.state["k"] = v               # persisted on write
@@ -281,12 +283,12 @@ always readable.
 ## Engines
 
 `Engine` is four async methods: `ingest(session, events)`,
-`search_episodes(query, user_id, agent, limit)`, `user_facts(user_id)`,
+`search_recaps(query, user_id, agent, limit)`, `user_profile(user_id)`,
 `forget_user(user_id)`.
 
 | Engine | Status | Notes |
 |---|---|---|
-| `local` | shipped | offline and deterministic: rule-based episode digests, keyword retrieval, explicit facts only. For zero-setup use and reproducible tests |
+| `local` | shipped | offline and deterministic: rule-based recap digests, keyword retrieval, explicit facts only. For zero-setup use and reproducible tests |
 | `graphiti` | shipped | temporal knowledge graph; see "The Graphiti engine" below |
 | `mem0` | shipped | LLM-extracted user memories; see "The Mem0 engine" below |
 
@@ -300,7 +302,7 @@ the store's SQLite file.
 |---|---|
 | one closed session | one episode; the uuid Graphiti assigns is recorded in the local index |
 | a user | one `group_id` (graph partition); ids outside `[A-Za-z0-9_-]` are sanitized and hash-suffixed |
-| recap retrieval | hybrid `search` → facts → the episodes they came from, best first, with the matching facts appended |
+| recap retrieval | hybrid `search` → facts → the recaps they came from, best first, with the matching facts appended |
 | extracted user facts | the group's currently valid entity edges |
 | `forget_user` | delete the group |
 
@@ -459,7 +461,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) — benchmark the memory workload
 - [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — storage interface for projections, Postgres, DynamoDB (see ADR 0001)
 - [#13](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/13) — hardening follow-ups (tool-result TTLs, tool preconditions, implicit
-  feedback, per-engine episode thresholds, step identity, bulk review of agent
+  feedback, per-engine recap thresholds, step identity, bulk review of agent
   writes, pruning projections)
 
 **Waiting on CommonADK:** [#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7), split context delivery once [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30)

@@ -1,9 +1,10 @@
 """The `Store` contract: where the tiers CommonMemo owns itself live.
 
-CommonMemo owns the **event** tier (append-only log) and the **session** tier
-(live state keyed by `session_id`). Both are simple, hot and must never be
-lost, so they sit in a store we control rather than in a wrapped engine.
-Episodic and user memory belong to an `Engine` (see `engines/base.py`).
+CommonMemo owns the **Log** (append-only events) and **Working** memory
+(live session state keyed by `session_id`). Both are simple, hot and must
+never be lost, so they sit in a store we control rather than in a wrapped
+engine. Recaps and the UserProfile belong to an `Engine` (see
+`engines/base.py`).
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ class Store(ABC):
     """Persistence for events and sessions. Implementations must be safe to
     call from multiple threads of one process."""
 
-    # -- event tier ---------------------------------------------------------
+    # -- the Log ------------------------------------------------------------
 
     @abstractmethod
     def append(self, event: MemoryEvent) -> bool:
@@ -93,7 +94,7 @@ class Store(ABC):
         "free"), in one atomic step. Settling a key nobody claimed creates
         the claim with that status."""
 
-    # -- session tier -------------------------------------------------------
+    # -- Working memory -----------------------------------------------------
 
     @abstractmethod
     def open_session(self, record: SessionRecord) -> SessionRecord:

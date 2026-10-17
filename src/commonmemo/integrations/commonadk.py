@@ -13,7 +13,7 @@ runs the same event memory::
     async with mem.session(user_id="u1", agent="coordinator") as s:
         trace = await run_with_memory(s, runner, project, "coordinator", prompt)
 
-How each CommonADK event lands in the event tier:
+How each CommonADK event lands in the Log:
 
 - every event is kept verbatim as an `ExternalEvent(source="commonadk.<type>")`
   -- token counts, cost, transfers and errors included, nothing dropped;

@@ -78,7 +78,7 @@ side-effecting steps are claimed with a conditional write and a lease.
 | Tool memory | **a counter increment on every tool call** | group-by per tool, per agent | tool × agent — **shared across users** |
 
 The read path builds context on every turn: 6–8 small reads (negatives,
-facts, world, lessons, tool notes, episodes, state, resume), all within one
+facts, world, lessons, tool notes, recaps, state, resume), all within one
 user's or session's partition, except tool notes (per tool) and world facts
 (per scope). Latency matters more than throughput here.
 

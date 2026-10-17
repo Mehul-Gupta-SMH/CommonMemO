@@ -1,4 +1,4 @@
-"""Stores for the tiers CommonMemo owns: events and sessions."""
+"""Stores for the tiers CommonMemo owns: the Log and Working memory."""
 
 from __future__ import annotations
 

@@ -1,14 +1,14 @@
-"""The `Engine` contract: who owns episodic and user memory.
+"""The `Engine` contract: who owns Recaps and the UserProfile.
 
 CommonMemo wraps an engine rather than building one. Extraction, retrieval,
 contradiction handling and their optimizations are what dedicated engines
-(Graphiti, Mem0, ...) are good at, so the derived tiers are delegated to
-them behind this one interface. CommonMemo's job is the tier model, the
-event log they are derived from, and the integrations.
+(Graphiti, Mem0, ...) are good at, so the derived tiers -- Recaps and the
+UserProfile -- are delegated to them behind this one interface. CommonMemo's
+job is the tier model, the Log they are derived from, and the integrations.
 
 Two rules every engine must keep:
 
-1. **Provenance.** Every `Episode` and `Fact` carries the ids of the events
+1. **Provenance.** Every `Recap` and `Fact` carries the ids of the events
    it came from (`source_event_ids`), so a memory can always be traced back
    to what actually happened.
 2. **Explicit facts win.** A `UserFact` event is a direct statement; an
@@ -30,7 +30,7 @@ from ..stores.base import SessionRecord, Store
 
 
 @dataclass(frozen=True)
-class Episode:
+class Recap:
     """A consolidated summary of one session."""
 
     id: str
@@ -57,15 +57,15 @@ class Fact:
 
 
 class Engine(ABC):
-    """Owns the episodic and user tiers."""
+    """Owns the Recaps and UserProfile tiers."""
 
     name: str = "engine"
 
     @abstractmethod
     async def ingest(
         self, session: SessionRecord, events: Sequence[MemoryEvent]
-    ) -> list[Episode]:
-        """Consolidate one closed session's events into episodes and facts.
+    ) -> list[Recap]:
+        """Consolidate one closed session's events into recaps and facts.
 
         Called once per session close. Must be idempotent per
         `session.session_id`: ingesting the same session again replaces
@@ -73,19 +73,19 @@ class Engine(ABC):
         """
 
     @abstractmethod
-    async def search_episodes(
+    async def search_recaps(
         self,
         query: str,
         *,
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
         limit: int = 5,
-    ) -> list[Episode]:
-        """Episodes most relevant to `query`, best first."""
+    ) -> list[Recap]:
+        """Recaps most relevant to `query`, best first."""
 
     @abstractmethod
-    async def user_facts(self, user_id: str) -> list[Fact]:
-        """The user's current facts (superseded values excluded)."""
+    async def user_profile(self, user_id: str) -> list[Fact]:
+        """The UserProfile: the user's current facts (superseded values excluded)."""
 
     @abstractmethod
     async def forget_user(self, user_id: str) -> int:
