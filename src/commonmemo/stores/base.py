@@ -34,6 +34,18 @@ class SessionRecord:
 
 
 @dataclass(frozen=True)
+class EventCount:
+    """How many events of `kind` (from `source`, in `scope`) the log took in
+    the bucket starting at `bucket` (epoch seconds)."""
+
+    bucket: float
+    kind: str
+    source: str
+    scope: str
+    n: int
+
+
+@dataclass(frozen=True)
 class ClaimRecord:
     """Who holds a claim (see `Store.claim`), and until when."""
 
@@ -64,6 +76,7 @@ class Store(ABC):
         kinds: Optional[Iterable[str]] = None,
         since: Optional[float] = None,
         limit: Optional[int] = None,
+        run_id: Optional[str] = None,
     ) -> list[MemoryEvent]:
         """Events matching every given filter, oldest first. `limit` keeps
         the most recent `limit` events (still returned oldest first)."""
@@ -75,6 +88,19 @@ class Store(ABC):
         only once every earlier position is visible too, so a reader that
         remembers the last `seq` it saw never misses one. This is how the
         projections catch up with the log."""
+
+    @abstractmethod
+    def position(self, *, event_id: Optional[str] = None, at: Optional[float] = None) -> int:
+        """A log position: that of `event_id`; else that of the last event
+        logged at or before `at` (epoch seconds); else the latest. 0 when
+        there is none."""
+
+    @abstractmethod
+    def event_counts(self, *, since: Optional[float] = None, until: Optional[float] = None,
+                     bucket: float = 86400.0) -> list[EventCount]:
+        """Events per `bucket`-second window, by kind, source and scope,
+        oldest first. Includes what `prune` has since deleted, from the daily
+        rollups it writes first, so pruned stretches count per day."""
 
     @abstractmethod
     def claim(self, key: str, *, session_id: Optional[str], owner: str, lease_until: float,
@@ -129,7 +155,8 @@ class Store(ABC):
     @abstractmethod
     def prune(self, *, older_than: float) -> int:
         """Delete events older than `older_than` (epoch seconds) and expired
-        sessions; return how many rows were removed."""
+        sessions; return how many rows were removed. Daily counts of the
+        deleted events are kept first (see `event_counts`)."""
 
     def close(self) -> None:
         """Release resources. Default: nothing to release."""

@@ -93,9 +93,11 @@ class Session:
     """Create through `Memory.session(...)`, then use as a context manager
     (`async with` or `with`), or call `aclose()` yourself."""
 
-    def __init__(self, memory: "Memory", record: SessionRecord) -> None:
+    def __init__(self, memory: "Memory", record: SessionRecord, *, run_id: Optional[str] = None) -> None:
         self.memory = memory
         self._record = record
+        self.run_id = run_id
+        """Tags this session's events; else the active `mem.run(...)`, if any."""
         self.state = SessionState(self, record.state)
         self.recaps: list[Recap] = []
         """What consolidation produced at close (empty until then)."""
@@ -133,7 +135,10 @@ class Session:
                 f"commonmemo: session {self.session_id!r} is closed; open a new one "
                 "or resume it with Memory.session(session_id=...) before recording"
             )
-        return event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent)
+        from .runs import current_run
+
+        return event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent,
+                          run_id=self.run_id or current_run())
 
     def message(self, role: str, content: str) -> MemoryEvent:
         """Shorthand for recording a `Message`."""

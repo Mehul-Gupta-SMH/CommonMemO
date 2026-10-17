@@ -35,9 +35,12 @@ from .events import (
     WorldFactConfirmed,
     WorldFactRejected,
     WorldFactRetracted,
+    Snapshot,
 )
 from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, WorldRecord, source_rank
+from .history import Diff, History, MemoryView, Point, as_of, diff
 from .resume import make_step
+from .runs import Run, current_run
 from .session import Session, current_session
 from .tool_memory import ToolProfile
 from .stores import SQLiteStore, Store, store_from_url
@@ -112,6 +115,7 @@ class Memory:
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
         ttl: Optional[float] = None,
+        run_id: Optional[str] = None,
     ) -> Session:
         """Open a new session, or resume an existing one by `session_id`.
 
@@ -137,7 +141,12 @@ class Memory:
                 expires_at=now + ttl if ttl is not None else None,
             )
         )
-        return Session(self, record)
+        return Session(self, record, run_id=run_id)
+
+    def run(self, run_id: Optional[str] = None) -> Run:
+        """Tag every event written inside it with `run_id` (generated when
+        omitted): `with mem.run("deploy-42"): ...`. See `runs.py`."""
+        return Run(run_id)
 
     # -- events -------------------------------------------------------------
 
@@ -147,16 +156,20 @@ class Memory:
         session = current_session()
         if session is not None and session.memory is self and not session.closed:
             return session.record(event)
-        self._append(event)
-        return event
+        return self._append(event)
 
-    def _append(self, event: MemoryEvent) -> None:
-        """Log `event`, then bring the projections up to date with the log.
-        A duplicate delivery (same event id) is not logged again, so it is
-        never counted twice; catching up still runs, so an event an earlier
-        process logged but never applied is applied now."""
+    def _append(self, event: MemoryEvent) -> MemoryEvent:
+        """Log `event` (tagged with the active run, if it has no `run_id`),
+        then bring the projections up to date with the log; return what was
+        logged. A duplicate delivery (same event id) is not logged again, so
+        it is never counted twice; catching up still runs, so an event an
+        earlier process logged but never applied is applied now."""
+        run_id = current_run()
+        if run_id is not None and event.run_id is None:
+            event = event.bind(run_id=run_id)
         self.store.append(event)
         self.knowledge.catch_up(self.store)
+        return event
 
     def step(
         self,
@@ -391,8 +404,7 @@ class Memory:
     def _append_outside_session(self, event: MemoryEvent) -> MemoryEvent:
         # Review actions are an operator's, not part of whatever session
         # happens to be current, so they never take a session's envelope.
-        self._append(event)
-        return event
+        return self._append(event)
 
     def world_facts(self, scopes: Optional[list[str]] = None, *, include_stale: bool = False) -> list[WorldRecord]:
         """Current world facts in `scopes` (default: global + the project)."""
@@ -430,6 +442,29 @@ class Memory:
             if notes:
                 out[tool] = notes
         return out
+
+    # -- history (ADR 0004) --------------------------------------------------
+
+    def history(self) -> History:
+        """Read-only metrics over the Log: velocity, source mix, churn,
+        review flow, staleness, growth, and what one run wrote."""
+        return History(self)
+
+    def snapshot(self, label: str) -> MemoryEvent:
+        """Name the current log position, for `as_of` and `diff`. Nothing is
+        copied: the log up to here is the snapshot."""
+        return self._append_outside_session(Snapshot(label=label))
+
+    def as_of(self, point: Point) -> MemoryView:
+        """The kinds CommonMemo owns as they were at `point`: a log position
+        (`int`), a time (`float`, epoch seconds) or a snapshot label (`str`).
+        Replayed from the Log into a scratch projection; data forgotten since
+        is gone from it too."""
+        return as_of(self, point)
+
+    def diff(self, since: Point, until: Point = None) -> Diff:
+        """What changed between two points (`until` defaults to now)."""
+        return diff(self, since, until)
 
     def rebuild_knowledge(self) -> None:
         """Recompute the structured projections from the event log."""

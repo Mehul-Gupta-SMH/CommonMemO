@@ -44,6 +44,10 @@ class MemoryEvent:
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     agent: Optional[str] = None
+    run_id: Optional[str] = None
+    """What produced this event: a deploy, an import, a consolidation run, a
+    framework run (`mem.run(...)`, `mem.session(run_id=...)`). Lets history
+    answer "what did run R change?" and, later, revert by cause."""
 
     kind: ClassVar[str] = "event"
 
@@ -286,6 +290,13 @@ class StepFailed(MemoryEvent):
     error: str
 
 
+class Snapshot(MemoryEvent):
+    """A named position in the log (`Memory.snapshot`), for `as_of` and
+    `diff`. Nothing is copied: the log up to here is the snapshot."""
+
+    label: str
+
+
 class ExternalEvent(MemoryEvent):
     """An event from another system, kept verbatim (`source` names it,
     e.g. `commonadk.tool_call`). Integrations translate into this."""
@@ -296,7 +307,7 @@ class ExternalEvent(MemoryEvent):
 
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
-    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted,
+    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -333,6 +344,7 @@ __all__ = [
     "WorldFactConfirmed",
     "WorldFactRejected",
     "WorldFactRetracted",
+    "Snapshot",
     "Feedback",
     "Negative",
     "NegativeRevoked",

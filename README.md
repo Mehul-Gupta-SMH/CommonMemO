@@ -111,6 +111,22 @@ claimed before they run, so even several workers resuming one session at
 once run each of them at most once; the others get `StepInProgress` while
 the winner's lease is live.
 
+## See how memory changes
+
+```python
+with mem.run("deploy-42"):                  # tags everything written inside
+    mem.learn("refund_window", "30 days")
+
+mem.snapshot("before v3")
+h = mem.history()
+h.velocity(bucket=3600)                     # writes per hour, by kind/source/scope
+h.churn(); h.review_flow(); h.by_run("deploy-42")
+mem.as_of("before v3").world_facts()        # memory as it was then
+mem.diff("before v3")                       # what changed since
+```
+
+Read-only for now; reverting is next ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
+
 ## With Graphiti
 
 ```python

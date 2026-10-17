@@ -1,6 +1,6 @@
 # ADR 0004 — Memory history: analytics, point-in-time reads and reversion
 
-**Status:** Proposed · **Date:** 2026-10-17 · **Tracks:** [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)
+**Status:** Proposed; phase 1 implemented (read-only history, `run_id`) · **Date:** 2026-10-17 · **Tracks:** [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)
 
 ## Context
 
@@ -118,8 +118,9 @@ revertible in phase 2; extracted ones need re-consolidation.
   profile facts first, re-consolidation of engines in phase 3.
 - **Automatic freeze on by default?** Recommended: opt-in, with alerts on
   by default.
-- **`run_id` now?** Recommended: yes. Without it, revert by cause is
-  impossible for everything written before it lands.
+- ~~**`run_id` now?**~~ **Decided (owner, 2026-10-17): yes**, shipped with
+  phase 1. Without it, revert by cause would be impossible for everything
+  written before it landed.
 
 ## Alternatives considered
 

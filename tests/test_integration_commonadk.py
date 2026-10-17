@@ -73,6 +73,8 @@ def test_translate_maps_tool_calls_and_keeps_everything_else_verbatim():
     assert isinstance(finished[0], ExternalEvent) and finished[0].source == "commonadk.run_finished"
     assert finished[0].data["total_tokens"] == 5 and finished[0].data["total_cost_usd"] is None
     assert isinstance(finished[1], Message) and finished[1].role == "assistant"
+    # Every translated event carries the CommonADK run as its run_id.
+    assert {e.run_id for e in tool + finished} == {"commonadk:r"}
 
 
 def test_run_with_memory_splits_stable_and_turn_memory_and_records():

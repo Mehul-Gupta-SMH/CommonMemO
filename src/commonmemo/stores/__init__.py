@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import ClaimRecord, SessionRecord, Store
+from .base import ClaimRecord, EventCount, SessionRecord, Store
 from .sqlite import SQLiteStore
 
 
@@ -21,4 +21,4 @@ def store_from_url(url: str) -> Store:
     raise ValueError(f"commonmemo: unknown store scheme {scheme!r} (known: 'sqlite')")
 
 
-__all__ = ["Store", "SessionRecord", "ClaimRecord", "SQLiteStore", "store_from_url"]
+__all__ = ["Store", "SessionRecord", "ClaimRecord", "EventCount", "SQLiteStore", "store_from_url"]
