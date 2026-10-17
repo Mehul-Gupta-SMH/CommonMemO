@@ -38,7 +38,6 @@ from .events import (
     StepFailed,
     StepFinished,
     UserFact,
-    WorldFact,
 )
 from .resume import ResumePoint
 from .stores.base import SessionRecord
@@ -160,16 +159,11 @@ class Session:
     ) -> MemoryEvent:
         """Record a world fact (not about the user). `scope` defaults to the
         memory's project (`project:<name>`), else `global`. `ttl` in seconds
-        marks it time-sensitive."""
-        return self.record(
-            WorldFact(
-                key=key,
-                value=value,
-                scope=scope or self.memory.project_scope,
-                valid_until=time.time() + ttl if ttl else None,
-                source=source,
-            )
-        )
+        marks it time-sensitive. A fact from an agent (`source="agent"`) is a
+        proposal until `Memory.confirm_fact`, unless the memory was opened
+        with `world_fact_approval=False`: until then only this user (or, with
+        no user, this session) sees it."""
+        return self.record(self.memory._world_fact(key, value, scope=scope, ttl=ttl, source=source))
 
     def feedback(
         self,
@@ -300,6 +294,13 @@ class Session:
                 )
             ctx.facts = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
             ctx.facts = ctx.facts[: policy.max_facts]
+        # This user's (or, with no user, this session's) own unapproved world
+        # facts: true for them as far as they told us, never for anyone else.
+        world_scopes = [s for s in self.scopes if not s.startswith(("user:", "agent:"))]
+        pending = self.memory.knowledge.pending_world_facts(
+            world_scopes, user_id=self.user_id, session_id=None if self.user_id else self.session_id
+        )
+        ctx.world = ctx.world + [w for w in pending if w.status == "proposed"]
         ctx.state = self.state.to_dict()
         ctx.recent = self.events(limit=policy.recent) if policy.recent else []
         resume = self.resume_point()

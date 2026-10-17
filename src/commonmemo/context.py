@@ -20,6 +20,7 @@ constraints -- they are the user's own "never do X".
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -73,6 +74,22 @@ def _line(event: MemoryEvent) -> str:
     return f"{event.kind}: {event.payload}"
 
 
+_SOURCE_LABEL = {"explicit": "operator", "confirmed": "confirmed by an operator", "agent": "agent",
+                 "tool": "tool result", "extracted": "extracted"}
+
+
+def world_line(w: "WorldRecord") -> str:
+    """`key: value (as of <date>, <source>)`, so the agent can weigh a fact
+    by how old it is and where it came from."""
+    when = time.strftime("%Y-%m-%d", time.gmtime(w.valid_from))
+    notes = [f"as of {when}", _SOURCE_LABEL.get(w.source, w.source)]
+    if w.valid_until:
+        notes.append("time-sensitive")
+    if w.pending:
+        notes.append("unconfirmed: noted in this conversation, not yet approved")
+    return f"{w.key}: {w.value} ({', '.join(notes)})"
+
+
 def _clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
@@ -107,11 +124,7 @@ class MemoryContext:
         if self.facts:
             sections.append("## About this user\n" + "\n".join(f"- {f.key}: {f.value}" for f in self.facts))
         if self.world:
-            sections.append(
-                "## Known facts\n"
-                + "\n".join(f"- {w.key}: {w.value}" + (" (time-sensitive)" if w.valid_until else "")
-                            for w in self.world)
-            )
+            sections.append("## Known facts\n" + "\n".join(f"- {world_line(w)}" for w in self.world))
         if self.lessons:
             sections.append("## Feedback from past sessions\n" + "\n".join(f"- {l.line()}" for l in self.lessons))
         if self.tool_notes and self.policy.tool_notes_in_text:

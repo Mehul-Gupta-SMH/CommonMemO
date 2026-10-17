@@ -187,6 +187,23 @@ Facts about the world or a project, not a user: `scope` is `global` or
 `project:<name>` (`Memory(project=...)`). A new value for `(scope, key)`
 supersedes the old one with history kept; `valid_until` (a TTL) marks facts
 that go stale — a price, a status — which stop being pushed once past it.
+`retract_fact` ends a fact with nothing replacing it.
+
+A world fact is pushed to every user in its scope, so who may change one
+matters ([ADR 0002](adr/0002-world-fact-trust.md)):
+
+- **Agent writes are proposals** until an operator approves them
+  (`confirm_fact`, `reject_fact`, `pending_world_facts`). A proposal is shown
+  only to the user who caused it, marked as unconfirmed.
+  `Memory(world_fact_approval=False)` turns approval off.
+- **Source decides before recency.** `extracted` < `agent` < `tool` <
+  application code. A less trusted write never supersedes a more trusted
+  fact; it is kept as *disputed* for review.
+- **The agent sees age and source**: `refund_window: 30 days (as of
+  2026-10-14, operator)`.
+
+Still open ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)): a key registry, per-key lifetimes, pinned versus
+query-ranked facts, conditional facts and bulk import.
 
 ### Feedback
 
@@ -422,6 +439,9 @@ What exists, and what CommonMemo takes from it:
   in a relational, ACID-per-partition store (SQLite by default, Postgres shared, distributed
   SQL to scale, DynamoDB as the non-SQL backend), and two correctness gaps it found
   ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16), both fixed in [#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
+- [ADR 0002 — who may change a world fact](adr/0002-world-fact-trust.md) (accepted): agent-written
+  world facts are proposals until an operator approves them; a less trusted source never
+  supersedes a more trusted one ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)).
 
 ## Roadmap
 

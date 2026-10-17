@@ -28,7 +28,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
-from .events import Checkpoint, Negative, UserFact, WorldFact
+from .context import world_line
+from .events import Checkpoint, Negative, UserFact
 
 if TYPE_CHECKING:
     from .session import Session
@@ -73,7 +74,7 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
         lines = []
         lines += [f"[user] {f.key}: {f.value}" for f in ctx.facts if _overlap(query, f"{f.key} {f.value}")]
-        lines += [f"[fact] {w.key}: {w.value}" for w in ctx.world if _overlap(query, f"{w.key} {w.value}")]
+        lines += [f"[fact] {world_line(w)}" for w in ctx.world if _overlap(query, f"{w.key} {w.value}")]
         lines += [f"[feedback] {l.line()}" for l in ctx.lessons if _overlap(query, l.line())]
         lines += [f"[past session] {e.summary}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
@@ -97,8 +98,10 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         return f"Saved: {key} = {value}"
 
     def memory_note_fact(key: str, value: str, valid_for_seconds: int = 0) -> str:
-        """Save a fact about the world or this project (not about the user)
+        """Note a fact about the world or this project (not about the user)
         for future sessions, e.g. key "refund_window", value "30 days".
+        Facts you note are proposals: only this user sees them until an
+        operator approves them, because a world fact is shown to every user.
         Set valid_for_seconds for facts that go stale (prices, statuses);
         0 means it does not expire.
 
@@ -107,7 +110,9 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             value: The fact itself.
             valid_for_seconds: How long the fact stays true; 0 for no expiry.
         """
-        session.learn(key, value, ttl=valid_for_seconds or None, source="agent")
+        event = session.learn(key, value, ttl=valid_for_seconds or None, source="agent")
+        if event.proposed:
+            return f"Proposed fact (other users see it once an operator approves it): {key} = {value}"
         return f"Saved fact: {key} = {value}"
 
     def memory_avoid(statement: str, reason: str = "") -> str:

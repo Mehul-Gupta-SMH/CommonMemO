@@ -160,15 +160,53 @@ class WorldFact(MemoryEvent):
     window is 30 days", "this repo targets Python 3.10".
 
     `scope` is `global` or `project:<name>`. A later fact with the same
-    `(scope, key)` supersedes the earlier one (history is kept).
+    `(scope, key)` supersedes the earlier one (history is kept) -- unless it
+    comes from a less trusted `source` than the current one (see
+    `knowledge.source_rank`), in which case it is kept as *disputed*.
     `valid_until` (epoch seconds) marks facts that go stale -- a price, an
     order status: past it, the fact is no longer current and is not pushed.
+
+    `proposed` facts wait for approval (`Memory.confirm_fact`) before anyone
+    but the user or session that proposed them sees them. A world fact
+    reaches every user in its scope, so one conversation must not be able to
+    change what everyone is told. `None` decides by source: agent-written
+    and extracted facts are proposals.
     """
 
     key: str
     value: str
     scope: str = "global"
     valid_until: Optional[float] = None
+    source: str = "explicit"
+    proposed: Optional[bool] = None
+
+
+class WorldFactConfirmed(MemoryEvent):
+    """An operator approved a proposed or disputed world fact (`fact_id`).
+    It carries a copy of the fact, so the approval stands on its own even
+    after the conversation that proposed it is forgotten."""
+
+    fact_id: str
+    key: str
+    value: str
+    scope: str = "global"
+    valid_until: Optional[float] = None
+
+
+class WorldFactRejected(MemoryEvent):
+    """An operator turned down a proposed or disputed world fact."""
+
+    fact_id: str
+    reason: Optional[str] = None
+
+
+class WorldFactRetracted(MemoryEvent):
+    """`(scope, key)` is no longer true, and nothing replaces it: "we no
+    longer offer refunds". History is kept."""
+
+    key: str
+    scope: str = "global"
+    reason: Optional[str] = None
     source: str = "explicit"
 
 
@@ -258,6 +296,7 @@ class ExternalEvent(MemoryEvent):
 
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
+    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -268,7 +307,7 @@ def describe(event: MemoryEvent) -> Optional[str]:
     """One plain-language line for the structured kinds, from the user's
     point of view; None for kinds without one."""
     if isinstance(event, Feedback):
-        if event.kind == "correction":
+        if event.feedback_kind == "correction":
             return f"No, not '{event.wrong}' but '{event.right}'." + (f" {event.comment}" if event.comment else "")
         mood = {1: "That was helpful.", -1: "That was not helpful."}.get(
             None if event.rating is None else (1 if event.rating > 0 else -1 if event.rating < 0 else 0), ""
@@ -277,6 +316,8 @@ def describe(event: MemoryEvent) -> Optional[str]:
     if isinstance(event, Negative):
         return f"Never {event.statement}." + (f" ({event.reason})" if event.reason else "")
     if isinstance(event, WorldFact):
+        if event.proposed:
+            return None  # an unapproved claim: engines must not learn it as stated fact
         return f"Note: {event.key} is {event.value}."
     return None
 
@@ -289,6 +330,9 @@ __all__ = [
     "ToolInvoked",
     "UserFact",
     "WorldFact",
+    "WorldFactConfirmed",
+    "WorldFactRejected",
+    "WorldFactRetracted",
     "Feedback",
     "Negative",
     "NegativeRevoked",

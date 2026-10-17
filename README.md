@@ -18,7 +18,8 @@ recap is a `Recap` (`ctx.recaps`, `engine.search_recaps`) and the profile is
 
 Beside the tiers, CommonMemo keeps **structured kinds** of memory itself:
 **tool memory** (which tools fail, how, and what fixed it — never the
-users' data), **world facts** (with expiry), **feedback** (ratings and
+users' data), **world facts** (with expiry; an agent's are proposals until
+an operator approves them), **feedback** (ratings and
 corrections), **negatives** ("never do X", and tombstones for "forget
 this"), and **resume points** (checkpoints and replayable steps, so a
 stopped process continues where it was).

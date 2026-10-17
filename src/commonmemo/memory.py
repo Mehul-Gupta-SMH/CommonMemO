@@ -26,8 +26,17 @@ from typing import Any, Callable, Optional, TypeVar, Union, overload
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
 from .engines import Engine, Fact, LocalEngine, engine_from_name
-from .events import MemoryEvent, Negative, NegativeRevoked, ToolInvoked, WorldFact
-from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, WorldRecord
+from .events import (
+    MemoryEvent,
+    Negative,
+    NegativeRevoked,
+    ToolInvoked,
+    WorldFact,
+    WorldFactConfirmed,
+    WorldFactRejected,
+    WorldFactRetracted,
+)
+from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, WorldRecord, source_rank
 from .resume import make_step
 from .session import Session, current_session
 from .tool_memory import ToolProfile
@@ -58,6 +67,7 @@ class Memory:
         project: Optional[str] = None,
         policy: Optional[MemoryPolicy] = None,
         session_ttl: Optional[float] = None,
+        world_fact_approval: bool = True,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -83,6 +93,11 @@ class Memory:
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
         """Default lifetime of a session in seconds (`None`: no expiry)."""
+        self.world_fact_approval = world_fact_approval
+        """Agent-written world facts wait for `confirm_fact` before anyone but
+        the user or session that proposed them sees them (default). A world
+        fact reaches every user in its scope; without approval, one
+        conversation could change what everyone is told."""
 
     @property
     def project_scope(self) -> str:
@@ -330,8 +345,54 @@ class Memory:
     def learn(self, key: str, value: str, *, scope: Optional[str] = None, ttl: Optional[float] = None,
               source: str = "explicit") -> MemoryEvent:
         """Record a world fact outside any session (see `Session.learn`)."""
-        return self.record(WorldFact(key=key, value=value, scope=scope or self.project_scope,
-                                     valid_until=time.time() + ttl if ttl else None, source=source))
+        return self.record(self._world_fact(key, value, scope=scope, ttl=ttl, source=source))
+
+    def _world_fact(self, key: str, value: str, *, scope: Optional[str], ttl: Optional[float],
+                    source: str) -> WorldFact:
+        # Decided now and recorded in the event, so rebuilding the
+        # projections from the log gives the same answer under any setting.
+        proposed = self.world_fact_approval and source_rank(source) <= 1
+        return WorldFact(key=key, value=value, scope=scope or self.project_scope,
+                         valid_until=time.time() + ttl if ttl else None, source=source, proposed=proposed)
+
+    def pending_world_facts(self, scopes: Optional[list[str]] = None) -> list[WorldRecord]:
+        """World facts waiting for review, oldest first: proposals (agent
+        writes) and disputed facts (a less trusted source contradicting a
+        current fact). Settle each with `confirm_fact` or `reject_fact`."""
+        return self.knowledge.pending_world_facts(scopes)
+
+    def _pending(self, fact_id: str) -> WorldRecord:
+        record = self.knowledge.world_fact(fact_id)
+        if record is None or not record.pending:
+            raise ValueError(f"commonmemo: no pending world fact {fact_id!r} (see pending_world_facts())")
+        return record
+
+    def confirm_fact(self, fact_id: str, *, value: Optional[str] = None) -> MemoryEvent:
+        """Approve a pending world fact: it becomes current for everyone in
+        its scope, with an operator's rank. `value` corrects it on the way."""
+        record = self._pending(fact_id)
+        return self._append_outside_session(WorldFactConfirmed(
+            fact_id=fact_id, key=record.key, value=record.value if value is None else value,
+            scope=record.scope, valid_until=record.valid_until,
+        ))
+
+    def reject_fact(self, fact_id: str, *, reason: Optional[str] = None) -> MemoryEvent:
+        """Turn down a pending world fact. It stays in the history."""
+        self._pending(fact_id)
+        return self._append_outside_session(WorldFactRejected(fact_id=fact_id, reason=reason))
+
+    def retract_fact(self, key: str, *, scope: Optional[str] = None, reason: Optional[str] = None) -> MemoryEvent:
+        """`key` is no longer true and nothing replaces it ("we no longer
+        offer refunds"). History is kept."""
+        return self._append_outside_session(
+            WorldFactRetracted(key=key, scope=scope or self.project_scope, reason=reason)
+        )
+
+    def _append_outside_session(self, event: MemoryEvent) -> MemoryEvent:
+        # Review actions are an operator's, not part of whatever session
+        # happens to be current, so they never take a session's envelope.
+        self._append(event)
+        return event
 
     def world_facts(self, scopes: Optional[list[str]] = None, *, include_stale: bool = False) -> list[WorldRecord]:
         """Current world facts in `scopes` (default: global + the project)."""

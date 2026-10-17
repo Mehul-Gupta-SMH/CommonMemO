@@ -39,7 +39,8 @@ def test_agent_writes_are_marked_and_take_effect():
         t["memory_save_progress"]("drafted reply", '{"draft": 1}')
         events = s.events()
     assert {e.kind: getattr(e, "source", None) for e in events}["user_fact"] == "agent"
-    assert mem.world_facts()[0].source == "agent"
+    assert mem.world_facts() == []  # an agent's world fact is a proposal, not yet everyone's
+    assert [(w.key, w.source, w.status) for w in mem.pending_world_facts()] == [("refund_window", "agent", "proposed")]
     assert mem.negatives(["user:u1"])[0].source == "agent"
     assert s.resume_point().checkpoint.data == {"draft": 1}
     with mem.session(user_id="u1", agent="support") as s:
