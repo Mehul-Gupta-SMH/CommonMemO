@@ -1,16 +1,16 @@
-"""`Session` -- the session tier, and the scope everything else hangs off.
+"""`Session` -- one run: its Working memory, and the scope everything else hangs off.
 
 A session is one conversation or one workflow run. While it is open:
 
 - every event recorded through it (or through `@mem.track` while it is the
   current session) is stamped with its `session_id`, `user_id` and `agent`
-  and appended to the event log;
+  and appended to the Log;
 - `session.state` is working memory, persisted on every write, so a
   session resumed by id (even from another process or harness) continues
   where it stopped.
 
 Closing it hands the session's events to the engine for consolidation into
-episodic and user memory.
+a recap and UserProfile facts.
 
 Beyond the four tiers, a session is where the structured kinds are written:
 `learn` (world facts), `feedback` / `correct`, `never` (negatives),
@@ -27,7 +27,7 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Iterator, Optional
 
 from .context import MemoryContext, MemoryPolicy
-from .engines.base import Episode, Fact
+from .engines.base import Recap, Fact
 from .events import (
     Checkpoint,
     Feedback,
@@ -98,7 +98,7 @@ class Session:
         self.memory = memory
         self._record = record
         self.state = SessionState(self, record.state)
-        self.episodes: list[Episode] = []
+        self.recaps: list[Recap] = []
         """What consolidation produced at close (empty until then)."""
         self._token: Optional[contextvars.Token] = None
         self._closed = not record.is_open
@@ -265,29 +265,29 @@ class Session:
         query: Optional[str] = None,
         *,
         policy: Optional[MemoryPolicy] = None,
-        episodes: Optional[int] = None,
+        recaps: Optional[int] = None,
         recent: Optional[int] = None,
         local_only: bool = False,
     ) -> MemoryContext:
         """What memory pushes for a turn about `query` (see `MemoryPolicy`):
         negatives, user facts, world facts, lessons and tool notes (stable);
-        relevant past episodes, session state, recent events and where a
-        resumed process stands (turn). `episodes` / `recent` override the
+        relevant past recaps, session state, recent events and where a
+        resumed process stands (turn). `recaps` / `recent` override the
         policy. `local_only` skips the wrapped engine's own search."""
         policy = policy or self.memory.policy
-        if episodes is not None or recent is not None:
+        if recaps is not None or recent is not None:
             from dataclasses import replace
 
             policy = replace(
                 policy,
-                **({"episodes": episodes} if episodes is not None else {}),
+                **({"recaps": recaps} if recaps is not None else {}),
                 **({"recent": recent} if recent is not None else {}),
             )
         ctx = await self.memory._long_term(
             query, user_id=self.user_id, agent=self.agent, policy=policy,
             scopes=self.scopes, local_only=local_only,
         )
-        ctx.episodes = [e for e in ctx.episodes if e.session_id != self.session_id]
+        ctx.recaps = [e for e in ctx.recaps if e.session_id != self.session_id]
         # Facts stated in this session reach the engine only at close, but
         # they are true now: overlay them (latest per key wins), then apply
         # tombstones again -- a fact forgotten in this session stays gone.
@@ -308,18 +308,18 @@ class Session:
 
     # -- closing ------------------------------------------------------------
 
-    async def aclose(self, *, consolidate: bool = True) -> list[Episode]:
+    async def aclose(self, *, consolidate: bool = True) -> list[Recap]:
         """Close the session and, unless `consolidate=False`, hand its
         events to the engine. Closing twice is a no-op."""
         if self._closed:
-            return self.episodes
+            return self.recaps
         self._closed = True
         closed_at = time.time()
         self.memory.store.close_session(self.session_id, closed_at)
         self._record.closed_at = closed_at
         if consolidate:
-            self.episodes = await self.memory.engine.ingest(self._record, self.events())
-        return self.episodes
+            self.recaps = await self.memory.engine.ingest(self._record, self.events())
+        return self.recaps
 
     async def __aenter__(self) -> "Session":
         self._token = _current.set(self)

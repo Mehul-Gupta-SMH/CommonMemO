@@ -3,10 +3,10 @@
 Four tiers behind one `Memory` handle, plus structured kinds (tool memory,
 world facts, feedback, negatives, resume points) kept beside them:
 
-- **event**    -- append-only log of what happened (owned by CommonMemo)
-- **session**  -- live working state of one conversation/run (owned by CommonMemo)
-- **episodic** -- consolidated summaries of past sessions (delegated to an engine)
-- **user**     -- durable facts about a user (delegated to an engine)
+- **Log**         -- everything that happened, in order, never edited (owned by CommonMemo)
+- **Working**     -- what the current conversation or run has in hand (owned by CommonMemo)
+- **Recaps**      -- short summaries of finished sessions (delegated to an engine)
+- **UserProfile** -- durable facts about one user (delegated to an engine)
 
 See docs/design.md for the full design.
 """
@@ -14,7 +14,7 @@ See docs/design.md for the full design.
 from __future__ import annotations
 
 from .context import MemoryContext, MemoryPolicy
-from .engines import Engine, Episode, Fact, LocalEngine
+from .engines import Engine, Fact, LocalEngine, Recap
 from .events import (
     Checkpoint,
     ExternalEvent,
@@ -58,7 +58,7 @@ __all__ = [
     "ExternalEvent",
     "event_from_dict",
     "Engine",
-    "Episode",
+    "Recap",
     "Fact",
     "LocalEngine",
     "Store",

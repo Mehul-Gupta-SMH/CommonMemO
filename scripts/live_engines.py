@@ -99,19 +99,19 @@ async def scenario(name: str) -> list[tuple[str, bool, str]]:
         ctx = await s.context("which city does the user live in now?")
     facts = [f.value for f in ctx.facts]
     print("   facts:", facts)
-    print("   episodes:", [(e.session_id, round(e.score or 0, 2)) for e in ctx.episodes])
+    print("   recaps:", [(e.session_id, round(e.score or 0, 2)) for e in ctx.recaps])
     print("   rendered context:\n" + "\n".join("     | " + line for line in ctx.render().splitlines()))
 
     text = " ".join(facts).lower()
     checks.append(("user facts mention Bangalore", "bangalore" in text, "; ".join(facts)))
     checks.append(("user facts mention email follow-ups", "email" in text, "; ".join(facts)))
-    checks.append(("move session retrieved", any(e.session_id == "live-2" for e in ctx.episodes),
-                   str([e.session_id for e in ctx.episodes])))
+    checks.append(("move session retrieved", any(e.session_id == "live-2" for e in ctx.recaps),
+                   str([e.session_id for e in ctx.recaps])))
     checks.append(("every extracted fact has provenance",
                    all(f.source_event_ids for f in ctx.facts), ""))
 
     await mem.forget_user("ada")
-    after = await mem.engine.user_facts("ada")
+    after = await mem.engine.user_profile("ada")
     checks.append(("forget_user leaves nothing", after == [], str([f.value for f in after])))
     await mem.aclose()
     return checks

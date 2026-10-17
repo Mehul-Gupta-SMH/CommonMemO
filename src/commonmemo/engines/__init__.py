@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import Engine, Episode, Fact
+from .base import Engine, Recap, Fact
 from .local import LocalEngine
 
 _PLANNED: dict[str, str] = {}
@@ -41,4 +41,4 @@ def engine_from_name(name: str, **options: Any) -> Engine:
     )
 
 
-__all__ = ["Engine", "Episode", "Fact", "LocalEngine", "engine_from_name", "known_engines"]
+__all__ = ["Engine", "Recap", "Fact", "LocalEngine", "engine_from_name", "known_engines"]

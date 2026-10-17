@@ -129,12 +129,12 @@ def test_feedback_rating_range_is_checked():
         s.feedback(5)
 
 
-def test_feedback_reaches_episodes():
+def test_feedback_reaches_recaps():
     mem = Memory()
     with mem.session(user_id="u1") as s:
         s.message("user", "summarize this")
         s.feedback(-1, "too long")
-    assert "That was not helpful. too long" in s.episodes[0].summary
+    assert "That was not helpful. too long" in s.recaps[0].summary
 
 
 # -- negatives and tombstones ------------------------------------------------
@@ -220,13 +220,13 @@ def test_rebuild_reproduces_every_projection(tmp_path):
 # -- policy -------------------------------------------------------------------
 
 
-def test_unrelated_episodes_are_not_pushed_but_recall_finds_them():
+def test_unrelated_recaps_are_not_pushed_but_recall_finds_them():
     mem = Memory()
     with mem.session(user_id="u1") as s:
         s.message("user", "my laptop will not charge")
     with mem.session(user_id="u1") as s:
-        assert run(s.context("tax forms")).episodes == []  # below the threshold
-        assert len(run(s.context("laptop charge")).episodes) == 1
+        assert run(s.context("tax forms")).recaps == []  # below the threshold
+        assert len(run(s.context("laptop charge")).recaps) == 1
 
 
 def test_recent_events_are_off_by_default():

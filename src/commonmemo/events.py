@@ -1,8 +1,8 @@
-"""The event tier: `MemoryEvent` and the built-in event types.
+"""What goes into the Log: `MemoryEvent` and the built-in event types.
 
 An event is an immutable record of something that happened. Events are the
-source of truth -- session state is derived live from them, and episodic and
-user memory are consolidated from them at session close. Every derived memory
+source of truth -- Working memory is derived live from them, and recaps and
+UserProfile facts are consolidated from them at session close. Every derived memory
 keeps the ids of the events it came from (provenance).
 
 Defining your own event is subclassing, nothing more::
@@ -142,7 +142,7 @@ class ToolInvoked(MemoryEvent):
 class UserFact(MemoryEvent):
     """An explicit, durable fact about a user (`key` -> `value`).
 
-    Recording one is the deterministic path into user memory -- every engine
+    Recording one is the deterministic path into the UserProfile -- every engine
     must honor it. Engines that extract facts with an LLM add to this; they
     never replace it. A later fact with the same `key` supersedes an earlier
     one rather than accumulating next to it.

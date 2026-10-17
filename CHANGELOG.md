@@ -21,8 +21,20 @@ Correctness fixes:
   refused.
 
 Tier names: the four tiers are now **Log**, **Working**, **Recaps** and
-**UserProfile** (before: event, session, episodic, user). Docs only so far;
-the code follows in [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19).
+**UserProfile** (before: event, session, episodic, user), in the docs and in
+code ([#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19)). Renamed, with no aliases (nothing is released yet):
+
+- `Episode` → `Recap`; `MemoryContext.episodes` and `Session.episodes` →
+  `.recaps`
+- `Engine.search_episodes` → `Engine.search_recaps`; `Engine.user_facts` →
+  `Engine.user_profile`
+- `MemoryPolicy.episodes` → `.recaps`, `min_episode_score` →
+  `min_recap_score`; `Session.context(episodes=)` and
+  `Memory.context(episodes=)` → `recaps=`
+
+Unchanged: event types (`UserFact`, ...), `Fact`, Graphiti's own episode
+API, the SQLite table names (renaming them would hide existing data), and
+the headings the agent sees, which stay in plain English.
 
 Structured memory kinds and hybrid reads:
 

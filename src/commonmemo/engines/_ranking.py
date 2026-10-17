@@ -5,23 +5,23 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Iterable
 
-from .base import Episode
+from .base import Recap
 
 
 def rank_by_hits(
     hits: Iterable[tuple[str, Iterable[str]]],
-    local: dict[str, Episode],
+    local: dict[str, Recap],
     *,
     limit: int,
     label: str,
-) -> list[Episode]:
-    """Order local episodes by the hits that point at them.
+) -> list[Recap]:
+    """Order local recaps by the hits that point at them.
 
-    `hits` is best first: `(text, keys)`, where `keys` name the episodes a
-    hit came from (in `local`'s key space). An episode ranks where its first
+    `hits` is best first: `(text, keys)`, where `keys` name the recaps a
+    hit came from (in `local`'s key space). A recap ranks where its first
     hit ranks, and every distinct hit text pointing at it is appended to its
     summary under `label` -- so a reader sees *why* it was retrieved. Hits
-    pointing at no known episode are ignored. Empty when nothing matched.
+    pointing at no known recap are ignored. Empty when nothing matched.
     """
     order: list[str] = []
     texts: dict[str, list[str]] = {}

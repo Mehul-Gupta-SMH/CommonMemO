@@ -104,8 +104,8 @@ def test_run_with_memory_splits_stable_and_turn_memory_and_records():
     assert [e.kind for e in events].count("tool_invoked") == 1
     assert "transfer" in {e.source.split(".")[1] for e in events if isinstance(e, ExternalEvent)}
     assert [m.content for m in events if isinstance(m, Message)] == ["find item 7", "Done: item 7 found."]
-    (episode,) = s.episodes
-    assert "lookup" in episode.summary
+    (recap,) = s.recaps
+    assert "lookup" in recap.summary
 
 
 def test_run_with_memory_falls_back_to_the_prompt_on_older_commonadk():

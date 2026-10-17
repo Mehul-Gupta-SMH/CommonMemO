@@ -1,4 +1,4 @@
-"""`GraphitiEngine` -- episodic and user memory on a Graphiti knowledge graph.
+"""`GraphitiEngine` -- Recaps and the UserProfile on a Graphiti knowledge graph.
 
 Graphiti (graphiti-core) turns text "episodes" into a temporal knowledge
 graph: entities, and facts between them that carry when they became true and
@@ -9,14 +9,14 @@ derived tiers:
 |-----------------------|-------------------------------------------------|
 | one closed session    | one episode (`add_episode`; its uuid is recorded in the local index) |
 | a user                | one `group_id` (a graph partition)              |
-| episodic retrieval    | hybrid `search` -> facts -> the episodes they came from |
-| extracted user facts  | the group's currently valid entity edges        |
+| recap retrieval       | hybrid `search` -> facts -> the recaps they came from |
+| extracted profile facts | the group's currently valid entity edges      |
 | `forget_user`         | delete the group                                |
 
 What stays local (a `LocalEngine` index in the same SQLite file as the store):
 the per-session digest, explicit `UserFact`s and provenance. That keeps the
 engine rules (docs/design.md, "Rules every engine keeps") exact rather than
-best-effort: explicit facts are stored verbatim, every episode and fact keeps
+best-effort: explicit facts are stored verbatim, every recap and fact keeps
 its `source_event_ids`, and re-ingesting a session replaces its graph episode
 (`remove_episode` on the recorded uuid, then a fresh `add_episode`) instead
 of duplicating it.
@@ -56,7 +56,7 @@ from typing import Any, Optional, Protocol, Sequence
 from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
-from .base import Engine, Episode, Fact
+from .base import Engine, Recap, Fact
 from .local import LocalEngine
 
 SYSTEM = "graphiti"
@@ -92,7 +92,7 @@ def transcript(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
             lines.append(f"user: my {e.key} is {e.value}")
         elif isinstance(e, BOOKKEEPING):
             # Framework and step bookkeeping (token counts, run boundaries,
-            # tombstones) is noise for extraction; it stays in the event tier.
+            # tombstones) is noise for extraction; it stays in the Log.
             continue
         elif describe(e):
             lines.append(f"user: {describe(e)}")
@@ -207,7 +207,7 @@ def _graphiti_from_env() -> Any:
 
 
 class GraphitiEngine(Engine):
-    """Episodic and user memory on Graphiti, with a local index for the
+    """Recaps and the UserProfile on Graphiti, with a local index for the
     parts that must be exact (see the module docstring).
 
     Pass `graphiti=` (a `graphiti_core.Graphiti`) or `backend=` (any
@@ -244,9 +244,9 @@ class GraphitiEngine(Engine):
             self._index = LocalEngine(":memory:")
         return self._index
 
-    async def ingest(self, session: SessionRecord, events: Sequence[MemoryEvent]) -> list[Episode]:
-        episodes = await self.index.ingest(session, events)
-        if not episodes:
+    async def ingest(self, session: SessionRecord, events: Sequence[MemoryEvent]) -> list[Recap]:
+        recaps = await self.index.ingest(session, events)
+        if not recaps:
             return []
         body = transcript(session, events)
         previous = self.index.external_id(session.session_id, SYSTEM)
@@ -263,43 +263,43 @@ class GraphitiEngine(Engine):
                 reference_time=datetime.fromtimestamp(max(e.ts for e in events), tz=timezone.utc),
             )
             self.index.set_external_id(session.session_id, SYSTEM, uid)
-        return episodes
+        return recaps
 
-    async def _local_episodes(self, user_id: Optional[str], agent: Optional[str]) -> dict[str, Episode]:
-        """Local episodes keyed by their Graphiti episode uuid."""
-        everything = await self.index.search_episodes("", user_id=user_id, agent=agent, limit=1_000_000)
+    async def _local_recaps(self, user_id: Optional[str], agent: Optional[str]) -> dict[str, Recap]:
+        """Local recaps keyed by their Graphiti episode uuid."""
+        everything = await self.index.search_recaps("", user_id=user_id, agent=agent, limit=1_000_000)
         by_session = {e.session_id: e for e in everything}
         graph_ids = self.index.external_ids(SYSTEM, list(by_session))
         return {uid: by_session[sid] for uid, sid in graph_ids.items()}
 
-    async def search_episodes(
+    async def search_recaps(
         self,
         query: str,
         *,
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
         limit: int = 5,
-    ) -> list[Episode]:
+    ) -> list[Recap]:
         if not query.strip():
-            return await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
+            return await self.index.search_recaps(query, user_id=user_id, agent=agent, limit=limit)
         group_ids = [group_id_for(user_id)] if user_id is not None else None
         facts = await self.backend.search(query, group_ids=group_ids, limit=self.search_facts)
-        local = await self._local_episodes(user_id, agent)
+        local = await self._local_recaps(user_id, agent)
         ranked = rank_by_hits(
             ((f.fact, f.episode_ids) for f in facts), local, limit=limit, label="Related facts"
         )
-        return ranked or await self.index.search_episodes(query, user_id=user_id, agent=agent, limit=limit)
+        return ranked or await self.index.search_recaps(query, user_id=user_id, agent=agent, limit=limit)
 
-    async def user_facts(self, user_id: str) -> list[Fact]:
-        explicit = await self.index.user_facts(user_id)
-        local = await self._local_episodes(user_id, None)
+    async def user_profile(self, user_id: str) -> list[Fact]:
+        explicit = await self.index.user_profile(user_id)
+        local = await self._local_recaps(user_id, None)
         seen = {(f.key, f.value) for f in explicit}
         extracted = []
         for gf in await self.backend.current_facts(group_id_for(user_id), limit=self.max_extracted_facts):
             if (gf.name, gf.fact) in seen:
                 continue
             seen.add((gf.name, gf.fact))
-            # Provenance through the episodes the fact came from.
+            # Provenance through the recaps the fact came from.
             sources = tuple(
                 eid for uid in gf.episode_ids if uid in local for eid in local[uid].source_event_ids
             )

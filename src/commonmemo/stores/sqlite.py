@@ -66,7 +66,7 @@ class SQLiteStore(Store):
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
 
-    # -- event tier ---------------------------------------------------------
+    # -- the Log ------------------------------------------------------------
 
     def _insert(self, event: MemoryEvent) -> bool:
         cur = self._conn.execute(
@@ -182,7 +182,7 @@ class SQLiteStore(Store):
             rows = self._conn.execute(sql, params).fetchall()
         return [event_from_dict(json.loads(r["body"])) for r in reversed(rows)]
 
-    # -- session tier -------------------------------------------------------
+    # -- Working memory -----------------------------------------------------
 
     def _row_to_session(self, row: sqlite3.Row) -> SessionRecord:
         return SessionRecord(

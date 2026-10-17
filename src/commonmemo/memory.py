@@ -2,7 +2,7 @@
 
     mem = Memory("sqlite:///mem.db")          # store + default local engine
 
-    @mem.track                                # event tier, automatically
+    @mem.track                                # into the Log, automatically
     def search_web(query: str) -> str: ...
 
     @mem.step(side_effects=True)              # resumable: replayed if done
@@ -12,7 +12,7 @@
         ctx = await s.context(prompt)         # what memory pushes this turn
         tools = mem.agent_tools(s)            # what agents can pull / write
         ...
-    # on exit: consolidation -> episodic + user memory
+    # on exit: consolidation -> a recap + UserProfile facts
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _clip(value: Any, max_chars: int) -> str:
 
 
 class Memory:
-    """Event, session, episodic and user memory behind one handle.
+    """The Log, Working memory, Recaps and the UserProfile behind one handle.
 
     `store` is a `Store` or a URL (`sqlite:///mem.db`, `sqlite://:memory:`).
     `engine` is an `Engine` or a name; the default `"local"` engine shares
@@ -78,7 +78,7 @@ class Memory:
         self.policy = policy or MemoryPolicy()
         """What is pushed per turn (see `MemoryPolicy`)."""
         self.policy_for_recall = MemoryPolicy(
-            max_facts=50, max_world=50, max_lessons=20, episodes=5, min_episode_score=0.0, recent=0
+            max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -261,17 +261,17 @@ class Memory:
         *,
         user_id: Optional[str] = None,
         agent: Optional[str] = None,
-        episodes: int = 3,
+        recaps: int = 3,
     ) -> MemoryContext:
-        """Long-term context without a session (user facts, episodes,
+        """Long-term context without a session (user facts, recaps,
         negatives, world facts, lessons). Inside a session, prefer
-        `Session.context`, which adds the session tier."""
+        `Session.context`, which adds Working memory."""
         from dataclasses import replace
 
         scopes = ["global"] + ([self.project_scope] if self.project else []) \
             + ([f"agent:{agent}"] if agent else []) + ([f"user:{user_id}"] if user_id else [])
         return await self._long_term(
-            query, user_id=user_id, agent=agent, policy=replace(self.policy, episodes=episodes), scopes=scopes
+            query, user_id=user_id, agent=agent, policy=replace(self.policy, recaps=recaps), scopes=scopes
         )
 
     async def _long_term(
@@ -286,12 +286,12 @@ class Memory:
     ) -> MemoryContext:
         engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
         found = (
-            await engine.search_episodes(query or "", user_id=user_id, agent=agent, limit=policy.episodes)
-            if policy.episodes
+            await engine.search_recaps(query or "", user_id=user_id, agent=agent, limit=policy.recaps)
+            if policy.recaps
             else []
         )
-        found = [e for e in found if (e.score or 0.0) >= policy.min_episode_score]
-        facts = self._visible_facts(user_id, await engine.user_facts(user_id)) if user_id is not None else []
+        found = [e for e in found if (e.score or 0.0) >= policy.min_recap_score]
+        facts = self._visible_facts(user_id, await engine.user_profile(user_id)) if user_id is not None else []
         world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
         if query and len(world) > policy.max_world:
             words = set(query.lower().split())
@@ -302,7 +302,7 @@ class Memory:
             world=world[: policy.max_world],
             lessons=self.knowledge.lessons(user_id=user_id, agent=agent, limit=policy.max_lessons),
             tool_notes=self.tool_notes(agent),
-            episodes=found,
+            recaps=found,
             policy=policy,
         )
 
@@ -386,7 +386,7 @@ class Memory:
 
     def prune(self, *, older_than_days: float) -> int:
         """Drop events older than `older_than_days` and expired sessions.
-        Episodes and facts derived from them are kept (they carry their own
+        Recaps and facts derived from them are kept (they carry their own
         provenance ids)."""
         return self.store.prune(older_than=time.time() - older_than_days * 86400)
 
