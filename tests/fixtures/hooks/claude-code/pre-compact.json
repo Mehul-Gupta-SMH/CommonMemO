@@ -1,0 +1,9 @@
+{
+  "session_id": "5d1c7a2e-3f4b-4c8e-9a61-0b2d3e4f5a6b",
+  "transcript_path": "/home/ada/.claude/projects/-work-shop/5d1c7a2e-3f4b-4c8e-9a61-0b2d3e4f5a6b.jsonl",
+  "cwd": "/work/shop",
+  "permission_mode": "default",
+  "hook_event_name": "PreCompact",
+  "trigger": "auto",
+  "custom_instructions": null
+}

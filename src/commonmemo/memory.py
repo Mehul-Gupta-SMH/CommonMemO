@@ -147,7 +147,9 @@ class Memory:
 
         Resuming checks ownership: a session that belongs to one user can
         never be resumed as another (that would leak one user's working
-        memory into another's turn).
+        memory into another's turn). A resumed session's new events carry
+        the resuming `agent`, so one session continued across harnesses
+        shows who did what.
         """
         if session_id is not None and user_id is not None:
             existing = self.store.get_session(session_id)
@@ -167,7 +169,7 @@ class Memory:
                 expires_at=now + ttl if ttl is not None else None,
             )
         )
-        return Session(self, record, run_id=run_id)
+        return Session(self, record, run_id=run_id, agent=agent)
 
     def run(self, run_id: Optional[str] = None) -> Run:
         """Tag every event written inside it with `run_id` (generated when

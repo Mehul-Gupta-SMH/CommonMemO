@@ -49,13 +49,13 @@ import argparse
 import inspect
 import json
 import logging
-import os
 import re
 import sys
 from typing import IO, Any, Callable, Optional
 
 from . import __version__
 from .agent_tools import build_agent_tools, run_sync
+from .cli import memory_options
 from .memory import Memory
 from .session import Session
 
@@ -256,21 +256,9 @@ def _tool_result(text: str, *, error: bool = False) -> dict[str, Any]:
 # -- command line --------------------------------------------------------------
 
 
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def build_parser(parser: Optional[argparse.ArgumentParser] = None) -> argparse.ArgumentParser:
-    p = parser or argparse.ArgumentParser(prog="commonmemo mcp", description="CommonMemo memory as an MCP server (stdio).")
-    env = os.environ.get
-    p.add_argument("--store", default=env("COMMONMEMO_STORE", "sqlite:///.commonmemo/memory.db"))
-    p.add_argument("--engine", default=env("COMMONMEMO_ENGINE", "local"))
-    p.add_argument("--project", default=env("COMMONMEMO_PROJECT"))
-    p.add_argument("--user", default=env("COMMONMEMO_USER"))
-    p.add_argument("--agent", default=env("COMMONMEMO_AGENT", "mcp"))
-    p.add_argument("--session", default=env("COMMONMEMO_SESSION"))
-    p.add_argument("--read-only", action="store_true", default=_env_flag("COMMONMEMO_READ_ONLY"))
-    return p
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="commonmemo mcp", description="CommonMemo memory as an MCP server (stdio).")
+    return memory_options(p, agent="mcp")
 
 
 def main(argv: Optional[list[str]] = None) -> int:

@@ -530,7 +530,9 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   stdlib-only; tools bound to one session, stable memory in the server instructions,
   `memory://context` resource
 - [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
-  capture and push, and one session continuing across harnesses
+  capture and push, and one session continuing across harnesses. **Shipped:**
+  `commonmemo hook` / `commonmemo setup`; one handler for all three (OpenCode
+  through a JS shim); tested against recorded payloads and Codex's own schemas
 
 **Planned**
 

@@ -84,8 +84,10 @@ def test_session_state_survives_resume_across_handles(tmp_path):
     b = Memory(url)  # another process / harness, same store
     with b.session("shared", user_id="u1", agent="codex") as s:
         assert s.state["plan"] == ["read", "edit"]
-        assert s.agent == "claude-code"  # owner record is not rewritten
+        assert s.agent == "codex"  # who is working now...
+        assert b.store.get_session("shared").agent == "claude-code"  # ...but the owner record is not rewritten
         s.message("user", "continue")
+    assert [e.agent for e in b.store.events(session_id="shared", kinds=["message"])] == ["claude-code", "codex"]
     # Re-consolidation on the second close replaces the recap, never duplicates it.
     eps = run(b.engine.search_recaps("", user_id="u1"))
     assert len(eps) == 1 and len(eps[0].source_event_ids) == 2
