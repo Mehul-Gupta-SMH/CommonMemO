@@ -38,7 +38,8 @@ deterministic, so everything works out of the box and in tests.
 
 **Status:** v0.0.1, not yet on PyPI ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). Four tiers, three engines
 (local, Graphiti, Mem0), the structured kinds, hybrid agent memory, the
-CommonADK integration and an MCP server are in. The Graphiti and Mem0 engines are tested
+CommonADK integration, an MCP server and hooks for Claude Code, Codex and
+OpenCode are in. The Graphiti and Mem0 engines are tested
 against their real libraries' types but have not had a live run against a
 real backend and LLM yet ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). See [`docs/design.md`](docs/design.md) for
 the design and the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) for what's next.
@@ -52,7 +53,7 @@ pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge g
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
 ```
 
-The core also gives you the `commonmemo` command (`commonmemo mcp`, below).
+The core also gives you the `commonmemo` command (`commonmemo mcp`, `commonmemo hook`, below).
 
 ## Use
 
@@ -222,8 +223,62 @@ the project's `.mcp.json`:
   consolidates the session.
 
 The model decides when to call a tool, so MCP alone doesn't capture every
-event; hook adapters for that are [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5). Tested over real stdio, and
-against the official MCP client (`pip install "commonmemo[mcp]"`) ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)).
+event; the hooks below do. Tested over real stdio, and against the official
+MCP client (`pip install "commonmemo[mcp]"`) ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)).
+
+## Hooks: automatic capture and push in coding harnesses
+
+With hooks, the harness itself hands memory every prompt, tool call and
+reply, and puts memory in front of the session and of each prompt -- nothing
+depends on the model calling a tool. `commonmemo setup <harness>` prints
+the config; every event runs `commonmemo hook`, which reads the event's JSON
+on stdin.
+
+**Claude Code:** merge the output into `.claude/settings.json`:
+
+```bash
+commonmemo setup claude-code --user ada
+```
+
+```jsonc
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "commonmemo hook --harness claude-code --user ada" }] }],
+    // the same entry for UserPromptSubmit, PostToolUse, PostToolUseFailure, Stop, PreCompact and SessionEnd
+  }
+}
+```
+
+**Codex:** merge `commonmemo setup codex --user ada` into `.codex/hooks.json`
+(or `~/.codex/hooks.json`). Codex asks you to review new hooks at startup;
+trust them, or they won't run.
+
+**OpenCode:** save the plugin and give it the config through the
+environment:
+
+```bash
+mkdir -p .opencode/plugin && commonmemo setup opencode > .opencode/plugin/commonmemo.js
+export COMMONMEMO_USER=ada
+```
+
+| Event | Recorded | Pushed |
+|---|---|---|
+| session start | opens or resumes the session | stable memory, and where a resumed session stands |
+| prompt | the prompt | memory for this turn (relevant recaps, state) |
+| tool call | the call, its result or error (feeds tool memory) | |
+| reply | the reply (Claude Code, Codex) | |
+| compaction | a checkpoint, so work survives it | |
+| session end | closes and consolidates the session | |
+
+A hook never blocks the harness: on any error it writes to stderr and exits 0.
+Each harness session is its own memory session by default. To continue
+**one session across harnesses**, give them the same `--session` (or
+`COMMONMEMO_SESSION`): start in Claude Code, resume in Codex, and Codex is
+told where the work stood; each event records which harness wrote it. The
+hook payloads are tested against recorded payloads from Claude Code
+2.1.302, and against the schemas built into Codex 0.163.0 ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)).
+Use hooks and the MCP server together: hooks capture and push, the tools let
+the agent recall and save on purpose.
 
 ## Live runs
 

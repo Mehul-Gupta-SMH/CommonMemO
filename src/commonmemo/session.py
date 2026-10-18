@@ -93,9 +93,14 @@ class Session:
     """Create through `Memory.session(...)`, then use as a context manager
     (`async with` or `with`), or call `aclose()` yourself."""
 
-    def __init__(self, memory: "Memory", record: SessionRecord, *, run_id: Optional[str] = None) -> None:
+    def __init__(
+        self, memory: "Memory", record: SessionRecord, *, run_id: Optional[str] = None, agent: Optional[str] = None
+    ) -> None:
         self.memory = memory
         self._record = record
+        self._agent = agent or record.agent
+        """Who is working in this handle: the agent that resumed the session
+        (another harness, say), else the one that opened it."""
         self.run_id = run_id
         """Tags this session's events; else the active `mem.run(...)`, if any."""
         self.state = SessionState(self, record.state)
@@ -114,7 +119,7 @@ class Session:
 
     @property
     def agent(self) -> Optional[str]:
-        return self._record.agent
+        return self._agent
 
     @property
     def closed(self) -> bool:

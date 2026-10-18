@@ -2,6 +2,29 @@
 
 ## 0.0.1 — unreleased
 
+Harness hooks: automatic capture and push ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)):
+
+- **`commonmemo hook --harness claude-code|codex|opencode`**: one handler for
+  the harnesses' hook events, JSON on stdin. Session start and each prompt
+  push memory back (`additionalContext`); prompts, tool calls (into tool
+  memory), replies, compaction (a checkpoint) and session end (close and
+  consolidate) are recorded. Never blocks the harness: errors go to stderr
+  and it exits 0. `--read-only` pushes without recording. Long tool input and
+  output are cut to 4000 characters; the memory tools' own calls are skipped.
+- **`commonmemo setup <harness>`** prints the config: the hooks block for
+  Claude Code (`.claude/settings.json`) and Codex (`.codex/hooks.json`), or
+  the OpenCode plugin (`opencode_plugin.js`), a thin JS shim that translates
+  OpenCode's events into the same payload.
+- Tested against recorded payloads: Claude Code 2.1.302's hook inputs, and
+  Codex payloads checked against the hook schemas built into Codex 0.163.0
+  (vendored in `tests/fixtures/hooks/codex-schema`). The OpenCode plugin
+  runs under Node in the tests.
+- **One session across harnesses:** the same `--session` continues a
+  session from Claude Code in Codex. **Behaviour change:** a resumed
+  session's handle now reports, and stamps new events with, the agent that
+  resumed it; the stored session record still keeps its first agent.
+- `python -m commonmemo` runs the `commonmemo` command.
+
 MCP server ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)):
 
 - **`commonmemo mcp`** (also `python -m commonmemo.mcp`): the memory tools
