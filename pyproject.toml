@@ -34,6 +34,14 @@ graphiti = [
 mem0 = [
     "mem0ai>=2.2",
 ]
+# The MCP server (`commonmemo mcp`) is stdlib-only; this extra only brings
+# the official MCP client, for the interoperability test.
+mcp = [
+    "mcp>=2",
+]
+
+[project.scripts]
+commonmemo = "commonmemo.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commonmemo"]

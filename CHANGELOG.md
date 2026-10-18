@@ -2,6 +2,23 @@
 
 ## 0.0.1 — unreleased
 
+MCP server ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)):
+
+- **`commonmemo mcp`** (also `python -m commonmemo.mcp`): the memory tools
+  for MCP clients over stdio, bound to one session, stdlib-only. Tools from
+  `build_agent_tools` (writes recorded with `source="agent"`; `--read-only`
+  gives `memory_recall` only); stable memory in the `initialize`
+  instructions; the full context as resource `memory://context`.
+- Configured by flags or `COMMONMEMO_*` variables (store, engine, project,
+  user, agent, session, read-only). Resuming another user's session is
+  refused and the server exits with an error; stdin closing closes and
+  consolidates the session.
+- Speaks the `initialize` handshake (2024-11-05 to 2025-11-25) and answers
+  `server/discover` with "method not found", so 2026-revision clients fall
+  back to it. Tested over real stdio and with the official MCP client
+  (`mcp` extra, new CI leg).
+- New console script `commonmemo`.
+
 Evaluation suite, deterministic mode ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)):
 
 - `evals/`: nine scenarios run with and without memory against a scripted

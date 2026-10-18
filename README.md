@@ -37,8 +37,8 @@ retrieval and their optimizations belong to engines that specialize in them
 deterministic, so everything works out of the box and in tests.
 
 **Status:** v0.0.1, not yet on PyPI ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). Four tiers, three engines
-(local, Graphiti, Mem0), the structured kinds, hybrid agent memory and the
-CommonADK integration are in. The Graphiti and Mem0 engines are tested
+(local, Graphiti, Mem0), the structured kinds, hybrid agent memory, the
+CommonADK integration and an MCP server are in. The Graphiti and Mem0 engines are tested
 against their real libraries' types but have not had a live run against a
 real backend and LLM yet ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). See [`docs/design.md`](docs/design.md) for
 the design and the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) for what's next.
@@ -51,6 +51,8 @@ pip install "commonmemo[commonadk]"    # + CommonADK integration
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
 ```
+
+The core also gives you the `commonmemo` command (`commonmemo mcp`, below).
 
 ## Use
 
@@ -189,6 +191,40 @@ Each turn, on a copy of the project (CommonADK itself is never changed):
   instead is requested in [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30);
   `run_with_memory` uses it automatically if a runner supports it ([#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7)).
 
+## As an MCP server (Claude Code, Codex, any MCP client)
+
+`commonmemo mcp` serves the memory tools to MCP clients over stdio, bound to
+one session. It needs nothing beyond the core. For Claude Code, add it to
+the project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "commonmemo",
+      "args": ["mcp", "--user", "ada", "--agent", "claude-code"],
+      "env": { "COMMONMEMO_STORE": "sqlite:///.commonmemo/memory.db" }
+    }
+  }
+}
+```
+
+- **Tools:** `memory_recall`, `memory_remember`, `memory_note_fact`,
+  `memory_avoid`, `memory_save_progress`; `--read-only` offers only
+  `memory_recall`. Writes are recorded with `source="agent"`, and an agent's
+  world facts are proposals until approved, as in Python.
+- **Push:** the server's instructions carry the stable memory (negatives,
+  profile, world facts, lessons); the resource `memory://context` has all of it.
+- **Config:** `--store`, `--engine`, `--project`, `--user`, `--agent`,
+  `--session`, `--read-only`, or the same as `COMMONMEMO_*` environment
+  variables. The same `--session` from another harness continues the
+  session; another user's session is refused. Closing the client closes and
+  consolidates the session.
+
+The model decides when to call a tool, so MCP alone doesn't capture every
+event; hook adapters for that are [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5). Tested over real stdio, and
+against the official MCP client (`pip install "commonmemo[mcp]"`) ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)).
+
 ## Live runs
 
 `scripts/live_engines.py` runs a short scenario on the Graphiti and Mem0
@@ -224,7 +260,7 @@ after the engines' live run (#3).
 ## Development
 
 ```bash
-pip install -e ".[dev,commonadk,graphiti,mem0]"
+pip install -e ".[dev,commonadk,graphiti,mem0,mcp]"
 pytest
 ```
 
