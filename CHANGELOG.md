@@ -2,6 +2,21 @@
 
 ## 0.0.1 — unreleased
 
+Evaluation suite, deterministic mode ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)):
+
+- `evals/`: nine scenarios run with and without memory against a scripted
+  agent that decides only from the prompt and tool descriptions, so they
+  measure what memory actually delivers. `python -m evals [--md PATH]`;
+  `tests/test_evals.py` runs them in CI. Baseline in `docs/evals.md`: 9 of 9
+  pass with memory, and memory turns a failure into a success in all 5
+  scenarios that have a without-memory baseline.
+- **Fix, found by the suite: a forgotten fact came back through recaps.** A
+  recap quotes the session it summarizes, including profile facts stated
+  in it, so after `forget("home_address")` the address still reached the
+  agent in the push and through `memory_recall`. Recaps are now redacted
+  at read time for every engine: forgotten values and tombstone patterns
+  become `[forgotten]`. A value stated again after forgetting shows again.
+
 Memory history, phase 2: reins ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27), ADR 0004 accepted):
 
 - **`mem.revert(to=…)`** and **`mem.revert(run_id=…, source=…, session_id=…)`**
