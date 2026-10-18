@@ -2,6 +2,21 @@
 
 ## 0.0.1 — unreleased
 
+Memory history, phase 2: reins ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27), ADR 0004 accepted):
+
+- **`mem.revert(to=…)`** and **`mem.revert(run_id=…, source=…, session_id=…)`**
+  for world facts and negatives. Compensating events tagged
+  `run_id="revert:<id>"` and a `Reverted` record; never deletes; a revert can
+  be reverted; `dry_run=True` plans only. Forgotten data never comes back.
+- **`mem.freeze` / `unfreeze` / `freezes`**, and per-source **budgets**
+  (`Memory(budgets=...)`): both turn direct world-fact writes into
+  proposals.
+- **Alerts, on by default:** velocity spikes, churn and review backlog,
+  logged to `commonmemo.alerts` and sent to `AlertPolicy.on_alert`;
+  `mem.alerts()` checks by hand; `AlertPolicy(auto_freeze=True)` is opt-in.
+- `mem.diff` now identifies a negative by scope and statement, so a rule
+  that was re-added doesn't show as removed and added.
+
 Memory history, phase 1 ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27), [ADR 0004](docs/adr/0004-history-analytics-and-reversion.md)), read-only:
 
 - **`run_id`** on every event's envelope: `with mem.run(...)`,

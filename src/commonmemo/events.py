@@ -297,6 +297,33 @@ class Snapshot(MemoryEvent):
     label: str
 
 
+class Reverted(MemoryEvent):
+    """An operator reverted memory (`Memory.revert`). Its own `id` is the
+    revert id; the compensating events it appended carry
+    `run_id="revert:<id>"`, so a revert can itself be reverted by cause.
+    `target` says what was reverted, in words: "to <point>" or "run R"."""
+
+    target: str
+    kinds: tuple[str, ...] = ()
+    scope: Optional[str] = None
+    reason: Optional[str] = None
+    changes: int = 0
+
+
+class Freeze(MemoryEvent):
+    """While active, direct world-fact writes in `scope` (any scope when
+    None) from `source` (any source when None) are recorded as proposals.
+    Ends with `Unfreeze(freeze_id=<this id>)`."""
+
+    scope: Optional[str] = None
+    source: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class Unfreeze(MemoryEvent):
+    freeze_id: str
+
+
 class ExternalEvent(MemoryEvent):
     """An event from another system, kept verbatim (`source` names it,
     e.g. `commonadk.tool_call`). Integrations translate into this."""
@@ -307,7 +334,7 @@ class ExternalEvent(MemoryEvent):
 
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
-    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot,
+    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -345,6 +372,9 @@ __all__ = [
     "WorldFactRejected",
     "WorldFactRetracted",
     "Snapshot",
+    "Reverted",
+    "Freeze",
+    "Unfreeze",
     "Feedback",
     "Negative",
     "NegativeRevoked",

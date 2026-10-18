@@ -167,7 +167,8 @@ def _snapshot_of(view: MemoryView) -> dict[tuple[str, str], str]:
         for w in k.world_facts([scope], now=view.at, include_stale=True):
             out[("world_fact", f"{w.scope}/{w.key}")] = w.value
         for n in k.negatives([scope]):
-            out[("negative", f"{n.scope}/{n.event_id}")] = n.statement
+            # The same rule re-added (by a revert, say) is the same negative.
+            out[("negative", f"{n.scope}/{n.statement}")] = n.reason or ""
     for w in k.pending_world_facts():
         out[("pending_world_fact", f"{w.scope}/{w.key}#{w.event_id}")] = f"{w.value} ({w.status})"
     for tool in k.tools():

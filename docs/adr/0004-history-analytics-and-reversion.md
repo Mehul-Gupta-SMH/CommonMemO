@@ -1,6 +1,6 @@
 # ADR 0004 — Memory history: analytics, point-in-time reads and reversion
 
-**Status:** Proposed; phase 1 implemented (read-only history, `run_id`) · **Date:** 2026-10-17 · **Tracks:** [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)
+**Status:** Accepted; phases 1 and 2 implemented · **Date:** 2026-10-17 · **Tracks:** [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)
 
 ## Context
 
@@ -114,10 +114,12 @@ revertible in phase 2; extracted ones need re-consolidation.
 
 ## Open questions
 
-- **Do reverts cover engine memory?** Recommended: owned kinds and explicit
-  profile facts first, re-consolidation of engines in phase 3.
-- **Automatic freeze on by default?** Recommended: opt-in, with alerts on
-  by default.
+- ~~**Do reverts cover engine memory?**~~ **Decided (owner, 2026-10-17):
+  owned kinds only.** Reverts cover world facts and negatives; Recaps and
+  the UserProfile (explicit profile facts included, since engines hold
+  them) are not reverted. Engine re-consolidation is not planned.
+- ~~**Automatic freeze on by default?**~~ **Decided (owner, 2026-10-17):
+  alerts on by default, automatic freeze opt-in.** Shipped in phase 2.
 - ~~**`run_id` now?**~~ **Decided (owner, 2026-10-17): yes**, shipped with
   phase 1. Without it, revert by cause would be impossible for everything
   written before it landed.

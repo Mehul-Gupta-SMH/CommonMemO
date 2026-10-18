@@ -215,7 +215,7 @@ tr:last-child td { border-bottom: 0; }
 </style>
 </head>
 <body>
-<div class="banner">Mockup with sample data. The read-only inspector proposed in <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25">#25</a>, with history from <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27">#27</a>. Buttons marked “phase 2” are not built yet.</div>
+<div class="banner">Mockup with sample data. The read-only inspector proposed in <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25">#25</a>, with history from <a href="https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27">#27</a>. Revert and freeze exist in the library (<code>mem.revert</code>, <code>mem.freeze</code>); the inspector that calls them is not built yet, so those buttons are disabled.</div>
 <header class="top">
   <div class="brand">CommonMemo <span>inspector</span></div>
   <div class="file mono">sqlite:///support-bot/memory.db · project:shop</div>
@@ -247,8 +247,8 @@ tr:last-child td { border-bottom: 0; }
         <p>All from run <code>commonadk:r-8812</code>, user <code>mallory</code>. Proposals reached no other user (ADR 0002). Velocity is 31× the 14-day median.</p>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
           <button class="btn" type="button" data-goto="world">Review proposals</button>
-          <button class="btn" type="button" disabled>Reject all from this run <span class="phase">phase 2</span></button>
-          <button class="btn" type="button" disabled>Freeze agent writes <span class="phase">phase 2</span></button>
+          <button class="btn" type="button" disabled>Reject all from this run <span class="phase">mem.revert(run_id=…)</span></button>
+          <button class="btn" type="button" disabled>Freeze agent writes <span class="phase">mem.freeze(source="agent")</span></button>
         </div>
       </div>
     </div>
@@ -307,9 +307,9 @@ tr:last-child td { border-bottom: 0; }
       <table>
         <thead><tr><th>Run</th><th>When</th><th class="num">World facts</th><th class="num">Profile facts</th><th class="num">Negatives</th><th></th></tr></thead>
         <tbody>
-          <tr><td class="mono">commonadk:r-8812</td><td>Oct 14, 14:02</td><td class="num">412</td><td class="num">3</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
-          <tr><td class="mono">deploy-2026-10-12</td><td>Oct 12, 09:30</td><td class="num">18</td><td class="num">0</td><td class="num">2</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
-          <tr><td class="mono">import-faq-v7</td><td>Oct 9, 17:11</td><td class="num">27</td><td class="num">0</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">phase 2</span></button></td></tr>
+          <tr><td class="mono">commonadk:r-8812</td><td>Oct 14, 14:02</td><td class="num">412</td><td class="num">3</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">mem.revert(run_id=…)</span></button></td></tr>
+          <tr><td class="mono">deploy-2026-10-12</td><td>Oct 12, 09:30</td><td class="num">18</td><td class="num">0</td><td class="num">2</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">mem.revert(run_id=…)</span></button></td></tr>
+          <tr><td class="mono">import-faq-v7</td><td>Oct 9, 17:11</td><td class="num">27</td><td class="num">0</td><td class="num">0</td><td><button class="btn" type="button" disabled>Revert run <span class="phase">mem.revert(run_id=…)</span></button></td></tr>
         </tbody>
       </table>
     </div>
@@ -431,7 +431,7 @@ tr:last-child td { border-bottom: 0; }
     </div>
     <div class="card">
       <div class="card-head"><h2>Diff: “before refund-flow v3” → now</h2><span class="hint">world facts +3 · ~2 · −1 · negatives +1 · tools ~2</span>
-        <div class="right"><button class="btn" type="button" disabled>Revert to this snapshot <span class="phase">phase 2</span></button></div>
+        <div class="right"><button class="btn" type="button" disabled>Revert to this snapshot <span class="phase">mem.revert(to=…)</span></button></div>
       </div>
       <table>
         <thead><tr><th></th><th>Kind</th><th>Key</th><th>Before</th><th>After</th></tr></thead>

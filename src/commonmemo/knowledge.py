@@ -32,6 +32,7 @@ from .events import (
     Checkpoint,
     Feedback,
     Forgotten,
+    Freeze,
     MemoryEvent,
     Negative,
     NegativeRevoked,
@@ -39,6 +40,7 @@ from .events import (
     StepFinished,
     StepStarted,
     ToolInvoked,
+    Unfreeze,
     WorldFact,
     WorldFactConfirmed,
     WorldFactRejected,
@@ -109,17 +111,21 @@ CREATE TABLE IF NOT EXISTS steps (
     started_at REAL, finished_at REAL,
     PRIMARY KEY (session_id, step_id)
 );
+CREATE TABLE IF NOT EXISTS freezes (
+    event_id TEXT PRIMARY KEY, ts REAL NOT NULL, scope TEXT, source TEXT, reason TEXT,
+    active INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS knowledge_meta (
     key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
-           "negatives", "tombstones", "checkpoints", "steps"]
+           "negatives", "tombstones", "checkpoints", "steps", "freezes"]
 
 
 @dataclass(frozen=True)
@@ -190,6 +196,15 @@ class NegativeRecord:
     statement: str
     reason: Optional[str]
     source: str
+
+
+@dataclass(frozen=True)
+class FreezeRecord:
+    event_id: str
+    ts: float
+    scope: Optional[str]
+    source: Optional[str]
+    reason: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -423,6 +438,14 @@ class Knowledge:
             (e.id, e.ts, e.scope, e.statement, e.reason, e.source, e.user_id),
         )
 
+    def _freeze(self, e: Freeze) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO freezes VALUES (?, ?, ?, ?, ?, 1)", (e.id, e.ts, e.scope, e.source, e.reason)
+        )
+
+    def _unfreeze(self, e: Unfreeze) -> None:
+        self._conn.execute("UPDATE freezes SET active = 0 WHERE event_id = ?", (e.freeze_id,))
+
     def _revoke(self, e: NegativeRevoked) -> None:
         self._conn.execute("UPDATE negatives SET active = 0 WHERE event_id = ?", (e.negative_id,))
 
@@ -550,6 +573,26 @@ class Knowledge:
                 "SELECT * FROM world_facts WHERE " + " AND ".join(where) + " ORDER BY valid_from", params
             ).fetchall()
         return [_world_record(r) for r in rows]
+
+    def freezes(self) -> list[FreezeRecord]:
+        """Active freezes, oldest first."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM freezes WHERE active = 1 ORDER BY ts").fetchall()
+        return [FreezeRecord(r["event_id"], r["ts"], r["scope"], r["source"], r["reason"]) for r in rows]
+
+    def frozen(self, scope: str, source: str) -> Optional[FreezeRecord]:
+        """The active freeze covering a write to `scope` from `source`, if any."""
+        for f in self.freezes():
+            if (f.scope is None or f.scope == scope) and (f.source is None or f.source == source):
+                return f
+        return None
+
+    def all_negatives(self) -> list[NegativeRecord]:
+        """Every active negative, in every scope."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM negatives WHERE active = 1 ORDER BY ts").fetchall()
+        return [NegativeRecord(r["event_id"], r["ts"], r["scope"], r["statement"], r["reason"], r["source"])
+                for r in rows]
 
     def scopes_in_use(self) -> list[str]:
         """Every scope that holds a current world fact or an active negative."""
@@ -699,6 +742,8 @@ _HANDLERS = {
     WorldFactConfirmed: Knowledge._world_confirmed,
     WorldFactRejected: Knowledge._world_rejected,
     WorldFactRetracted: Knowledge._world_retracted,
+    Freeze: Knowledge._freeze,
+    Unfreeze: Knowledge._unfreeze,
     Feedback: Knowledge._feedback,
     Negative: Knowledge._negative,
     NegativeRevoked: Knowledge._revoke,
@@ -713,6 +758,7 @@ __all__ = [
     "Knowledge",
     "WorldRecord",
     "source_rank",
+    "FreezeRecord",
     "FeedbackRecord",
     "FeedbackSummary",
     "NegativeRecord",

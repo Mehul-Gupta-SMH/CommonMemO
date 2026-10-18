@@ -290,8 +290,33 @@ append-only and ordered, and every projection is rebuilt from it
   Recaps and engine-held profile facts aren't replayed. Since every view
   replays today's Log, data forgotten since is gone from past views too.
 
-Reverting (by time or by cause, with compensating events), freezes and
-budgets are phase 2.
+Phase 2 adds the reins (`reins.py`):
+
+- **`mem.revert(to=point)`** brings world facts and negatives back to a log
+  position, time or snapshot. **`mem.revert(run_id=…, source=…,
+  session_id=…)`** undoes a cause: the Log is replayed without those
+  events, so changes others made later survive.
+  - A revert appends compensating events (old value back, a retraction, a
+    negative re-added or revoked, leftover proposals rejected), all tagged
+    `run_id="revert:<id>"`, plus a `Reverted` record. It never deletes,
+    so a revert can be reverted and rebuilds agree. `dry_run=True` only
+    plans.
+  - It covers world facts and negatives. Tool memory and feedback are
+    observations, and Recaps and the UserProfile live in the engine
+    (decision: owned kinds only). Forgotten data never comes back.
+- **`mem.freeze(scope=…, source=…)`** turns direct world-fact writes there
+  into proposals until `unfreeze`. **Budgets**
+  (`Memory(budgets={"agent": 100})`, per hour by default) do the same past
+  a cap. Nothing is dropped; it waits for review.
+- **Alerts are on by default** (decision): after writes, at most once a
+  minute, memory checks for velocity spikes, churn (flip-flops) and a
+  review backlog. Alerts are logged to `commonmemo.alerts` and sent to
+  `AlertPolicy.on_alert`; `mem.alerts()` checks by hand.
+  `AlertPolicy(auto_freeze=True)` freezes the source of a spike; it is
+  opt-in.
+
+Phase 3 would re-consolidate engine memory after a revert; it isn't planned
+for now.
 
 ## Developer surface
 

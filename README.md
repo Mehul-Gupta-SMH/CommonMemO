@@ -125,7 +125,17 @@ mem.as_of("before v3").world_facts()        # memory as it was then
 mem.diff("before v3")                       # what changed since
 ```
 
-Read-only for now; reverting is next ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
+And the reins, for when memory goes wrong:
+
+```python
+mem.revert(to="before v3")                 # world facts and negatives back to a snapshot
+mem.revert(run_id="commonadk:r-8812")      # undo one run; later edits by others survive
+mem.freeze(source="agent")                 # agent world-fact writes become proposals
+mem.alerts()                               # velocity spikes, churn, review backlog
+```
+
+Reverts append compensating events and never delete, so they can be undone
+too. Alerts are on by default and logged to `commonmemo.alerts` ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
 A mockup of the inspector these feed ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)), with sample data, is at
 <https://mehul-gupta-smh.github.io/CommonMemO/> (source: `pages/index.html`).
 

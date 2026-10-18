@@ -30,6 +30,7 @@ from .events import (
 )
 from .history import Diff, History, MemoryView
 from .memory import Memory
+from .reins import Alert, AlertPolicy, Budget, RevertResult
 from .resume import ResumePoint, StepInDoubt, StepInProgress
 from .runs import Run, current_run
 from .session import Session, current_session
@@ -57,6 +58,10 @@ __all__ = [
     "MemoryView",
     "Diff",
     "Run",
+    "Alert",
+    "AlertPolicy",
+    "Budget",
+    "RevertResult",
     "current_run",
     "MemoryEvent",
     "Message",
