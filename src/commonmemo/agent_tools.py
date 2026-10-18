@@ -76,7 +76,7 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         lines += [f"[user] {f.key}: {f.value}" for f in ctx.facts if _overlap(query, f"{f.key} {f.value}")]
         lines += [f"[fact] {world_line(w)}" for w in ctx.world if _overlap(query, f"{w.key} {w.value}")]
         lines += [f"[feedback] {l.line()}" for l in ctx.lessons if _overlap(query, l.line())]
-        lines += [f"[past session] {e.summary}" for e in ctx.recaps]
+        lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
 
     if not writes:

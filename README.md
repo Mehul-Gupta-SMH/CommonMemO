@@ -274,7 +274,11 @@ A hook never blocks the harness: on any error it writes to stderr and exits 0.
 Each harness session is its own memory session by default. To continue
 **one session across harnesses**, give them the same `--session` (or
 `COMMONMEMO_SESSION`): start in Claude Code, resume in Codex, and Codex is
-told where the work stood; each event records which harness wrote it. The
+told where the work stood; each event records which harness wrote it.
+Recaps of a user's past sessions are shared across harnesses either way, so
+Claude Code also sees what the user did in Codex yesterday, labelled with
+where it happened (`MemoryPolicy(recaps_across_agents=False)` keeps them per
+agent; [#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)). The
 hook payloads are tested against recorded payloads from Claude Code
 2.1.302, and against the schemas built into Codex 0.163.0 ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)).
 Use hooks and the MCP server together: hooks capture and push, the tools let

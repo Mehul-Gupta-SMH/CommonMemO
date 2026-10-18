@@ -36,7 +36,7 @@ it is written**:
 |---|---|---|---|---|---|---|
 | Log | immutable records: messages, tool calls, framework events, domain events | session / user | retention policy (`prune`) | automatic capture | consolidation, replay, debugging | CommonMemo `Store` |
 | Working | what one conversation or run has in hand | `session_id` | until closed or expired (TTL); resumable | the application, live | every turn (`Session.context`) | CommonMemo `Store` |
-| Recaps | one consolidated summary per session | user / agent | long-term | consolidation at session close | retrieval by relevance | wrapped `Engine` |
+| Recaps | one consolidated summary per session | user (all their agents); agent when there is no user | long-term | consolidation at session close | retrieval by relevance | wrapped `Engine` |
 | UserProfile | durable facts about one user | `user_id`, across sessions and agents | long-term; superseded, never silently lost | explicit `UserFact` events + engine extraction | every turn | wrapped `Engine` |
 
 **Data flow:** the log → working memory (live) → on session close,
@@ -123,6 +123,12 @@ in lessons and recaps.
 far as its framework allows. Through released CommonADK, for one, all
 pushed memory goes in front of the prompt until [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) lands (see
 "CommonADK integration").
+
+A user's recaps come from every agent they worked with
+(`MemoryPolicy.recaps_across_agents`, on by default, [#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)): with one agent per
+harness, Claude Code sees what the user did in Codex, and a recap from
+another agent says whose it was. Without a user, recaps stay per agent.
+Tool notes and lessons stay per agent; they describe one agent's tools.
 
 `MemoryPolicy` sets the push: per-kind limits, the recap threshold, and
 `recent` (events of this session to push — **0 by default**, because every

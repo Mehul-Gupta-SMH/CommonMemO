@@ -52,6 +52,11 @@ class MemoryPolicy:
     min_recap_score: float = 0.25
     """Recaps scoring below this are not pushed: an unrelated past session
     is noise. (Retrieval tools have no threshold.)"""
+    recaps_across_agents: bool = True
+    """A user's recaps come from all their agents (Claude Code sees what
+    they did in Codex), labelled with the agent when it isn't this one.
+    False keeps each agent's recaps to itself. Sessions without a user
+    always stay per agent."""
     recent: int = 0
     """Recent events of this session to push. 0 by default: every SDK with a
     session already resends the conversation, so pushing it again doubles it.
@@ -109,6 +114,14 @@ class MemoryContext:
     recent: list[MemoryEvent] = field(default_factory=list)
     resume: Optional["ResumePoint"] = None
     policy: MemoryPolicy = field(default_factory=MemoryPolicy)
+    agent: Optional[str] = None
+    """The agent this context is for; recaps from other agents say whose they are."""
+
+    def recap_line(self, recap: Recap) -> str:
+        """A recap's summary, saying which agent worked in it when that's
+        another agent and the summary doesn't say so already."""
+        label = recap.agent and recap.agent != self.agent and recap.agent not in recap.summary
+        return f"{recap.summary} (in {recap.agent})" if label else recap.summary
 
     def __bool__(self) -> bool:
         return bool(self.stable_text() or self.turn_text())
@@ -141,7 +154,7 @@ class MemoryContext:
         if self.resume is not None and not self.resume.is_fresh:
             sections.append("## Resuming earlier work\n" + "\n".join(f"- {line}" for line in self.resume.lines()))
         if self.recaps:
-            sections.append("## Relevant past sessions\n" + "\n".join(f"- {e.summary}" for e in self.recaps))
+            sections.append("## Relevant past sessions\n" + "\n".join(f"- {self.recap_line(e)}" for e in self.recaps))
         if self.state:
             sections.append("## Session state\n" + "\n".join(f"- {k}: {v}" for k, v in self.state.items()))
         if self.recent:
