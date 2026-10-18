@@ -109,7 +109,8 @@ class Memory:
         self.policy = policy or MemoryPolicy()
         """What is pushed per turn (see `MemoryPolicy`)."""
         self.policy_for_recall = MemoryPolicy(
-            max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0
+            max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
+            recaps_across_agents=self.policy.recaps_across_agents,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -340,8 +341,11 @@ class Memory:
         local_only: bool = False,
     ) -> MemoryContext:
         engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
+        # A user's recaps are theirs whichever agent (harness) they worked
+        # in; without a user, an agent's recaps stay its own.
+        recap_agent = None if user_id is not None and policy.recaps_across_agents else agent
         found = (
-            await engine.search_recaps(query or "", user_id=user_id, agent=agent, limit=policy.recaps)
+            await engine.search_recaps(query or "", user_id=user_id, agent=recap_agent, limit=policy.recaps)
             if policy.recaps
             else []
         )
@@ -361,6 +365,7 @@ class Memory:
             tool_notes=self.tool_notes(agent),
             recaps=found,
             policy=policy,
+            agent=agent,
         )
 
     def _visible_facts(self, user_id: str, facts: list[Fact]) -> list[Fact]:

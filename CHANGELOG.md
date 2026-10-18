@@ -2,6 +2,17 @@
 
 ## 0.0.1 — unreleased
 
+Recaps shared across agents ([#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)):
+
+- **Behaviour change:** a user's recaps now come from all their agents,
+  not just the current one, so with one agent per harness, Claude Code sees
+  the user's Codex sessions. New `MemoryPolicy.recaps_across_agents`
+  (default `True`); `False` restores per-agent recaps, for the push and for
+  `memory_recall` alike. Sessions without a user stay per agent.
+- A recap from another agent is labelled `(in <agent>)` unless its summary
+  already names the agent (`MemoryContext.recap_line`). Tool notes and
+  lessons stay per agent.
+
 Harness hooks: automatic capture and push ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)):
 
 - **`commonmemo hook --harness claude-code|codex|opencode`**: one handler for

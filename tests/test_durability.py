@@ -215,10 +215,12 @@ def test_a_crash_inside_a_claimed_step_leaves_it_in_doubt(tmp_path):
         return "paid"
 
     with mem.session("job", user_id="u1") as s:
-        _hold(mem, "job", "pay", time.time() + 0.05)  # claimed by a worker that then died
+        # Claimed by a worker that then died. The lease leaves a slow CI runner
+        # plenty of time to see it live (it was 0.05s and flaked).
+        _hold(mem, "job", "pay", time.time() + 0.5)
         with pytest.raises(StepInProgress):
             pay()
-        time.sleep(0.1)
+        time.sleep(0.6)
         with pytest.raises(StepInDoubt) as info:
             pay()
         assert not isinstance(info.value, StepInProgress)

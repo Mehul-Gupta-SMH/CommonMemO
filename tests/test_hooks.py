@@ -86,12 +86,12 @@ def test_claude_code_session(db):
 
 def test_prompt_gets_memory_for_the_turn(db):
     seed = open_memory(db)
-    with seed.session(user_id="ada", agent="claude-code") as s:  # recaps are per agent
+    with seed.session(user_id="ada", agent="codex") as s:  # yesterday, in another harness
         s.message("user", "The search_flights date parsing breaks on slashes")
     close(seed)
     out, _ = hook(db, "claude-code", payload("claude-code", "user-prompt-submit"), "--user", "ada")
     assert out["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
-    assert "search_flights" in context_of(out)  # the earlier session's recap
+    assert "search_flights" in context_of(out) and "codex" in context_of(out)  # its recap, and whose it was
 
 
 # -- Codex -----------------------------------------------------------------------
