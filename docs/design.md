@@ -520,12 +520,11 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite: with-memory versus without-memory runs on public
-  long-memory tasks and on scenarios only CommonMemo covers (resume after a
-  crash, a known tool failure, negatives, forgetting); deterministic in CI,
-  live after #3. New memory kinds (#8, #9, #10) are measured against it
-- [#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19) — rename the tiers in code (Log, Working, Recaps, UserProfile),
-  before the release
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, nine
+  scenarios with and without memory against a scripted agent, run in CI; results
+  in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
+  public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
+  measured against it
 - [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
 - [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools
 - [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic

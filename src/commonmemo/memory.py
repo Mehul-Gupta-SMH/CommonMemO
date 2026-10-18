@@ -19,18 +19,21 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 import time
 import uuid
+from dataclasses import replace
 from typing import Any, Callable, Iterable, Optional, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
-from .engines import Engine, Fact, LocalEngine, engine_from_name
+from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
 from .events import (
     MemoryEvent,
     Negative,
     NegativeRevoked,
     ToolInvoked,
+    UserFact,
     WorldFact,
     WorldFactConfirmed,
     WorldFactRejected,
@@ -318,8 +321,6 @@ class Memory:
         """Long-term context without a session (user facts, recaps,
         negatives, world facts, lessons). Inside a session, prefer
         `Session.context`, which adds Working memory."""
-        from dataclasses import replace
-
         scopes = ["global"] + ([self.project_scope] if self.project else []) \
             + ([f"agent:{agent}"] if agent else []) + ([f"user:{user_id}"] if user_id else [])
         return await self._long_term(
@@ -343,6 +344,8 @@ class Memory:
             else []
         )
         found = [e for e in found if (e.score or 0.0) >= policy.min_recap_score]
+        if user_id is not None:
+            found = self._visible_recaps(user_id, found)
         facts = self._visible_facts(user_id, await engine.user_profile(user_id)) if user_id is not None else []
         world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
         if query and len(world) > policy.max_world:
@@ -376,6 +379,34 @@ class Memory:
             if not hidden:
                 out.append(f)
         return out
+
+    def _forgotten_values(self, user_id: str) -> list[str]:
+        """Text the user asked to forget: each forgotten key's values from
+        before its tombstone, and each tombstone pattern. A value stated
+        again after the tombstone is current again, so it is not included."""
+        stones = self.knowledge.tombstones(user_id)
+        if not stones:
+            return []
+        stated = [(e.key, e.value, e.ts) for e in self.store.events(user_id=user_id, kinds=[UserFact.kind])]
+        out: set[str] = set()
+        for key, pattern, ts in stones:
+            if pattern:
+                out.add(pattern)
+            old = {v for k, v, at in stated if k == key and at <= ts}
+            again = {v for k, v, at in stated if k == key and at > ts}
+            out |= old - again
+        return sorted((v for v in out if v.strip()), key=len, reverse=True)
+
+    def _visible_recaps(self, user_id: str, recaps: list[Recap]) -> list[Recap]:
+        """`recaps` with what the user asked to forget redacted. A recap is
+        a summary of a past session, so it can quote a fact that was later
+        forgotten; without this, the fact would come back through it."""
+        values = self._forgotten_values(user_id)
+        if not values:
+            return recaps
+        pattern = re.compile("|".join(re.escape(v) for v in values), re.IGNORECASE)
+        return [replace(r, summary=pattern.sub("[forgotten]", r.summary)) if pattern.search(r.summary) else r
+                for r in recaps]
 
     # -- structured kinds ---------------------------------------------------
 

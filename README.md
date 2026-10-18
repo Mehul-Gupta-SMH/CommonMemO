@@ -200,6 +200,27 @@ pip install -e ".[graphiti,mem0]" kuzu
 OPENAI_API_KEY=... python scripts/live_engines.py      # Neo4j if NEO4J_* is set, else embedded Kuzu
 ```
 
+## Does it help? The evaluation suite
+
+`evals/` runs scenarios with memory and without it, against a scripted agent
+that decides only from the text it is shown: the prompt and the tools'
+descriptions. Among the scenarios:
+- a tool failure with a known fix is not repeated;
+- a user's "never" is respected;
+- the latest preference wins;
+- a crashed pipeline resumes without charging twice;
+- a forgotten fact never returns;
+- stored text never becomes an instruction;
+- one user can't change what another is told;
+- a burst of bad writes is detected, frozen and reverted.
+
+```
+python -m evals                   # prints the report; see docs/evals.md for the baseline
+```
+
+It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)). A live mode against a real model comes
+after the engines' live run (#3).
+
 ## Development
 
 ```bash
