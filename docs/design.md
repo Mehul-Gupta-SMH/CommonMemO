@@ -526,7 +526,9 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
   measured against it
 - [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
-- [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools
+- [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools. **Shipped:** `commonmemo mcp`, stdio,
+  stdlib-only; tools bound to one session, stable memory in the server instructions,
+  `memory://context` resource
 - [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
   capture and push, and one session continuing across harnesses
 
