@@ -227,7 +227,7 @@ async def run_with_memory(
     from dataclasses import replace
 
     policy = replace(policy or session.memory.policy, tool_notes_in_text=False)
-    context = await session.context(prompt, policy=policy)
+    context = await session.push(prompt, policy=policy, part="all")  # recorded as this turn's trace
     if run_session is not None and getattr(run_session, "user_id", "absent") is None:
         run_session.user_id = session.user_id
     built = prepare_project(session, project, agent_name, memory_tools=memory_tools, writes=writes)

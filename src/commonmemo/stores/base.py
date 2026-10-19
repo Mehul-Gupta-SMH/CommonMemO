@@ -81,6 +81,12 @@ class Store(ABC):
         """Events matching every given filter, oldest first. `limit` keeps
         the most recent `limit` events (still returned oldest first)."""
 
+    def get_events(self, ids: Iterable[str]) -> list[MemoryEvent]:
+        """The events with these ids, oldest first; unknown ids are skipped.
+        Stores with an index on ids should override this scan."""
+        wanted = set(ids)
+        return [e for e in self.events() if e.id in wanted]
+
     @abstractmethod
     def events_after(self, seq: int, *, limit: Optional[int] = None) -> list[tuple[int, MemoryEvent]]:
         """`(seq, event)` for every event whose log position is after `seq`,

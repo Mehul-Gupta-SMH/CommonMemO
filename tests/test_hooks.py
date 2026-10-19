@@ -295,9 +295,9 @@ def test_opencode_plugin(tmp_path, db):
     mem = open_memory(db)
     events = mem.store.events(session_id="opencode-ses_7f3a")
     assert [e.kind for e in events] == ["message", "context_pushed", "tool_invoked", "tool_invoked",
-                                        "context_pushed", "checkpoint"]
+                                        "context_pushed", "context_pushed", "checkpoint"]
     assert events[2].name == "bash" and events[2].result == "1 failed"
-    assert events[4].reason == "refresh"
+    assert [events[i].reason for i in (1, 4, 5)] == ["turn", "refresh", "start"]
     assert all(e.agent == "opencode" for e in events)
     assert not mem.store.get_session("opencode-ses_7f3a").is_open
     close(mem)

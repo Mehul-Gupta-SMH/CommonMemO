@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 import re
 import time
 import uuid
 from dataclasses import replace
-from typing import Any, Callable, Iterable, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
@@ -69,6 +70,9 @@ def _clip(value: Any, max_chars: int) -> str:
     text = value if isinstance(value, str) else repr(value)
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
+
+if TYPE_CHECKING:
+    from .traces import TurnTrace, Why
 
 MORE_PROBE = 5
 """How many recaps past the push's limit are looked at, to count what was left out."""
@@ -132,6 +136,9 @@ class Memory:
         self.alert_policy = alerts or AlertPolicy()
         """When memory warns: on by default, logged to `commonmemo.alerts`."""
         self._last_alert_check = 0.0
+        self.listeners: list[Callable[[MemoryEvent], None]] = []
+        """Called with every event after it is logged (exporters use this,
+        e.g. `otel.instrument`). A listener that raises is logged and skipped."""
 
     @property
     def project_scope(self) -> str:
@@ -203,6 +210,11 @@ class Memory:
         self.store.append(event)
         self.knowledge.catch_up(self.store)
         after_write(self, event)
+        for listener in self.listeners:
+            try:
+                listener(event)
+            except Exception:  # noqa: BLE001 -- an exporter must never break a write
+                logging.getLogger("commonmemo").exception("commonmemo: event listener failed")
         return event
 
     def step(
@@ -590,6 +602,22 @@ class Memory:
         self.knowledge.rebuild(self.store)
 
     # -- lifecycle ----------------------------------------------------------
+
+    def traces(self, *, session_id: Optional[str] = None, user_id: Optional[str] = None,
+               limit: Optional[int] = None) -> list[TurnTrace]:
+        """Turn traces, oldest first: what each push gave the agent, by
+        reference, and what it left out (see `traces.py`)."""
+        from .traces import traces
+
+        return traces(self, session_id=session_id, user_id=user_id, limit=limit)
+
+    def why(self, key: str, *, session_id: Optional[str] = None, user_id: Optional[str] = None) -> Optional[Why]:
+        """Why the agent got `key` (a fact or world fact key, or an item id):
+        the latest push of it in the session (or for the user), and the
+        events it came from. None if it was never pushed."""
+        from .traces import why
+
+        return why(self, key, session_id=session_id, user_id=user_id)
 
     async def forget_user(self, user_id: str) -> int:
         """Delete everything about `user_id` from every tier and kind. Tool

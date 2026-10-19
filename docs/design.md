@@ -235,8 +235,12 @@ matters ([ADR 0002](adr/0002-world-fact-trust.md)):
 - **The agent sees age and source**: `refund_window: 30 days (as of
   2026-10-14, operator)`.
 
-Still open ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)): a key registry, per-key lifetimes, pinned versus
-query-ranked facts, conditional facts and bulk import.
+Still open ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)): an **optional** per-project key registry (decided: names,
+descriptions, allowed values, default lifetime, pinned or not; with a
+registry, an agent write to an unregistered or near-duplicate key stays a
+proposal), per-key lifetimes, pinned versus query-ranked facts, and bulk
+import. Conditional facts ("30 days in the EU") come later ([#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38));
+until then, per-region differences use project scopes.
 
 ### Feedback
 
@@ -522,6 +526,18 @@ What exists, and what CommonMemo takes from it:
   enough — event capture must not depend on the model calling a tool, so each
   harness needs a small hook adapter.
 
+## Seeing what memory did
+
+Every push is a turn trace in the Log (`ContextPushed`): references to what
+was pushed, with sources and scores, and what was left out; text only on
+request, because it repeats user data. Traces are events like any other, so
+`forget_user` and `prune` cover them, and every view reads the same thing:
+`Memory.why`, the CLI (`commonmemo show`, `commonmemo trace`), the read-only
+inspector (`commonmemo inspect`) and the OpenTelemetry exporter
+(`commonmemo.otel`). Decisions ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)): references by default, a read-only
+inspector first, OpenTelemetry as the first exporter. See
+[seeing-what-memory-did.md](seeing-what-memory-did.md).
+
 ## Decision records
 
 - [ADR 0001 — storage](adr/0001-storage.md) (proposed): why the memory CommonMemo owns sits
@@ -566,6 +582,11 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   capture and push, and one session continuing across harnesses. **Shipped:**
   `commonmemo hook` / `commonmemo setup`; one handler for all three (OpenCode
   through a JS shim); tested against recorded payloads and Codex's own schemas
+- [#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25) — seeing what memory did. **Shipped:** turn traces (`Memory.traces`,
+  `Memory.why`), `commonmemo show` / `trace`, the read-only `commonmemo inspect`,
+  and OpenTelemetry spans (`commonmemo.otel`). Still to come: provenance for
+  supersede history, the world-facts review screen (with #24), and the
+  evaluation dashboard
 
 **Planned**
 

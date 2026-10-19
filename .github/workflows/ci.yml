@@ -8,8 +8,8 @@ name: CI
 #   graphiti-core's real types (no graph database or LLM needed).
 # mem0: with the mem0 extra -- binds AsyncMemoryBackend's calls against
 #   mem0's real AsyncMemory signatures (no LLM or vector store needed).
-# mcp: with the mcp extra -- drives `commonmemo mcp` over stdio with the
-#   official MCP client (the server itself needs no extra).
+# mcp,otel: drives `commonmemo mcp` over stdio with the official MCP client
+#   (the server itself needs no extra), and checks turn traces as OpenTelemetry spans.
 
 on:
   push:
@@ -28,12 +28,12 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.10", "3.13"]
-        extras: ["dev", "dev,commonadk", "dev,graphiti", "dev,mem0", "dev,mcp"]
+        extras: ["dev", "dev,commonadk", "dev,graphiti", "dev,mem0", "dev,mcp,otel"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[${{ matrix.extras }}]"
-      - run: python -c "import sys, commonmemo, commonmemo.engines.graphiti, commonmemo.engines.mem0, commonmemo.mcp; assert not any(m.split('.')[0] in ('commonadk', 'graphiti_core', 'mem0', 'mcp') for m in sys.modules)"
+      - run: python -c "import sys, commonmemo, commonmemo.engines.graphiti, commonmemo.engines.mem0, commonmemo.mcp, commonmemo.otel, commonmemo.views; assert not any(m.split('.')[0] in ('commonadk', 'graphiti_core', 'mem0', 'mcp', 'opentelemetry') for m in sys.modules)"
       - run: pytest -q

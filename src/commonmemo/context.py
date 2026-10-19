@@ -70,6 +70,10 @@ class MemoryPolicy:
     """A recap is pushed mid-run only when it shares at least this many
     distinct words with the new text. (Tool output is long and noisy, so the
     turn's relevance threshold, a share of the query's words, doesn't fit.)"""
+    trace_text: bool = False
+    """Keep the pushed text itself in each turn trace (`ContextPushed.text`),
+    not only references to what was pushed. Off by default: the text repeats
+    user data. `forget_user` and `prune` remove it with the trace."""
     tool_notes_in_text: bool = True
     """Render tool notes into the stable text. Integrations that put them in
     the tools' own descriptions (CommonADK) turn this off."""
