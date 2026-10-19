@@ -262,3 +262,43 @@ def test_forget_user_removes_their_claims(tmp_path):
     assert mem.store.get_claim(key) is not None
     asyncio.run(mem.forget_user("u1"))
     assert mem.store.get_claim(key) is None
+
+
+def test_a_step_that_settles_after_a_stale_read_is_replayed_not_in_doubt(tmp_path, monkeypatch):
+    # #40: worker B reads "started" while the holder is still running; the
+    # holder then finishes and settles before B looks at the claim. B must
+    # replay the result, not report the step in doubt.
+    import dataclasses
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    runs = []
+
+    def make(mem):
+        @mem.step(name="charge", side_effects=True)
+        def charge(order: str) -> str:
+            runs.append(order)
+            return f"charged {order}"
+
+        return charge
+
+    a = Memory(url)
+    charge_a = make(a)
+    with a.session("job", user_id="u1"):
+        assert charge_a("o-1") == "charged o-1"  # A finished; its claim is settled
+
+    b = Memory(url)
+    charge_b = make(b)
+    real = knowledge.Knowledge.step
+    stale = {"left": 1}
+
+    def first_read_is_stale(self, *args):
+        rec = real(self, *args)
+        if stale["left"] and rec is not None:
+            stale["left"] -= 1
+            return dataclasses.replace(rec, status="started")  # what B saw before A finished
+        return rec
+
+    monkeypatch.setattr(knowledge.Knowledge, "step", first_read_is_stale)
+    with b.session("job", user_id="u1"):
+        assert charge_b("o-1") == "charged o-1"  # replayed
+    assert runs == ["o-1"]

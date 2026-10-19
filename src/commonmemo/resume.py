@@ -191,7 +191,16 @@ def make_step(
         if not side_effects:
             return session, sid, "run"
         if rec is not None and rec.status == "started":
-            raise _held(memory, session.session_id, sid)
+            held = _held(memory, session.session_id, sid)
+            if isinstance(held, StepInProgress):
+                raise held
+            # No live claim: the holder died -- or it settled after our read
+            # (#40). Look again before calling it in doubt.
+            memory.knowledge.catch_up(memory.store)
+            rec = memory.knowledge.step(session.session_id, sid)
+            if rec is not None and rec.status == "started":
+                raise held
+            return plan(args, kwargs)  # settled since: replay it, or claim and run it again
         started = session._bound(StepStarted(step_id=sid, side_effects=True))
         claim = memory.store.claim(_claim_key(session.session_id, sid), session_id=session.session_id,
                                    owner=memory.worker_id, lease_until=time.time() + lease, event=started)
