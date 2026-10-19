@@ -8,7 +8,7 @@
 // COMMONMEMO_COMMAND overrides the command, as a JSON array.
 //
 //   chat.message                        -> UserPromptSubmit (memory for the turn is kept)
-//   tool.execute.after                  -> PostToolUse
+//   tool.execute.after                  -> PostToolUse (memory the result brings up is kept for the turn)
 //   experimental.chat.system.transform  -> pushes memory into the system prompt
 //                                          (SessionStart the first time per session)
 //   experimental.session.compacting     -> PreCompact, and keeps stable memory in the summary
@@ -47,6 +47,7 @@ function hook(payload) {
 export const CommonMemo = async ({ directory }) => {
   const started = new Map(); // sessionID -> what SessionStart pushed
   const turn = new Map(); // sessionID -> memory for the latest prompt
+  const steps = new Map(); // sessionID -> memory pushed mid-run since that prompt
   const base = (sessionID, event) => ({ session_id: sessionID, cwd: directory, hook_event_name: event });
 
   return {
@@ -56,22 +57,24 @@ export const CommonMemo = async ({ directory }) => {
         .map((p) => p.text)
         .join("\n");
       turn.set(input.sessionID, await hook({ ...base(input.sessionID, "UserPromptSubmit"), prompt }));
+      steps.set(input.sessionID, []);
     },
     "tool.execute.after": async (input, output) => {
-      await hook({
+      const more = await hook({
         ...base(input.sessionID, "PostToolUse"),
         tool_name: input.tool,
         tool_input: input.args ?? {},
         tool_response: output.output,
         tool_use_id: input.callID,
       });
+      if (more) steps.set(input.sessionID, [...(steps.get(input.sessionID) ?? []), more]);
     },
     "experimental.chat.system.transform": async (input, output) => {
       if (!input.sessionID) return;
       if (!started.has(input.sessionID)) {
         started.set(input.sessionID, await hook({ ...base(input.sessionID, "SessionStart"), source: "startup" }));
       }
-      for (const text of [started.get(input.sessionID), turn.get(input.sessionID)]) {
+      for (const text of [started.get(input.sessionID), turn.get(input.sessionID), ...(steps.get(input.sessionID) ?? [])]) {
         if (text) output.system.push(text);
       }
     },
@@ -86,6 +89,7 @@ export const CommonMemo = async ({ directory }) => {
         await hook({ ...base(id, "SessionEnd"), reason: "other" });
         started.delete(id);
         turn.delete(id);
+        steps.delete(id);
       }
     },
   };

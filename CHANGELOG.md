@@ -2,6 +2,28 @@
 
 ## 0.0.1 — unreleased
 
+Mid-run refresh ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)):
+
+- **`Session.refresh(text)`**: memory to push mid-run after a tool result or
+  the agent's own message: recaps of earlier sessions that share at least
+  `MemoryPolicy.refresh_min_overlap` (3) distinct words with it and weren't
+  pushed yet this turn. At most `max_refreshes` (3) per turn;
+  `MemoryPolicy(refresh=False)` turns it off. Forgotten values stay
+  redacted; recaps follow `recaps_across_agents`. It searches the local
+  recap index only, so it never costs a Graphiti or Mem0 round trip.
+- **`Session.push_turn(query)`**: `context()` for the start of a turn,
+  recorded as pushed. Every push is a new `ContextPushed` event (reason,
+  recap ids, characters): bookkeeping that bounds refreshes across hook
+  processes and records what memory costs per run.
+- The hooks use them: prompts are `push_turn`, and `PostToolUse` /
+  `PostToolUseFailure` return refreshed memory as `additionalContext`
+  (Claude Code and Codex; checked against Codex's output schema). The
+  OpenCode plugin adds it to the next model call's system prompt.
+- New eval scenario, **mid-run refresh**: with refresh the agent recovers
+  the device the way an older session found works; with refresh off it
+  doesn't. The run reports the characters pushed with and without refresh.
+  10 of 10 pass.
+
 Recaps shared across agents ([#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)):
 
 - **Behaviour change:** a user's recaps now come from all their agents,

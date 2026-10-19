@@ -218,7 +218,7 @@ def test_hook_over_real_stdio(tmp_path, db):
     )
     assert proc.returncode == 0, proc.stderr
     mem = open_memory(db)
-    assert [e.kind for e in mem.store.events()] == ["message"]
+    assert [e.kind for e in mem.store.events()] == ["message", "context_pushed"]
     close(mem)
 
 
@@ -259,6 +259,8 @@ await hooks["chat.message"]({ sessionID, agent: "build" },
   { message: {}, parts: [{ type: "text", text: "Why does search_flights fail?" }] });
 await hooks["tool.execute.after"]({ tool: "bash", sessionID, callID: "call_1", args: { command: "pytest" } },
   { title: "pytest", output: "1 failed", metadata: {} });
+await hooks["tool.execute.after"]({ tool: "bash", sessionID, callID: "call_2", args: { command: "deploy" } },
+  { title: "deploy", output: "charger firmware rollback started on unit 7", metadata: {} });
 const output = { system: ["You are OpenCode."] };
 await hooks["experimental.chat.system.transform"]({ sessionID, model: {} }, output);
 const compact = { context: [] };
@@ -275,6 +277,8 @@ def test_opencode_plugin(tmp_path, db):
     seed = open_memory(db)
     with seed.session(user_id="ada") as s:
         s.never("suggest phone calls")
+    with seed.session(user_id="ada", agent="opencode") as s:
+        s.message("user", "the charger firmware rollback bricked unit 7; flash it over serial instead")
     close(seed)
     shutil.copy(Path(__file__).parents[1] / "src" / "commonmemo" / "opencode_plugin.js", tmp_path / "plugin.mjs")
     (tmp_path / "driver.mjs").write_text(DRIVER)
@@ -286,11 +290,54 @@ def test_opencode_plugin(tmp_path, db):
     assert result["system"][0] == "You are OpenCode."
     assert any("suggest phone calls" in s for s in result["system"][1:])  # pushed into the system prompt
     assert any("suggest phone calls" in s for s in result["compact"])  # and kept through compaction
+    assert any("flash it over serial" in s for s in result["system"])  # refreshed after the deploy result
 
     mem = open_memory(db)
     events = mem.store.events(session_id="opencode-ses_7f3a")
-    assert [e.kind for e in events] == ["message", "tool_invoked", "checkpoint"]
-    assert events[1].name == "bash" and events[1].result == "1 failed"
+    assert [e.kind for e in events] == ["message", "context_pushed", "tool_invoked", "tool_invoked",
+                                        "context_pushed", "checkpoint"]
+    assert events[2].name == "bash" and events[2].result == "1 failed"
+    assert events[4].reason == "refresh"
     assert all(e.agent == "opencode" for e in events)
     assert not mem.store.get_session("opencode-ses_7f3a").is_open
     close(mem)
+
+
+# -- mid-run refresh (#22) ---------------------------------------------------------
+
+
+def _seed_old_session(db):
+    seed = open_memory(db)
+    with seed.session(user_id="ada", agent="claude-code") as s:
+        s.message("user", "the charger firmware rollback bricked unit 7; flash it over serial instead")
+    close(seed)
+
+
+def test_tool_result_refreshes_memory_mid_run(db):
+    _seed_old_session(db)
+    args = ("--user", "ada")
+    hook(db, "claude-code", payload("claude-code", "user-prompt-submit", prompt="Ship release 4.2"), *args)
+    quiet, _ = hook(db, "claude-code", payload("claude-code", "post-tool-use"), *args)
+    assert quiet is None  # "3 passed" brings up nothing
+    out, err = hook(db, "claude-code", payload(
+        "claude-code", "post-tool-use",
+        tool_response={"stdout": "deploy: charger firmware rollback started on unit 7", "stderr": ""}), *args)
+    assert not err and out["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+    assert "flash it over serial" in context_of(out)
+
+
+def test_codex_refresh_output_matches_codex_schema(db):
+    _seed_old_session(db)
+    hook(db, "codex", payload("codex", "user-prompt-submit", prompt="Ship release 4.2"), "--user", "ada")
+    out, _ = hook(db, "codex", payload("codex", "post-tool-use", tool_response={
+        "output": "charger firmware rollback started on unit 7", "exit_code": 0}), "--user", "ada")
+    assert out is not None
+    _check(_schema("post-tool-use.command.output"), out)
+
+
+def test_read_only_never_refreshes(db):
+    _seed_old_session(db)
+    out, _ = hook(db, "claude-code", payload(
+        "claude-code", "post-tool-use", tool_response="charger firmware rollback started on unit 7"),
+        "--user", "ada", "--read-only")
+    assert out is None
