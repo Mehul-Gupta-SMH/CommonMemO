@@ -177,7 +177,24 @@ def make_step(
 
     step_name = name or func.__qualname__
 
-    def plan(args: tuple, kwargs: dict) -> tuple[Any, Optional[str], str]:
+    def contended(session: Any, sid: str) -> str:
+        """Someone else has this step. A live claim means it is running
+        (`StepInProgress`). Otherwise look again, since what we read may
+        predate its holder settling (#40): still started means the holder
+        died (`StepInDoubt`); finished means "replay"; anything else, decide
+        "again"."""
+        held = _held(memory, session.session_id, sid)
+        if isinstance(held, StepInProgress):
+            raise held
+        memory.knowledge.catch_up(memory.store)
+        rec = memory.knowledge.step(session.session_id, sid)
+        if rec is not None and rec.status == "finished" and rec.replayable:
+            return "replay"
+        if rec is not None and rec.status == "started":
+            raise held
+        return "again"
+
+    def plan(args: tuple, kwargs: dict, attempts: int = 3) -> tuple[Any, Optional[str], str]:
         """(session, step_id, what to do): "plain" outside a session,
         "replay" when a stored result exists, "run" for a pure step,
         "claimed" when this worker now holds a side-effecting step."""
@@ -190,27 +207,19 @@ def make_step(
             return session, sid, "replay"
         if not side_effects:
             return session, sid, "run"
-        if rec is not None and rec.status == "started":
-            held = _held(memory, session.session_id, sid)
-            if isinstance(held, StepInProgress):
-                raise held
-            # No live claim: the holder died -- or it settled after our read
-            # (#40). Look again before calling it in doubt.
+        if rec is None or rec.status != "started":
+            started = session._bound(StepStarted(step_id=sid, side_effects=True))
+            claim = memory.store.claim(_claim_key(session.session_id, sid), session_id=session.session_id,
+                                       owner=memory.worker_id, lease_until=time.time() + lease, event=started)
             memory.knowledge.catch_up(memory.store)
-            rec = memory.knowledge.step(session.session_id, sid)
-            if rec is not None and rec.status == "started":
-                raise held
-            return plan(args, kwargs)  # settled since: replay it, or claim and run it again
-        started = session._bound(StepStarted(step_id=sid, side_effects=True))
-        claim = memory.store.claim(_claim_key(session.session_id, sid), session_id=session.session_id,
-                                   owner=memory.worker_id, lease_until=time.time() + lease, event=started)
-        memory.knowledge.catch_up(memory.store)
-        if claim is None:
-            return session, sid, "claimed"
-        rec = memory.knowledge.step(session.session_id, sid)
-        if claim.status == "done" and rec is not None and rec.status == "finished" and rec.replayable:
-            return session, sid, "replay"  # another worker finished it a moment ago
-        raise _held(memory, session.session_id, sid)
+            if claim is None:
+                return session, sid, "claimed"
+        how = contended(session, sid)  # started by someone else, or they hold the claim
+        if how == "replay":
+            return session, sid, "replay"
+        if attempts <= 0:  # it keeps changing under us; let the caller decide
+            raise StepInDoubt(session.session_id, sid)
+        return plan(args, kwargs, attempts - 1)  # settled since, e.g. failed: claim and run it again
 
     def replay(session: Any, sid: str) -> Any:
         rec = memory.knowledge.step(session.session_id, sid)
