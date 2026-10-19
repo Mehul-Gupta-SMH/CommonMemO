@@ -125,6 +125,17 @@ far as its framework allows. Through released CommonADK, for one, all
 pushed memory goes in front of the prompt until [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) lands (see
 "CommonADK integration").
 
+The push is bounded, so it leaves things out, and a model can't know
+what it wasn't shown. When the push cuts something (facts, world facts,
+negatives or lessons past their `max_*`, recaps past the limit that clear
+half the threshold, entries cut for length) and the agent has
+`memory_recall`, the turn text ends with one line saying so: "More in memory
+than shown here: 5 facts about the user. Call memory_recall with what you
+need." ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)). Nothing cut, or no recall tool: no line, so it never becomes noise.
+It sits inside the reference-data framing, and the character cap never cuts
+it. `build_agent_tools` tells the session its agent can recall; hooks need
+`--recall-tool`, because they can't see a harness's MCP servers.
+
 The turn's push is built from the request, so an agent that then runs many
 steps used to work from that one snapshot. **Refresh** ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)) fills the gap:
 after each tool call, `Session.refresh(result)` pushes the recaps the
@@ -542,7 +553,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, ten
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, eleven
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are

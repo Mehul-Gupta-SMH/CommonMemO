@@ -42,7 +42,8 @@ class ScriptedAgent:
 
     def fact(self, key: str) -> Optional[str]:
         """The value of `key` as the prompt states it, latest line wins."""
-        found = re.findall(rf"(?m)^- {re.escape(key)}: (.+?)(?: \(as of .*\))?$", self.prompt)
+        # "- key: value" in the push, "[user] key: value" in a memory_recall result
+        found = re.findall(rf"(?m)^(?:- |\[user\] ){re.escape(key)}: (.+?)(?: \(as of .*\))?$", self.prompt)
         return found[-1].strip() if found else None
 
     # -- decisions -------------------------------------------------------------
@@ -62,6 +63,11 @@ class ScriptedAgent:
         if "iso_date" in description or "ISO" in description:
             return f"{year:04d}-{month:02d}-{day:02d}"
         return f"{day:02d}/{month:02d}/{year:04d}"
+
+    def wants_recall(self) -> bool:
+        """A capable model looks things up when told memory holds more than
+        it was shown; told nothing, it answers from what it has."""
+        return "memory_recall" in self.memory_text()
 
     def flash_method(self) -> str:
         """How to reflash a device: what memory says worked, else the usual way."""

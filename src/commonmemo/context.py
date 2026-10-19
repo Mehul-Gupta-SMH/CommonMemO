@@ -108,6 +108,20 @@ def _clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+_KINDS = {
+    "recaps": ("past session", "past sessions"),
+    "facts": ("fact about the user", "facts about the user"),
+    "world": ("known fact", "known facts"),
+    "negatives": ("standing constraint", "standing constraints"),
+    "lessons": ("feedback note", "feedback notes"),
+    "entries": ("entry cut for length", "entries cut for length"),
+}
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
 @dataclass
 class MemoryContext:
     """Everything memory has for a turn. Use the fields directly, or
@@ -125,6 +139,13 @@ class MemoryContext:
     policy: MemoryPolicy = field(default_factory=MemoryPolicy)
     agent: Optional[str] = None
     """The agent this context is for; recaps from other agents say whose they are."""
+    more: dict[str, int] = field(default_factory=dict)
+    """What the push left out, per kind ("recaps", "facts", "world",
+    "negatives", "lessons"): past a `max_*` limit, or recaps past the limit
+    that would still clear half the relevance threshold."""
+    recall_tool: bool = False
+    """Whether the agent has `memory_recall`; only then does the turn text
+    say that more is available (`more_line`)."""
 
     def recap_line(self, recap: Recap) -> str:
         """A recap's summary, saying which agent worked in it when that's
@@ -136,6 +157,10 @@ class MemoryContext:
         return bool(self.stable_text() or self.turn_text())
 
     def stable_text(self) -> str:
+        full = self._stable_full()
+        return _clip(full, self.policy.max_chars_stable) if full else ""
+
+    def _stable_full(self) -> str:
         sections = []
         if self.negatives:
             sections.append(
@@ -154,9 +179,28 @@ class MemoryContext:
                 "## Tool notes (observed in past calls)\n"
                 + "\n".join(f"- {tool}: {note}" for tool, notes in sorted(self.tool_notes.items()) for note in notes)
             )
-        if not sections:
+        return STABLE_HEADER + "\n\n" + "\n\n".join(sections) if sections else ""
+
+    def _clipped_entries(self) -> int:
+        """Entries the stable text's character cap cut off."""
+        full = self._stable_full()
+        shown = _clip(full, self.policy.max_chars_stable)
+        return full.count("\n- ") - shown.count("\n- ") if len(full) > len(shown) else 0
+
+    def more_line(self) -> str:
+        """One line saying what memory holds beyond what was pushed, or ""
+        when nothing was left out or the agent has no `memory_recall`."""
+        if not self.recall_tool:
             return ""
-        return _clip(STABLE_HEADER + "\n\n" + "\n\n".join(sections), self.policy.max_chars_stable)
+        counts = {k: n for k, n in self.more.items() if n > 0}
+        clipped = self._clipped_entries()
+        if clipped:
+            counts["entries"] = counts.get("entries", 0) + clipped
+        if not counts:
+            return ""
+        parts = [_count(n, *_KINDS.get(k, (k, k))) for k, n in counts.items()]
+        return (f"More in memory than shown here: {', '.join(parts)}. "
+                "Call memory_recall with what you need.")
 
     def turn_text(self) -> str:
         sections = []
@@ -168,9 +212,12 @@ class MemoryContext:
             sections.append("## Session state\n" + "\n".join(f"- {k}: {v}" for k, v in self.state.items()))
         if self.recent:
             sections.append("## Earlier in this session\n" + "\n".join(f"- {_line(e)}" for e in self.recent))
-        if not sections:
+        more = self.more_line()
+        if not sections and not more:
             return ""
-        return _clip(TURN_HEADER + "\n\n" + "\n\n".join(sections), self.policy.max_chars_turn)
+        tail = f"\n\n## More available\n{more}" if more else ""
+        body = TURN_HEADER + ("\n\n" + "\n\n".join(sections) if sections else "")
+        return _clip(body, self.policy.max_chars_turn - len(tail)) + tail  # the line is never cut off
 
     def render(self, *, max_chars: Optional[int] = None) -> str:
         """Both halves, for callers with one place to put memory."""
