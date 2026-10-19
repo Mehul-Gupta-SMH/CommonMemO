@@ -389,7 +389,8 @@ class Knowledge:
         rank = source_rank(e.source)
         proposed = e.proposed if e.proposed is not None else rank <= 1
         if proposed:
-            self._world_insert(e, e.scope, e.key, e.value, e.valid_until, e.source, rank, "proposed")
+            self._world_insert(e, e.scope, e.key, e.value, e.valid_until, e.source, rank, "proposed",
+                               note=getattr(e, "note", None))
             return
         current = self._world_current(e.scope, e.key)
         if current is not None and current["rank"] > rank:

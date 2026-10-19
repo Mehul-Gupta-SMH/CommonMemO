@@ -93,6 +93,24 @@ async with mem.session(user_id="u1", agent="support") as s:
 `mem.tool_notes(agent)` gives tool memory's advice per tool, and
 `mem.tool_profile(tool)` the numbers behind it.
 
+## World facts as configuration
+
+```python
+from commonmemo import FactKey
+
+mem = Memory(project="shop", fact_keys=[
+    FactKey("refund_window", "How long customers have to return an order", lifetime="90d", pinned=True),
+    FactKey("plan_tier", "The customer's plan", allowed=("free", "pro")),
+])
+mem.load_facts("facts.yaml")     # keys and values, versioned with the app; loading again writes nothing new
+```
+
+The registry is optional ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)). With one, agents are shown the keys to reuse,
+and their writes to an unregistered or near-duplicate key (`refund_period`)
+stay proposals for review. Registered lifetimes make facts go stale by
+default. Pinned facts are always pushed; the rest only when the request is
+about them, so hundreds of facts don't crowd the prompt.
+
 ## Resume a stopped process
 
 ```python
@@ -338,7 +356,8 @@ descriptions. Among the scenarios:
 - one user can't change what another is told;
 - a burst of bad writes is detected, frozen and reverted;
 - a tool result that brings up an older session gets its recap mid-run;
-- when the push leaves things out, the agent is told and recalls them.
+- when the push leaves things out, the agent is told and recalls them;
+- a fact past its lifetime isn't quoted, and an agent's write doesn't override an operator's.
 
 ```
 python -m evals                   # prints the report; see docs/evals.md for the baseline

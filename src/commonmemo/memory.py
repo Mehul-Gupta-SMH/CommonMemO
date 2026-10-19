@@ -28,7 +28,9 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, TypeVar, Un
 
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
+from .facts import FactKey, FactRegistry, ImportResult
 from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
+from .engines.local import content_words
 from .events import (
     MemoryEvent,
     Negative,
@@ -72,6 +74,8 @@ def _clip(value: Any, max_chars: int) -> str:
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .traces import TurnTrace, Why
 
 MORE_PROBE = 5
@@ -97,6 +101,7 @@ class Memory:
         world_fact_approval: bool = True,
         budgets: Optional[dict[str, Union[Budget, int]]] = None,
         alerts: Optional[AlertPolicy] = None,
+        fact_keys: Optional[Iterable[FactKey]] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -123,6 +128,10 @@ class Memory:
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
         """Default lifetime of a session in seconds (`None`: no expiry)."""
+        self.fact_keys = FactRegistry()
+        """The optional world-fact key registry (see `facts.py`): what keys
+        exist, their allowed values and lifetimes, and which are pinned."""
+        self.fact_keys.register(*(fact_keys or ()))
         self.world_fact_approval = world_fact_approval
         """Agent-written world facts wait for `confirm_fact` before anyone but
         the user or session that proposed them sees them (default). A world
@@ -378,7 +387,24 @@ class Memory:
         near = [e for e in found if e not in shown and (e.score or 0.0) >= policy.min_recap_score / 2]
         facts = self._visible_facts(user_id, await engine.user_profile(user_id)) if user_id is not None else []
         world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
-        if query and len(world) > policy.max_world:
+        world_turn: list[WorldRecord] = []
+        world_more = len(world) - policy.max_world
+        if self.fact_keys:
+            # With a registry, only pinned facts go in the stable half; the
+            # rest are ranked by the request and pushed with the turn, so the
+            # stable half stays small (and cached) however many facts exist.
+            pinned = [w for w in world if self.fact_keys.pinned(w.key)]
+            words = content_words(query or "")
+            scored = []
+            for w in world:
+                if not self.fact_keys.pinned(w.key):
+                    spec = self.fact_keys.get(w.key)
+                    about = f"{w.key} {w.value} {spec.description if spec else ''}"
+                    scored.append((len(words & content_words(about)), w))
+            matched = [w for n, w in sorted(scored, key=lambda t: -t[0]) if n > 0]
+            world, world_turn = pinned, matched[: policy.max_world]
+            world_more = max(0, len(pinned) - policy.max_world) + len(scored) - len(world_turn)
+        elif query and len(world) > policy.max_world:
             words = set(query.lower().split())
             world.sort(key=lambda w: -len(words & set(f"{w.key} {w.value}".lower().split())))
         negatives = self.knowledge.negatives(scopes)
@@ -387,6 +413,7 @@ class Memory:
             negatives=negatives[: policy.max_negatives],
             facts=facts if all_facts else facts[: policy.max_facts],
             world=world[: policy.max_world],
+            world_turn=world_turn,
             lessons=lessons[: policy.max_lessons],
             tool_notes=self.tool_notes(agent),
             recaps=shown,
@@ -395,7 +422,7 @@ class Memory:
             more={
                 "recaps": len(near),
                 "facts": len(facts) - policy.max_facts,
-                "world": len(world) - policy.max_world,
+                "world": world_more,
                 "negatives": len(negatives) - policy.max_negatives,
                 "lessons": len(lessons) - policy.max_lessons,
             },
@@ -460,13 +487,35 @@ class Memory:
         # Decided now and recorded in the event, so rebuilding the
         # projections from the log gives the same answer under any setting.
         scope = scope or self.project_scope
+        spec = self.fact_keys.get(key)
+        trusted = source_rank(source) > 1
+        if trusted and spec and spec.allowed and value not in spec.allowed:
+            raise ValueError(f"commonmemo: {value!r} is not an allowed value for {key} ({', '.join(spec.allowed)})")
+        note = None if trusted else self.fact_keys.check(key, value)
         proposed = (
-            (self.world_fact_approval and source_rank(source) <= 1)
+            (self.world_fact_approval and not trusted)
+            or note is not None
             or self.knowledge.frozen(scope, source) is not None
             or over_budget(self, source)
         )
-        return WorldFact(key=key, value=value, scope=scope or self.project_scope,
-                         valid_until=time.time() + ttl if ttl else None, source=source, proposed=proposed)
+        if ttl is None and spec is not None and spec.lifetime:
+            ttl = spec.lifetime  # a registered key goes stale by default
+        return WorldFact(key=key, value=value, scope=scope, valid_until=time.time() + ttl if ttl else None,
+                         source=source, proposed=proposed, note=note)
+
+    def register_fact_key(self, key: str, description: str = "", *, allowed: Optional[Iterable[str]] = None,
+                          lifetime: Union[None, float, str] = None, pinned: bool = False) -> FactKey:
+        """Add a key to the world-fact registry (see `facts.py`)."""
+        spec = FactKey(key, description, tuple(allowed) if allowed is not None else None, lifetime, pinned)
+        self.fact_keys.register(spec)
+        return spec
+
+    def load_facts(self, source: Union[str, "Path", dict[str, Any]]) -> ImportResult:
+        """Register keys and write facts from a JSON or YAML file (or a dict),
+        skipping facts whose current value already matches (see `facts.py`)."""
+        from .facts import load
+
+        return load(self, source)
 
     def pending_world_facts(self, scopes: Optional[list[str]] = None) -> list[WorldRecord]:
         """World facts waiting for review, oldest first: proposals (agent
