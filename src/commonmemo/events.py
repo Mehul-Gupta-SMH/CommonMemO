@@ -267,6 +267,17 @@ class Checkpoint(MemoryEvent):
     data: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
+class ContextPushed(MemoryEvent):
+    """What memory pushed into an agent's context: at the start of a turn
+    (`reason="turn"`, from `Session.push_turn`) or mid-run (`"refresh"`,
+    from `Session.refresh`). It bounds refreshes, keeps a recap from being
+    pushed twice in one turn, and records what each push cost (`chars`)."""
+
+    reason: str
+    recap_ids: tuple[str, ...] = ()
+    chars: int = 0
+
+
 class StepStarted(MemoryEvent):
     """`@mem.step` began running `step_id`."""
 
@@ -333,7 +344,7 @@ class ExternalEvent(MemoryEvent):
 
 
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
-    Checkpoint, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
+    Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
     WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze,
 )
 """Events that record mechanics, not content. They stay in the event log
@@ -380,6 +391,7 @@ __all__ = [
     "NegativeRevoked",
     "Forgotten",
     "Checkpoint",
+    "ContextPushed",
     "StepStarted",
     "StepFinished",
     "StepFailed",

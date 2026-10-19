@@ -17,7 +17,7 @@ events into it. So one handler serves all three:
 |---|---|---|
 | `SessionStart` | opens or resumes the session | everything memory holds for the session: stable memory, and where a resumed session stands (its checkpoint and latest events) |
 | `UserPromptSubmit` | the prompt, as a user `Message` | memory for this turn: relevant recaps, state |
-| `PostToolUse` / `PostToolUseFailure` | a `ToolInvoked` (feeds tool memory) | |
+| `PostToolUse` / `PostToolUseFailure` | a `ToolInvoked` (feeds tool memory) | recaps of earlier sessions the result brings up, if the turn's push missed them (`Session.refresh`, at most `MemoryPolicy.max_refreshes` per turn) |
 | `Stop` | the reply, as an assistant `Message` | |
 | `PreCompact` | a checkpoint, so the work survives compaction | |
 | `SessionEnd` | closes the session and consolidates it | |
@@ -113,9 +113,11 @@ def handle(
         return _push(event, run_sync(s.context("", recent=RESUME_EVENTS)).render())
     if event == "UserPromptSubmit":
         prompt = payload.get("prompt") or ""
-        if prompt and not read_only:
+        if read_only:
+            return _push(event, run_sync(s.context(prompt, recent=0)).turn_text())
+        if prompt:
             s.message("user", prompt)
-        return _push(event, run_sync(s.context(prompt, recent=0)).turn_text())
+        return _push(event, run_sync(s.push_turn(prompt, recent=0)).turn_text())
     if event in ("PostToolUse", "PostToolUseFailure"):
         name = payload.get("tool_name") or "unknown"
         if not name.endswith(_MEMORY_TOOLS):  # the memory tools' own calls are already in memory
@@ -129,6 +131,10 @@ def handle(
                 error=_text(payload.get("error")) if failed else _tool_error(response),
                 duration_ms=payload.get("duration_ms"),
             ))
+            # The result may bring up an earlier session the turn's push missed.
+            seen = " ".join(filter(None, (_text(arguments), _text(response), _text(payload.get("error")))))
+            refreshed = run_sync(s.refresh(seen))
+            return _push(event, refreshed.turn_text()) if refreshed else None
     elif event == "Stop":
         reply = payload.get("last_assistant_message")
         if reply:

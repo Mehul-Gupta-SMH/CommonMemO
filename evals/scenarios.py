@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
 from pathlib import Path
 
-from commonmemo import AlertPolicy, Memory
+from commonmemo import AlertPolicy, Memory, MemoryPolicy
 from commonmemo.agent_tools import build_agent_tools
 from commonmemo.context import STABLE_HEADER, TURN_HEADER
 
@@ -218,6 +219,41 @@ def detect_freeze_revert(with_memory: bool) -> Outcome:
     return Outcome(ok, f"alert raised: {detected}; world facts after revert and freeze: {current}")
 
 
+# -- 10. a tool result brings up an older session mid-run -----------------------
+
+
+def _deploy_run(mem: Memory) -> tuple[ScriptedAgent, int]:
+    """Ship a release: three tool steps, then decide how to recover unit 7."""
+    with mem.session(user_id="ada", agent="claude-code") as s:
+        turn = asyncio.run(s.push_turn("Ship release 4.2", recent=0)).turn_text()
+        pushed = [turn] if turn else []
+        for result in ("build: 214 files compiled", "tests: 88 passed",
+                       "deploy: unit 7 stopped responding during the charger firmware rollback"):
+            more = asyncio.run(s.refresh(result))  # what the hooks do after each tool call
+            if more is not None:
+                pushed.append(more.turn_text())
+        memory = "\n\n".join(pushed)
+        request = "# Request\n\nUnit 7 is unresponsive. Recover it."
+        return ScriptedAgent(prompt=f"{memory}\n\n{request}" if memory else request), len(memory)
+
+
+def mid_run_refresh(with_memory: bool) -> Outcome:
+    def setup(policy: MemoryPolicy) -> Memory:
+        mem = Memory(project="fleet", policy=policy)
+        with mem.session(user_id="ada", agent="claude-code") as s:
+            s.message("user", "the charger firmware rollback bricked unit 7 last time; flash it over serial instead")
+        return mem
+
+    if not with_memory:
+        return Outcome(ScriptedAgent().flash_method() == "serial", "reflashed over the air: no memory")
+    agent, chars = _deploy_run(setup(MemoryPolicy()))
+    off, off_chars = _deploy_run(setup(MemoryPolicy(refresh=False)))
+    method = agent.flash_method()
+    return Outcome(method == "serial",
+                   f"reflashed over {method} (refresh off: over {off.flash_method()}); memory pushed {chars} chars "
+                   f"with refresh, {off_chars} without", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -231,6 +267,8 @@ SCENARIOS = [
              baseline=False),
     Scenario("world-fact isolation", "one user's claim doesn't change what another user is told",
              world_fact_isolation, baseline=False),
+    Scenario("mid-run refresh", "a tool result that brings up an older session gets its recap pushed mid-run",
+             mid_run_refresh),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

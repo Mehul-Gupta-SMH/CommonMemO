@@ -30,6 +30,7 @@ from .context import MemoryContext, MemoryPolicy
 from .engines.base import Recap, Fact
 from .events import (
     Checkpoint,
+    ContextPushed,
     Feedback,
     Forgotten,
     MemoryEvent,
@@ -39,11 +40,15 @@ from .events import (
     StepFinished,
     UserFact,
 )
+from .engines.local import content_words
 from .resume import ResumePoint
 from .stores.base import SessionRecord
 
 if TYPE_CHECKING:
     from .memory import Memory
+
+REFRESH_QUERY_CHARS = 2000
+"""How much of the new text `Session.refresh` looks at."""
 
 _current: contextvars.ContextVar[Optional["Session"]] = contextvars.ContextVar(
     "commonmemo_current_session", default=None
@@ -316,6 +321,51 @@ class Session:
         resume = self.resume_point()
         ctx.resume = None if resume.is_fresh else resume
         return ctx
+
+    async def push_turn(self, query: str, **kwargs: Any) -> MemoryContext:
+        """`context(query, ...)` for the start of a turn, recorded as pushed,
+        so later `refresh` calls in the turn push only what's new."""
+        ctx = await self.context(query, **kwargs)
+        self.record(ContextPushed(reason="turn", recap_ids=tuple(r.id for r in ctx.recaps),
+                                  chars=len(ctx.turn_text())))
+        return ctx
+
+    async def refresh(self, text: str) -> Optional[MemoryContext]:
+        """Memory to push mid-run, after `text` (a tool result, the agent's
+        own message) came up: recaps of earlier sessions it shares at least
+        `MemoryPolicy.refresh_min_overlap` words with, not pushed yet this
+        turn. None when there is nothing new, refresh is off, or the turn
+        used its `max_refreshes`. Pushes are recorded (`ContextPushed`)."""
+        policy = self.memory.policy
+        if not policy.refresh or not text.strip():
+            return None
+        pushes = self._pushes_this_turn()
+        if sum(p.reason == "refresh" for p in pushes) >= policy.max_refreshes:
+            return None
+        pushed = {rid for p in pushes for rid in p.recap_ids}
+        from dataclasses import replace
+
+        query = text[:REFRESH_QUERY_CHARS]
+        # It runs after every tool call, so it searches the local recap index
+        # only: no graph or LLM round trip per step, whatever the engine.
+        found = await self.memory._long_term(
+            query, user_id=self.user_id, agent=self.agent, scopes=self.scopes, local_only=True,
+            policy=replace(policy, recaps=max(5, policy.recaps), min_recap_score=0.0),
+        )
+        words = content_words(query)
+        new = [r for r in found.recaps
+               if r.id not in pushed and r.session_id != self.session_id
+               and len(words & content_words(r.summary)) >= policy.refresh_min_overlap][: policy.recaps]
+        if not new:
+            return None
+        ctx = MemoryContext(recaps=new, policy=policy, agent=self.agent)
+        self.record(ContextPushed(reason="refresh", recap_ids=tuple(r.id for r in new), chars=len(ctx.turn_text())))
+        return ctx
+
+    def _pushes_this_turn(self) -> list[ContextPushed]:
+        pushes = self.events(kinds=[ContextPushed.kind])
+        starts = [i for i, p in enumerate(pushes) if p.reason == "turn"]
+        return pushes[starts[-1]:] if starts else pushes
 
     # -- closing ------------------------------------------------------------
 

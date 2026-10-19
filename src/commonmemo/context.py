@@ -61,6 +61,15 @@ class MemoryPolicy:
     """Recent events of this session to push. 0 by default: every SDK with a
     session already resends the conversation, so pushing it again doubles it.
     Raise it for stateless callers."""
+    refresh: bool = True
+    """Push more memory mid-run (`Session.refresh`), when a tool result or
+    the agent's own work brings up an earlier session the turn's push missed."""
+    max_refreshes: int = 3
+    """Most mid-run pushes per turn, so the cost of a long run stays bounded."""
+    refresh_min_overlap: int = 3
+    """A recap is pushed mid-run only when it shares at least this many
+    distinct words with the new text. (Tool output is long and noisy, so the
+    turn's relevance threshold, a share of the query's words, doesn't fit.)"""
     tool_notes_in_text: bool = True
     """Render tool notes into the stable text. Integrations that put them in
     the tools' own descriptions (CommonADK) turn this off."""

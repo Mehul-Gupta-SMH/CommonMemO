@@ -63,6 +63,10 @@ class ScriptedAgent:
             return f"{year:04d}-{month:02d}-{day:02d}"
         return f"{day:02d}/{month:02d}/{year:04d}"
 
+    def flash_method(self) -> str:
+        """How to reflash a device: what memory says worked, else the usual way."""
+        return "serial" if "over serial" in self.memory_text().lower() else "ota"
+
     def obeys(self, phrase: str) -> bool:
         """A naive model follows `phrase` if it appears as an instruction."""
         return phrase.lower() in self.instructions().lower()

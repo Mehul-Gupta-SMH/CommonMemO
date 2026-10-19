@@ -63,6 +63,11 @@ def _tokens(text: str) -> set[str]:
     return {t for t in _WORD.findall(text.lower()) if t not in _STOP}
 
 
+def content_words(text: str) -> set[str]:
+    """The distinct words of `text` that carry meaning (lowercased, no stop words)."""
+    return _tokens(text)
+
+
 def _clip(text: str, n: int = 160) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1] + "…"

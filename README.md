@@ -265,12 +265,16 @@ export COMMONMEMO_USER=ada
 |---|---|---|
 | session start | opens or resumes the session | stable memory, and where a resumed session stands |
 | prompt | the prompt | memory for this turn (relevant recaps, state) |
-| tool call | the call, its result or error (feeds tool memory) | |
+| tool call | the call, its result or error (feeds tool memory) | recaps the result brings up that the turn missed |
 | reply | the reply (Claude Code, Codex) | |
 | compaction | a checkpoint, so work survives it | |
 | session end | closes and consolidates the session | |
 
-A hook never blocks the harness: on any error it writes to stderr and exits 0.
+Memory is also **refreshed mid-run**: when a tool result brings up an
+earlier session that the prompt's push missed, its recap is pushed before
+the next model call (at most 3 times per turn; `MemoryPolicy(refresh=False)`
+turns it off; [#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)). A hook never blocks the harness: on any error it writes to
+stderr and exits 0.
 Each harness session is its own memory session by default. To continue
 **one session across harnesses**, give them the same `--session` (or
 `COMMONMEMO_SESSION`): start in Claude Code, resume in Codex, and Codex is
@@ -307,7 +311,8 @@ descriptions. Among the scenarios:
 - a forgotten fact never returns;
 - stored text never becomes an instruction;
 - one user can't change what another is told;
-- a burst of bad writes is detected, frozen and reverted.
+- a burst of bad writes is detected, frozen and reverted;
+- a tool result that brings up an older session gets its recap mid-run.
 
 ```
 python -m evals                   # prints the report; see docs/evals.md for the baseline

@@ -115,6 +115,7 @@ in lessons and recaps.
 |---|---|---|
 | **Push, stable** | negatives, user facts, world facts, lessons from feedback | the agent's instructions — changes rarely, so it keeps prompt caching intact |
 | **Push, turn** | recaps above `min_recap_score`, working state, where a resumed process stands | in front of the turn's prompt |
+| **Push, mid-run** | recaps of earlier sessions a tool result brings up, not pushed yet this turn | after the tool call, before the next model call (`Session.refresh`) |
 | **In the tools** | tool memory's notes | each tool's own description, read exactly when the model decides how to call it |
 | **Pull** | `memory_recall(query)` — every kind, wider limits, no threshold | a tool call |
 | **Write** | `memory_remember`, `memory_note_fact`, `memory_avoid`, `memory_save_progress` | tool calls, recorded `source="agent"` |
@@ -123,6 +124,21 @@ in lessons and recaps.
 far as its framework allows. Through released CommonADK, for one, all
 pushed memory goes in front of the prompt until [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30) lands (see
 "CommonADK integration").
+
+The turn's push is built from the request, so an agent that then runs many
+steps used to work from that one snapshot. **Refresh** ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)) fills the gap:
+after each tool call, `Session.refresh(result)` pushes the recaps the
+result brings up that this turn hasn't pushed yet. A recap qualifies when
+it shares at least `refresh_min_overlap` (3) distinct words with the
+result; tool output is long and noisy, so the turn's threshold (a share of
+the query's words) doesn't fit, and ranking by meaning is [#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21). At most
+`max_refreshes` (3) per turn. It searches the local recap index only, so a
+refresh never costs a graph or LLM round trip, whatever the engine. Every push is recorded as a `ContextPushed`
+event (reason, recap ids, characters), which bounds refreshes across hook
+processes and measures what memory costs per run. The stable half never
+changes mid-run, so prompt caching keeps working. The Claude Code and Codex
+hooks return it from `PostToolUse`; OpenCode adds it to the system prompt
+of the next model call; CommonADK needs [#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7); the MCP server can't push.
 
 A user's recaps come from every agent they worked with
 (`MemoryPolicy.recaps_across_agents`, on by default, [#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)): with one agent per
@@ -526,7 +542,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, nine
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, ten
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
