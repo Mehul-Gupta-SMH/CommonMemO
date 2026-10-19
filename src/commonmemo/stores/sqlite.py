@@ -234,6 +234,16 @@ class SQLiteStore(Store):
             rows = self._conn.execute(sql, params).fetchall()
         return [event_from_dict(json.loads(r["body"])) for r in reversed(rows)]
 
+    def get_events(self, ids: Iterable[str]) -> list[MemoryEvent]:
+        ids = list(dict.fromkeys(ids))
+        if not ids:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT body FROM events WHERE id IN ({','.join('?' * len(ids))}) ORDER BY seq", ids
+            ).fetchall()
+        return [event_from_dict(json.loads(r["body"])) for r in rows]
+
     # -- Working memory -----------------------------------------------------
 
     def _row_to_session(self, row: sqlite3.Row) -> SessionRecord:

@@ -116,7 +116,9 @@ def handle(
     if event == "SessionStart":
         # A session resumed here may have been started in another harness,
         # whose conversation this one never saw: include its latest events.
-        return _push(event, run_sync(s.context("", recent=RESUME_EVENTS)).render())
+        if read_only:
+            return _push(event, run_sync(s.context("", recent=RESUME_EVENTS)).render())
+        return _push(event, run_sync(s.push("", reason="start", part="all", recent=RESUME_EVENTS)).render())
     if event == "UserPromptSubmit":
         prompt = payload.get("prompt") or ""
         if read_only:

@@ -327,13 +327,30 @@ class Session:
         ctx.resume = None if resume.is_fresh else resume
         return ctx
 
-    async def push_turn(self, query: str, **kwargs: Any) -> MemoryContext:
-        """`context(query, ...)` for the start of a turn, recorded as pushed,
-        so later `refresh` calls in the turn push only what's new."""
+    async def push(self, query: str, *, reason: str = "turn", part: str = "turn", **kwargs: Any) -> MemoryContext:
+        """`context(query, ...)`, recorded as a turn trace (`ContextPushed`):
+        what was pushed, by reference, and what was left out. `part` is what
+        the caller delivers: "turn" (`turn_text`), "stable" or "all"
+        (`render`); its size is the trace's `chars`. `reason` labels the push
+        ("start", "turn", ...); a "turn" push starts a new refresh budget."""
         ctx = await self.context(query, **kwargs)
-        self.record(ContextPushed(reason="turn", recap_ids=tuple(r.id for r in ctx.recaps),
-                                  chars=len(ctx.turn_text())))
+        text = {"turn": ctx.turn_text, "stable": ctx.stable_text, "all": ctx.render}[part]()
+        self._trace(reason, ctx, text)
         return ctx
+
+    async def push_turn(self, query: str, **kwargs: Any) -> MemoryContext:
+        """`push(query, reason="turn")`: the start of a turn, so later
+        `refresh` calls in the turn push only what's new."""
+        return await self.push(query, reason="turn", **kwargs)
+
+    def _trace(self, reason: str, ctx: MemoryContext, text: str) -> None:
+        from .traces import trace_items
+
+        self.record(ContextPushed(
+            reason=reason, recap_ids=tuple(r.id for r in ctx.recaps), chars=len(text), items=trace_items(ctx),
+            more={k: n for k, n in ctx.more.items() if n > 0},
+            text=text if self.memory.policy.trace_text else None,
+        ))
 
     async def refresh(self, text: str) -> Optional[MemoryContext]:
         """Memory to push mid-run, after `text` (a tool result, the agent's
@@ -364,7 +381,7 @@ class Session:
         if not new:
             return None
         ctx = MemoryContext(recaps=new, policy=policy, agent=self.agent)
-        self.record(ContextPushed(reason="refresh", recap_ids=tuple(r.id for r in new), chars=len(ctx.turn_text())))
+        self._trace("refresh", ctx, ctx.turn_text())
         return ctx
 
     def _pushes_this_turn(self) -> list[ContextPushed]:

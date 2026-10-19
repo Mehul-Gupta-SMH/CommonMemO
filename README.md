@@ -51,6 +51,7 @@ pip install commonmemo                 # core: stdlib only, local engine
 pip install "commonmemo[commonadk]"    # + CommonADK integration
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
+pip install "commonmemo[otel]"         # + turn traces as OpenTelemetry spans
 ```
 
 The core also gives you the `commonmemo` command (`commonmemo mcp`, `commonmemo hook`, below).
@@ -139,8 +140,28 @@ mem.alerts()                               # velocity spikes, churn, review back
 
 Reverts append compensating events and never delete, so they can be undone
 too. Alerts are on by default and logged to `commonmemo.alerts` ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
-A mockup of the inspector these feed ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)), with sample data, is at
+A mockup of where the inspector is heading ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)), with sample data, is at
 <https://mehul-gupta-smh.github.io/CommonMemO/> (source: `pages/index.html`).
+
+## See what memory did
+
+Every push into an agent's context is recorded as a **turn trace**: what was
+pushed, by reference, where each item came from, and what was left out
+(pushed text only with `MemoryPolicy(trace_text=True)`; `forget_user`
+removes a user's traces).
+
+```bash
+commonmemo trace s2 --why refund_window   # why the agent got it: the events it came from
+commonmemo show user ada                  # profile, constraints, what was forgotten, past sessions
+commonmemo inspect --open                 # the same, in a local read-only web page
+```
+
+```python
+mem.traces(session_id="s2"); mem.why("refund_window", session_id="s2")
+from commonmemo.otel import instrument; instrument(mem)   # pushes as OpenTelemetry spans
+```
+
+More in [docs/seeing-what-memory-did.md](docs/seeing-what-memory-did.md) ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)).
 
 ## With Graphiti
 
@@ -329,7 +350,7 @@ after the engines' live run (#3).
 ## Development
 
 ```bash
-pip install -e ".[dev,commonadk,graphiti,mem0,mcp]"
+pip install -e ".[dev,commonadk,graphiti,mem0,mcp,otel]"
 pytest
 ```
 

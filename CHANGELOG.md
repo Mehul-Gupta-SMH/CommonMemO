@@ -2,6 +2,28 @@
 
 ## 0.0.1 — unreleased
 
+Seeing what memory did ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)):
+
+- **Turn traces.** `ContextPushed` now records each pushed item by
+  reference (kind, key or id, source, score, source events) and what was left
+  out; the pushed text only with `MemoryPolicy(trace_text=True)`. New
+  `Session.push(query, reason=, part=)` (`push_turn` is `push(reason="turn")`);
+  the hooks record session starts, and CommonADK runs record each turn.
+  `Memory.traces(...)` and `Memory.why(key, session_id=...)`, which answers
+  with the events an item came from. `forget_user` removes a user's traces.
+  New `Store.get_events(ids)`.
+- **CLI:** `commonmemo show user|session ID`, `commonmemo trace SESSION
+  [--why KEY]`.
+- **`commonmemo inspect`:** a local, read-only web inspector (stdlib, 127.0.0.1,
+  GET only, no scripts, strict CSP, every value escaped): overview with world
+  facts and proposals, user page, session timeline with turn traces and
+  "why" links; JSON under `/api/`.
+- **OpenTelemetry:** `commonmemo.otel.instrument(mem)` emits a
+  `commonmemo.push` span per push under the current span; `export(...)` for
+  stored traces. `otel` extra; the user's id and pushed text only on request.
+  New `Memory.listeners`; a failing listener never breaks a write.
+- Docs: [seeing what memory did](docs/seeing-what-memory-did.md).
+
 More in memory than pushed ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)):
 
 - When the push leaves things out and the agent has `memory_recall`, the

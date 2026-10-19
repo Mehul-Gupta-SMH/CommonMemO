@@ -268,14 +268,25 @@ class Checkpoint(MemoryEvent):
 
 
 class ContextPushed(MemoryEvent):
-    """What memory pushed into an agent's context: at the start of a turn
-    (`reason="turn"`, from `Session.push_turn`) or mid-run (`"refresh"`,
-    from `Session.refresh`). It bounds refreshes, keeps a recap from being
-    pushed twice in one turn, and records what each push cost (`chars`)."""
+    """A turn trace: what memory pushed into an agent's context, at the start
+    of a session (`reason="start"`), of a turn (`"turn"`, `Session.push_turn`)
+    or mid-run (`"refresh"`, `Session.refresh`). It bounds refreshes, keeps a
+    recap from being pushed twice in one turn, records what each push cost
+    (`chars`), and is what `Memory.traces` / `Memory.why` read (#25).
+
+    `items` are references, not text: one dict per pushed item with its
+    `kind` ("fact", "world", "negative", "lesson", "recap"), its key or id,
+    and where it came from (`source`, `events`, `score`). `more` counts what
+    was left out (`MemoryContext.more`). `text` is the pushed text itself,
+    only with `MemoryPolicy.trace_text`. Traces carry the user's id, so
+    `forget_user` removes them."""
 
     reason: str
     recap_ids: tuple[str, ...] = ()
     chars: int = 0
+    items: tuple[dict[str, Any], ...] = ()
+    more: dict[str, int] = dataclasses.field(default_factory=dict)
+    text: Optional[str] = None
 
 
 class StepStarted(MemoryEvent):
