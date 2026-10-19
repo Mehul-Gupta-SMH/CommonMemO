@@ -25,6 +25,10 @@ events into it. So one handler serves all three:
 Other events are ignored. A hook never blocks or breaks the harness: any
 error is written to stderr and the hook exits 0 with no output.
 
+**Pointing at more.** With `--recall-tool` (the harness also runs `commonmemo
+mcp`), the push says when it left things out, so the model knows to call
+`memory_recall`.
+
 **Which session.** By default each harness session is its own memory
 session, `<harness>-<harness session id>`. Set `--session` /
 `COMMONMEMO_SESSION` to the same id in two harnesses (and the MCP server) to
@@ -42,7 +46,7 @@ from importlib import resources
 from typing import IO, Any, Optional
 
 from .agent_tools import run_sync
-from .cli import DEFAULT_STORE, memory_options
+from .cli import DEFAULT_STORE, env_flag, memory_options
 from .events import ToolInvoked
 from .memory import Memory
 
@@ -97,6 +101,7 @@ def session_id_for(harness: str, payload: dict[str, Any], configured: Optional[s
 def handle(
     payload: dict[str, Any], memory: Memory, *, harness: str, user: Optional[str] = None,
     agent: Optional[str] = None, session: Optional[str] = None, read_only: bool = False,
+    recall_tool: bool = False,
 ) -> Optional[dict[str, Any]]:
     """Record one hook event; returns the JSON to print, or None.
     `read_only` pushes memory but records nothing."""
@@ -104,6 +109,7 @@ def handle(
     if event not in _EVENTS["claude-code"]:
         return None  # before opening anything: an unrelated event never reopens a closed session
     s = memory.session(session_id_for(harness, payload, session), user_id=user, agent=agent or harness)
+    s.recall_tool = recall_tool  # the harness also runs `commonmemo mcp`, so the push can point at it
     if read_only and event not in ("SessionStart", "UserPromptSubmit"):
         return None
 
@@ -158,7 +164,14 @@ def _push(event: str, text: str) -> Optional[dict[str, Any]]:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="commonmemo hook", description="Handle one harness hook event (JSON on stdin).")
     p.add_argument("--harness", choices=HARNESSES, required=True)
+    _recall_option(p)
     return memory_options(p, agent=None)
+
+
+def _recall_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--recall-tool", action="store_true", default=env_flag("COMMONMEMO_RECALL_TOOL"),
+                   help="the harness also has the memory MCP server, so the push may say "
+                        "\"call memory_recall\" when it left things out")
 
 
 def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[str]) -> int:
@@ -170,7 +183,7 @@ def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[s
             raise ValueError("expected a hook payload with a session_id")
         memory = Memory(args.store, args.engine, project=args.project)
         out = handle(payload, memory, harness=args.harness, user=args.user, agent=args.agent,
-                     session=args.session, read_only=args.read_only)
+                     session=args.session, read_only=args.read_only, recall_tool=args.recall_tool)
         if out is not None:
             stdout.write(json.dumps(out) + "\n")
     except Exception as e:  # noqa: BLE001 -- a memory failure must never block the harness
@@ -196,6 +209,8 @@ def _command(harness: str, args: argparse.Namespace) -> str:
             parts += [f"--{flag}", value]
     if args.read_only:
         parts.append("--read-only")
+    if args.recall_tool:
+        parts.append("--recall-tool")
     return " ".join(shlex.quote(p) for p in parts)
 
 
@@ -216,6 +231,7 @@ def opencode_plugin() -> str:
 def setup_main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="commonmemo setup", description="Print the hook config for a harness.")
     p.add_argument("harness", choices=HARNESSES)
+    _recall_option(p)
     args = memory_options(p, agent=None).parse_args(argv)
     if args.harness == "opencode":
         sys.stdout.write(opencode_plugin())

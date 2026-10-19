@@ -341,3 +341,24 @@ def test_read_only_never_refreshes(db):
         "claude-code", "post-tool-use", tool_response="charger firmware rollback started on unit 7"),
         "--user", "ada", "--read-only")
     assert out is None
+
+
+# -- more available (#23) ----------------------------------------------------------
+
+
+def test_prompt_says_more_is_available_only_with_the_recall_tool(db):
+    seed = open_memory(db)
+    with seed.session(user_id="ada") as s:
+        for i in range(25):
+            s.remember(f"fact_{i:02d}", f"value {i}")
+    close(seed)
+    prompt = payload("claude-code", "user-prompt-submit", prompt="what do you know about me?")
+    with_tool, _ = hook(db, "claude-code", prompt, "--user", "ada", "--recall-tool")
+    assert "5 facts about the user" in context_of(with_tool) and "memory_recall" in context_of(with_tool)
+    without, _ = hook(db, "claude-code", prompt, "--user", "ada")
+    assert without is None or "memory_recall" not in context_of(without)
+
+
+def test_setup_passes_the_recall_tool_flag_on():
+    command = json.loads(_setup("claude-code", "--recall-tool").stdout)["hooks"]["SessionStart"][0]["hooks"][0]
+    assert command["command"].endswith("--recall-tool")

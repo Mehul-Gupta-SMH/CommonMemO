@@ -70,6 +70,10 @@ def _clip(value: Any, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
 
+MORE_PROBE = 5
+"""How many recaps past the push's limit are looked at, to count what was left out."""
+
+
 class Memory:
     """The Log, Working memory, Recaps and the UserProfile behind one handle.
 
@@ -339,33 +343,50 @@ class Memory:
         policy: MemoryPolicy,
         scopes: list[str],
         local_only: bool = False,
+        exclude_session: Optional[str] = None,
+        all_facts: bool = False,
     ) -> MemoryContext:
+        """`all_facts` leaves the profile uncut, for a caller that adds facts
+        to it and cuts it itself (`Session.context`)."""
         engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
         # A user's recaps are theirs whichever agent (harness) they worked
         # in; without a user, an agent's recaps stay its own.
         recap_agent = None if user_id is not None and policy.recaps_across_agents else agent
+        # Look a little past the limit, to tell the agent what was left out.
         found = (
-            await engine.search_recaps(query or "", user_id=user_id, agent=recap_agent, limit=policy.recaps)
+            await engine.search_recaps(query or "", user_id=user_id, agent=recap_agent,
+                                       limit=policy.recaps + MORE_PROBE)
             if policy.recaps
             else []
         )
-        found = [e for e in found if (e.score or 0.0) >= policy.min_recap_score]
         if user_id is not None:
             found = self._visible_recaps(user_id, found)
+        found = [e for e in found if e.session_id != exclude_session]
+        shown = [e for e in found if (e.score or 0.0) >= policy.min_recap_score][: policy.recaps]
+        near = [e for e in found if e not in shown and (e.score or 0.0) >= policy.min_recap_score / 2]
         facts = self._visible_facts(user_id, await engine.user_profile(user_id)) if user_id is not None else []
         world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
         if query and len(world) > policy.max_world:
             words = set(query.lower().split())
             world.sort(key=lambda w: -len(words & set(f"{w.key} {w.value}".lower().split())))
+        negatives = self.knowledge.negatives(scopes)
+        lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
         return MemoryContext(
-            negatives=self.knowledge.negatives(scopes)[: policy.max_negatives],
-            facts=facts[: policy.max_facts],
+            negatives=negatives[: policy.max_negatives],
+            facts=facts if all_facts else facts[: policy.max_facts],
             world=world[: policy.max_world],
-            lessons=self.knowledge.lessons(user_id=user_id, agent=agent, limit=policy.max_lessons),
+            lessons=lessons[: policy.max_lessons],
             tool_notes=self.tool_notes(agent),
-            recaps=found,
+            recaps=shown,
             policy=policy,
             agent=agent,
+            more={
+                "recaps": len(near),
+                "facts": len(facts) - policy.max_facts,
+                "world": len(world) - policy.max_world,
+                "negatives": len(negatives) - policy.max_negatives,
+                "lessons": len(lessons) - policy.max_lessons,
+            },
         )
 
     def _visible_facts(self, user_id: str, facts: list[Fact]) -> list[Fact]:

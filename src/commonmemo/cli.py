@@ -18,7 +18,7 @@ from typing import Optional
 DEFAULT_STORE = "sqlite:///.commonmemo/memory.db"
 
 
-def _env_flag(name: str) -> bool:
+def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
@@ -31,7 +31,7 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
     p.add_argument("--user", default=env("COMMONMEMO_USER"))
     p.add_argument("--agent", default=env("COMMONMEMO_AGENT", agent))
     p.add_argument("--session", default=env("COMMONMEMO_SESSION"))
-    p.add_argument("--read-only", action="store_true", default=_env_flag("COMMONMEMO_READ_ONLY"))
+    p.add_argument("--read-only", action="store_true", default=env_flag("COMMONMEMO_READ_ONLY"))
     return p
 
 

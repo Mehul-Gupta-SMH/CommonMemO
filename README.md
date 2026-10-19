@@ -286,7 +286,11 @@ agent; [#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)). The
 hook payloads are tested against recorded payloads from Claude Code
 2.1.302, and against the schemas built into Codex 0.163.0 ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)).
 Use hooks and the MCP server together: hooks capture and push, the tools let
-the agent recall and save on purpose.
+the agent recall and save on purpose. Add `--recall-tool` to the hook command
+(or set `COMMONMEMO_RECALL_TOOL=1`) when the MCP server is configured too:
+the push then says when it left things out ("More in memory than shown here:
+5 facts about the user. Call memory_recall with what you need."), so the
+model knows to look ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)).
 
 ## Live runs
 
@@ -312,7 +316,8 @@ descriptions. Among the scenarios:
 - stored text never becomes an instruction;
 - one user can't change what another is told;
 - a burst of bad writes is detected, frozen and reverted;
-- a tool result that brings up an older session gets its recap mid-run.
+- a tool result that brings up an older session gets its recap mid-run;
+- when the push leaves things out, the agent is told and recalls them.
 
 ```
 python -m evals                   # prints the report; see docs/evals.md for the baseline

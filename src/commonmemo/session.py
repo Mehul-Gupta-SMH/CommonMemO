@@ -113,6 +113,10 @@ class Session:
         """What consolidation produced at close (empty until then)."""
         self._token: Optional[contextvars.Token] = None
         self._closed = not record.is_open
+        self.recall_tool = False
+        """Whether the agent working in this session has `memory_recall`
+        (set by `build_agent_tools`); the push then says when it left
+        things out (`MemoryContext.more_line`)."""
 
     @property
     def session_id(self) -> str:
@@ -294,9 +298,9 @@ class Session:
             )
         ctx = await self.memory._long_term(
             query, user_id=self.user_id, agent=self.agent, policy=policy,
-            scopes=self.scopes, local_only=local_only,
+            scopes=self.scopes, local_only=local_only, exclude_session=self.session_id, all_facts=True,
         )
-        ctx.recaps = [e for e in ctx.recaps if e.session_id != self.session_id]
+        ctx.recall_tool = self.recall_tool
         # Facts stated in this session reach the engine only at close, but
         # they are true now: overlay them (latest per key wins), then apply
         # tombstones again -- a fact forgotten in this session stays gone.
@@ -307,8 +311,9 @@ class Session:
                     user_id=self.user_id, key=e.key, value=e.value,
                     valid_from=e.ts, source_event_ids=(e.id,),
                 )
-            ctx.facts = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
-            ctx.facts = ctx.facts[: policy.max_facts]
+            visible = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
+            ctx.facts = visible[: policy.max_facts]
+            ctx.more["facts"] = len(visible) - policy.max_facts
         # This user's (or, with no user, this session's) own unapproved world
         # facts: true for them as far as they told us, never for anyone else.
         world_scopes = [s for s in self.scopes if not s.startswith(("user:", "agent:"))]

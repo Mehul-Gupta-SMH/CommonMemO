@@ -55,8 +55,10 @@ def run_sync(coro: Coroutine[Any, Any, Any]) -> Any:
 
 def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callable[..., str]]:
     """The memory tools for `session`. `writes=False` gives read-only
-    tools (recall only)."""
+    tools (recall only). The session then knows its agent can recall, so
+    its push says when it left things out."""
     memory = session.memory
+    session.recall_tool = True
 
     def memory_recall(query: str) -> str:
         """Search long-term memory: past sessions, facts about the user,

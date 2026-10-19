@@ -6,18 +6,19 @@ commonmemo 0.0.1 · Python 3.13.16 · 2026-10-19
 
 | Scenario | Checks | With memory | Without | Memory added (chars) | Time (ms) |
 |---|---|---|---|---:|---:|
-| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 7 |
+| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 9 |
 | negatives | a user's "never" is respected in a later session | pass | fail | 288 | 5 |
-| latest preference | the newest value of a changed preference is used | pass | fail | 222 | 5 |
+| latest preference | the newest value of a changed preference is used | pass | fail | 222 | 4 |
 | resume after crash | a rerun skips finished steps and never repeats a side effect | pass | fail | 0 | 74 |
-| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 77 |
-| forgetting | a forgotten fact never comes back, in the push or through recall | pass | n/a | 202 | 8 |
-| injection | stored text is never placed where instructions go | pass | n/a | 535 | 6 |
-| world-fact isolation | one user's claim doesn't change what another user is told | pass | n/a | 245 | 7 |
-| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 15 |
-| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 96 |
+| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 64 |
+| forgetting | a forgotten fact never comes back, in the push or through recall | pass | n/a | 202 | 5 |
+| injection | stored text is never placed where instructions go | pass | n/a | 535 | 3 |
+| world-fact isolation | one user's claim doesn't change what another user is told | pass | n/a | 245 | 4 |
+| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 8 |
+| more available | when the push leaves things out, the agent is told and recalls them | pass | fail | 1461 | 15 |
+| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 56 |
 
-10 of 10 pass with memory; memory turned a failure into a success in 6 of the 6 scenarios that have a without-memory baseline.
+11 of 11 pass with memory; memory turned a failure into a success in 7 of the 7 scenarios that have a without-memory baseline.
 
 Details (with memory):
 
@@ -30,4 +31,5 @@ Details (with memory):
 - **injection:** stored instruction stayed inside the reference-data section
 - **world-fact isolation:** Ada was told '30 days'
 - **mid-run refresh:** reflashed over serial (refresh off: over ota); memory pushed 248 chars with refresh, 0 without
+- **more available:** with the line: 1 recall call, answered '4471'; without it: 0 calls, answered 'unknown'
 - **detect, freeze, revert:** alert raised: True; world facts after revert and freeze: {'refund_window': '30 days'}

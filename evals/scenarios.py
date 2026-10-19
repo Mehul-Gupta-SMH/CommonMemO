@@ -254,6 +254,36 @@ def mid_run_refresh(with_memory: bool) -> Outcome:
                    f"with refresh, {off_chars} without", chars)
 
 
+# -- 11. the push says when it left things out ------------------------------------
+
+
+def more_available(with_memory: bool) -> Outcome:
+    def ask(line: bool) -> tuple[str, int, int]:
+        """(the gate code the agent gives, recall calls, memory chars)."""
+        mem = Memory()
+        with mem.session(user_id="ada") as s:  # a long profile: the push keeps the first 20 facts
+            for i in range(24):
+                s.remember(f"a_pref_{i:02d}", f"setting {i}")
+            s.remember("warehouse_gate_code", "4471")
+        with mem.session(user_id="ada") as s:
+            recall = {t.__name__: t for t in build_agent_tools(s)}["memory_recall"]
+            s.recall_tool = line  # without the line: same tools, the push just doesn't say
+            prompt, chars = prompt_for(s, "What's the warehouse gate code?", with_memory=True)
+            agent, calls = ScriptedAgent(prompt=prompt), 0
+            if agent.fact("warehouse_gate_code") is None and agent.wants_recall():
+                agent = ScriptedAgent(prompt=prompt + "\n\n# Memory\n" + recall("warehouse gate code"))
+                calls += 1
+            return agent.fact("warehouse_gate_code") or "unknown", calls, chars
+
+    if not with_memory:
+        return Outcome(False, "no memory: the gate code is unknown")
+    code, calls, chars = ask(line=True)
+    off_code, off_calls, _ = ask(line=False)
+    return Outcome(code == "4471",
+                   f"with the line: {calls} recall call, answered {code!r}; without it: {off_calls} calls, "
+                   f"answered {off_code!r}", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -269,6 +299,8 @@ SCENARIOS = [
              world_fact_isolation, baseline=False),
     Scenario("mid-run refresh", "a tool result that brings up an older session gets its recap pushed mid-run",
              mid_run_refresh),
+    Scenario("more available", "when the push leaves things out, the agent is told and recalls them",
+             more_available),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

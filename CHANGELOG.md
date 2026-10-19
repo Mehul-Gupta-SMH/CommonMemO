@@ -2,6 +2,26 @@
 
 ## 0.0.1 — unreleased
 
+More in memory than pushed ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)):
+
+- When the push leaves things out and the agent has `memory_recall`, the
+  turn text ends with one line: "More in memory than shown here: 5 facts
+  about the user. Call memory_recall with what you need."
+  (`MemoryContext.more_line`). It counts facts, world facts, negatives and
+  lessons past their `max_*`, recaps past the limit that clear half the
+  relevance threshold, and entries cut for length (`MemoryContext.more`). No
+  line when nothing was cut or there's no recall tool; the character cap
+  never cuts it.
+- `build_agent_tools` marks the session (`Session.recall_tool`); the hooks
+  take `--recall-tool` / `COMMONMEMO_RECALL_TOOL=1`, also passed on by
+  `commonmemo setup`.
+- **Fix:** facts stated in the current session were merged into a profile
+  already cut to `max_facts`, so which 20 facts were pushed depended on the
+  engine's order. They are now merged first and cut once.
+- New eval scenario, **more available**: with the line the agent makes one
+  recall call and answers correctly; without it, none, and it can't. 11 of
+  11 pass.
+
 Mid-run refresh ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)):
 
 - **`Session.refresh(text)`**: memory to push mid-run after a tool result or
