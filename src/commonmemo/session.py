@@ -312,7 +312,7 @@ class Session:
                     valid_from=e.ts, source_event_ids=(e.id,),
                 )
             visible = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
-            ctx.facts = visible[: policy.max_facts]
+            ctx.facts = await self.memory._pick_facts(query, visible, policy.max_facts)
             ctx.more["facts"] = len(visible) - policy.max_facts
         # This user's (or, with no user, this session's) own unapproved world
         # facts: true for them as far as they told us, never for anyone else.

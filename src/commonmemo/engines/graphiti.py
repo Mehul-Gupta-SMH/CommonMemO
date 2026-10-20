@@ -54,6 +54,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
 
 from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
+from ..ranking import EmbeddingRanker
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
 from .base import Engine, Recap, Fact
@@ -237,6 +238,11 @@ class GraphitiEngine(Engine):
     def bind(self, store: Store) -> None:
         if self._index is None:
             self._index = LocalEngine(getattr(store, "path", ":memory:"))
+
+    def ranker(self) -> Optional[EmbeddingRanker]:
+        """Rank facts with the embedder Graphiti already uses."""
+        embedder = getattr(getattr(self.backend, "graphiti", None), "embedder", None)
+        return EmbeddingRanker(embedder.create_batch) if embedder is not None else None
 
     @property
     def index(self) -> LocalEngine:

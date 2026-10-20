@@ -1,6 +1,6 @@
 # ADR 0003 — Procedural memory: a task-type axis, and how a request finds its procedure
 
-**Status:** Proposed · **Date:** 2026-10-17 · **Tracks:** [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) (supersedes #9)
+**Status:** Accepted · **Date:** 2026-10-17 (accepted 2026-10-20) · **Tracks:** [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) (supersedes #9)
 
 ## Context
 
@@ -17,7 +17,7 @@ Nothing holds **how a type of task is done**:
 Today this lives in prompts. Prompts can't learn from runs, aren't versioned
 against outcomes, and nothing can say which version of a flow worked better.
 
-## Decision (proposed)
+## Decision
 
 ### 1. A task-type axis
 
@@ -89,16 +89,17 @@ Exemplars and user-scoped entries are the user's data: `forget_user` removes
 them. An exemplar is shared beyond its user only once an operator has
 approved it and personal data has been scrubbed from it.
 
-## Open questions
+## Resolved questions
 
-- **One home or two?** Recommended: CommonMemo holds written procedures too
-  (loaded from files), so there is one source of truth for how a task is done.
-  The alternative leaves written ones in prompts or skills and only learned
-  ones here.
-- **Explicit or inferred task type by default?** Recommended: explicit when
-  the app knows it; description matching as the fallback.
-- **Full outputs in exemplars?** Recommended: yes, but user-scoped until
-  approved and scrubbed.
+Decided on 2026-10-20:
+
+- **One home.** CommonMemo holds written procedures too, loaded from files
+  (`mem.load_procedures`), next to learned ones: one source of truth for how
+  a task is done, with per-version outcomes for both.
+- **Explicit task type first.** `session(task=...)` when the app knows it;
+  matching the request against `use_when` lines is the fallback (section 4).
+- **Full outputs in exemplars.** Kept, but user-scoped until an operator
+  approves the exemplar and personal data is scrubbed from it (section 7).
 
 ## Alternatives considered
 

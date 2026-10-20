@@ -29,6 +29,7 @@ from .events import (
     event_from_dict,
 )
 from .facts import FactKey
+from .ranking import EmbeddingRanker, KeywordRanker
 from .history import Diff, History, MemoryView
 from .memory import Memory
 from .reins import Alert, AlertPolicy, Budget, RevertResult
@@ -47,6 +48,8 @@ __all__ = [
     "MemoryContext",
     "MemoryPolicy",
     "FactKey",
+    "EmbeddingRanker",
+    "KeywordRanker",
     "WorldFact",
     "Feedback",
     "Negative",
