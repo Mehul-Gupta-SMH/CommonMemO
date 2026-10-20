@@ -21,7 +21,6 @@ are.
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
@@ -62,8 +61,13 @@ from .tool_memory import (
     shape_change,
 )
 
+from .sqldb import connect
+
 if TYPE_CHECKING:
     from .stores.base import Store
+
+Row = Any
+"""A result row: `sqlite3.Row` or a dict, both indexed by column name."""
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tool_stats (
@@ -191,7 +195,7 @@ def source_rank(source: str) -> int:
     return _RANKS.get(source, 3)
 
 
-def _world_record(r: sqlite3.Row) -> WorldRecord:
+def _world_record(r: Row) -> WorldRecord:
     return WorldRecord(r["scope"], r["key"], r["value"], r["valid_from"], r["valid_until"], r["source"],
                        r["event_id"], r["status"], r["user_id"], r["note"])
 
@@ -227,7 +231,7 @@ class ProcedureRecord:
         return f"{self.task}/{self.kind}/{self.name}"
 
 
-def _procedure_record(r: sqlite3.Row) -> ProcedureRecord:
+def _procedure_record(r: Row) -> ProcedureRecord:
     return ProcedureRecord(r["event_id"], r["scope"], r["task"], r["entry_kind"], r["name"], r["use_when"],
                            r["body"], tuple(json.loads(r["steps"])), r["version"], r["source"], r["status"],
                            r["valid_from"], r["user_id"], r["note"])
@@ -375,13 +379,12 @@ class Knowledge:
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
-        if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        self._conn = connect(self.path, lock="knowledge")
         self._lock = threading.Lock()
-        with self._lock:
-            self._conn.execute("CREATE TABLE IF NOT EXISTS knowledge_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+        # Several processes may start at once: one checks the schema at a time.
+        with self._lock, self._conn.setup():
+            self._conn.executescript(
+                "CREATE TABLE IF NOT EXISTS knowledge_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
             row = self._conn.execute("SELECT value FROM knowledge_meta WHERE key = 'schema'").fetchone()
             if row is None or row["value"] != SCHEMA_VERSION:
                 for table in _TABLES:
@@ -459,7 +462,7 @@ class Knowledge:
         agent, tool, c = _agent_key(e.agent), e.name, self._conn
         failed = e.error is not None
         shape = arguments_shape(e.arguments or {})
-        c.execute("INSERT OR IGNORE INTO tool_stats (agent, tool) VALUES (?, ?)", (agent, tool))
+        c.execute("INSERT INTO tool_stats (agent, tool) VALUES (?, ?) ON CONFLICT DO NOTHING", (agent, tool))
         c.execute(
             "UPDATE tool_stats SET calls = calls + 1, failures = failures + ?, "
             "total_ms = total_ms + ?, timed_calls = timed_calls + ? WHERE agent = ? AND tool = ?",
@@ -469,7 +472,7 @@ class Knowledge:
         if failed:
             c.execute(
                 "INSERT INTO tool_errors (agent, tool, signature, count, last_seen) VALUES (?, ?, ?, 1, ?) "
-                "ON CONFLICT(agent, tool, signature) DO UPDATE SET count = count + 1, last_seen = excluded.last_seen",
+                "ON CONFLICT(agent, tool, signature) DO UPDATE SET count = tool_errors.count + 1, last_seen = excluded.last_seen",
                 (agent, tool, signature, e.ts),
             )
         if e.session_id is not None:
@@ -486,23 +489,24 @@ class Knowledge:
                     (change, agent, tool, prev["signature"]),
                 )
             c.execute(
-                "INSERT OR REPLACE INTO tool_last VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tool_last VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (session_id, agent, tool) DO UPDATE SET "
+                "ok = excluded.ok, signature = excluded.signature, shape = excluded.shape",
                 (e.session_id, agent, tool, int(not failed), signature, dumps_shape(shape)),
             )
 
     def _world_insert(self, e: MemoryEvent, scope: str, key: str, value: str, valid_until: Optional[float],
                       source: str, rank: int, status: str, note: Optional[str] = None) -> None:
         self._conn.execute(
-            "INSERT OR IGNORE INTO world_facts VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO world_facts VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, scope, key, value, e.ts, valid_until, source, rank, status, e.user_id, e.session_id, note),
         )
 
-    def _world_current(self, scope: str, key: str) -> Optional[sqlite3.Row]:
+    def _world_current(self, scope: str, key: str) -> Optional[Row]:
         return self._conn.execute(
             "SELECT * FROM world_facts WHERE scope = ? AND key = ? AND status = 'current'", (scope, key)
         ).fetchone()
 
-    def _world_end(self, row: sqlite3.Row, ts: float, status: str, note: Optional[str] = None) -> None:
+    def _world_end(self, row: Row, ts: float, status: str, note: Optional[str] = None) -> None:
         self._conn.execute(
             "UPDATE world_facts SET status = ?, valid_to = ?, note = COALESCE(?, note) WHERE event_id = ?",
             (status, ts, note, row["event_id"]),
@@ -549,7 +553,7 @@ class Knowledge:
         if current is not None and source_rank(e.source) >= current["rank"]:
             self._world_end(current, e.ts, "retracted", note=e.reason)
 
-    def _procedure_current(self, scope: str, task: str, kind: str, name: str) -> Optional[sqlite3.Row]:
+    def _procedure_current(self, scope: str, task: str, kind: str, name: str) -> Optional[Row]:
         return self._conn.execute(
             "SELECT * FROM procedures WHERE scope = ? AND task = ? AND entry_kind = ? AND name = ? "
             "AND status = 'current'", (scope, task, kind, name),
@@ -566,7 +570,7 @@ class Knowledge:
             ).fetchone()
             version = (row["v"] or 0) + 1
         self._conn.execute(
-            "INSERT OR IGNORE INTO procedures VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+            "INSERT INTO procedures VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, scope, task, kind, name, use_when, body, json.dumps(list(steps)), version, source, rank,
              status, e.ts, e.user_id, e.session_id, note),
         )
@@ -622,14 +626,14 @@ class Knowledge:
 
     def _procedure_followed(self, e: ProcedureFollowed) -> None:
         self._conn.execute(
-            "INSERT OR IGNORE INTO procedure_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO procedure_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, e.ts, e.session_id, e.user_id, e.entry_id, e.task, e.entry_kind, e.name, e.version,
              json.dumps(list(e.skipped)), int(e.steps_tracked)),
         )
 
     def _decision(self, e: DecisionRecorded) -> None:
         self._conn.execute(
-            "INSERT OR IGNORE INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, e.ts, e.session_id, e.user_id, e.agent, e.task, e.goal, e.plan, e.chosen,
              json.dumps(list(e.rejected)), e.outcome),
         )
@@ -643,26 +647,26 @@ class Knowledge:
             if n:
                 return  # merged; a lesson whose original is gone (forgotten) starts over below
         self._conn.execute(
-            "INSERT OR IGNORE INTO lessons_learned VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
+            "INSERT INTO lessons_learned VALUES (?, ?, ?, ?, 1, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, e.scope, e.text, e.task, e.ts, e.ts, e.user_id),
         )
 
     def _feedback(self, e: Feedback) -> None:
         self._conn.execute(
-            'INSERT OR IGNORE INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
             (e.id, e.ts, e.user_id, e.agent, e.session_id, e.feedback_kind, e.rating, e.comment,
              e.wrong, e.right, e.target_event_id),
         )
 
     def _negative(self, e: Negative) -> None:
         self._conn.execute(
-            "INSERT OR IGNORE INTO negatives VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+            "INSERT INTO negatives VALUES (?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING",
             (e.id, e.ts, e.scope, e.statement, e.reason, e.source, e.user_id),
         )
 
     def _freeze(self, e: Freeze) -> None:
         self._conn.execute(
-            "INSERT OR IGNORE INTO freezes VALUES (?, ?, ?, ?, ?, 1)", (e.id, e.ts, e.scope, e.source, e.reason)
+            "INSERT INTO freezes VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT DO NOTHING", (e.id, e.ts, e.scope, e.source, e.reason)
         )
 
     def _unfreeze(self, e: Unfreeze) -> None:
@@ -675,14 +679,15 @@ class Knowledge:
         if e.user_id is None:
             return
         self._conn.execute(
-            "INSERT OR REPLACE INTO tombstones VALUES (?, ?, ?, ?)", (e.user_id, e.key, e.pattern, e.ts)
+            "INSERT INTO tombstones VALUES (?, ?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET "
+            "pattern = excluded.pattern, ts = excluded.ts", (e.user_id, e.key, e.pattern, e.ts)
         )
 
     def _checkpoint(self, e: Checkpoint) -> None:
         if e.session_id is None:
             return
         self._conn.execute(
-            "INSERT OR IGNORE INTO checkpoints VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO checkpoints VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (e.id, e.session_id, e.ts, e.label, json.dumps(e.data, default=str, sort_keys=True)),
         )
 
@@ -764,7 +769,7 @@ class Knowledge:
                 f"SELECT * FROM world_facts WHERE status = 'current' AND scope IN ({marks})", tuple(scopes)
             ).fetchall()
         order = {s: i for i, s in enumerate(scopes)}
-        best: dict[str, sqlite3.Row] = {}
+        best: dict[str, Row] = {}
         for r in sorted(rows, key=lambda r: order[r["scope"]]):
             if not include_stale and r["valid_until"] is not None and r["valid_until"] <= now:
                 continue
@@ -857,7 +862,7 @@ class Knowledge:
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
         order = {s: i for i, s in enumerate(scopes)}
-        best: dict[tuple[str, str, str], sqlite3.Row] = {}
+        best: dict[tuple[str, str, str], Row] = {}
         for r in sorted(rows, key=lambda r: order[r["scope"]]):
             best[(r["task"], r["entry_kind"], r["name"])] = r
         return [_procedure_record(r) for r in sorted(best.values(), key=lambda r: (r["task"], r["valid_from"]))]
@@ -894,7 +899,7 @@ class Knowledge:
         with self._lock:
             runs = self._conn.execute(sql, (task,) if task is not None else ()).fetchall()
             sessions = {r["session_id"] for r in runs if r["session_id"]}
-            feedback: dict[str, list[sqlite3.Row]] = {}
+            feedback: dict[str, list[Row]] = {}
             if sessions:
                 marks = ",".join("?" * len(sessions))
                 for f in self._conn.execute(f"SELECT * FROM feedback WHERE session_id IN ({marks})",
@@ -1046,34 +1051,43 @@ class Knowledge:
         so both stay; world facts the user's conversations proposed and nobody
         approved go."""
         with self._lock:
-            n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
-            n += self._conn.execute(
-                "DELETE FROM world_facts WHERE user_id = ? AND status IN ('proposed', 'disputed', 'rejected')",
-                (user_id,),
-            ).rowcount
-            n += self._conn.execute(
-                "DELETE FROM negatives WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
-            ).rowcount
-            n += self._conn.execute("DELETE FROM tombstones WHERE user_id = ?", (user_id,)).rowcount
-            # The user's own entries, their exemplars, and what they proposed;
-            # an approved copy (`ProcedureConfirmed`, scrubbed) is the
-            # operator's and stays.
-            n += self._conn.execute(
-                "DELETE FROM procedures WHERE scope = ? OR (user_id = ? AND (entry_kind = 'exemplar' "
-                "OR status IN ('proposed', 'disputed', 'rejected')))", (f"user:{user_id}", user_id),
-            ).rowcount
-            n += self._conn.execute("DELETE FROM procedure_runs WHERE user_id = ?", (user_id,)).rowcount
-            n += self._conn.execute("DELETE FROM decisions WHERE user_id = ?", (user_id,)).rowcount
-            n += self._conn.execute(
-                "DELETE FROM lessons_learned WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
-            ).rowcount
-            if session_ids:
-                marks = ",".join("?" * len(session_ids))
-                for table in ("checkpoints", "steps", "tool_last"):
-                    n += self._conn.execute(
-                        f"DELETE FROM {table} WHERE session_id IN ({marks})", tuple(session_ids)
-                    ).rowcount
-            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")  # all of it or none of it
+            try:
+                n = self._forget(user_id, session_ids)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+        return n
+
+    def _forget(self, user_id: str, session_ids: Sequence[str]) -> int:
+        n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute(
+            "DELETE FROM world_facts WHERE user_id = ? AND status IN ('proposed', 'disputed', 'rejected')",
+            (user_id,),
+        ).rowcount
+        n += self._conn.execute(
+            "DELETE FROM negatives WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
+        ).rowcount
+        n += self._conn.execute("DELETE FROM tombstones WHERE user_id = ?", (user_id,)).rowcount
+        # The user's own entries, their exemplars, and what they proposed;
+        # an approved copy (`ProcedureConfirmed`, scrubbed) is the
+        # operator's and stays.
+        n += self._conn.execute(
+            "DELETE FROM procedures WHERE scope = ? OR (user_id = ? AND (entry_kind = 'exemplar' "
+            "OR status IN ('proposed', 'disputed', 'rejected')))", (f"user:{user_id}", user_id),
+        ).rowcount
+        n += self._conn.execute("DELETE FROM procedure_runs WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute("DELETE FROM decisions WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute(
+            "DELETE FROM lessons_learned WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
+        ).rowcount
+        if session_ids:
+            marks = ",".join("?" * len(session_ids))
+            for table in ("checkpoints", "steps", "tool_last"):
+                n += self._conn.execute(
+                    f"DELETE FROM {table} WHERE session_id IN ({marks})", tuple(session_ids)
+                ).rowcount
         return n
 
     def close(self) -> None:
@@ -1081,7 +1095,7 @@ class Knowledge:
             self._conn.close()
 
 
-def _step(r: sqlite3.Row) -> StepRecord:
+def _step(r: Row) -> StepRecord:
     return StepRecord(r["session_id"], r["step_id"], r["status"], r["result"], bool(r["replayable"]),
                       r["error"], bool(r["side_effects"]), r["started_at"], r["finished_at"])
 

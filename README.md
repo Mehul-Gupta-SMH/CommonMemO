@@ -62,6 +62,7 @@ pip install commonmemo                 # core: stdlib only, local engine
 pip install "commonmemo[commonadk]"    # + CommonADK integration
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
+pip install "commonmemo[postgres]"     # + Postgres for everything CommonMemo stores
 pip install "commonmemo[mcp]"          # + the official MCP client, for testing the server
 pip install "commonmemo[otel]"         # + turn traces as OpenTelemetry spans
 ```
@@ -86,8 +87,8 @@ rest is derived from it and can be rebuilt from it:
 
 | Tier | Holds | Owned by |
 |---|---|---|
-| **Log** | everything that happened, in order: messages, tool calls, your domain events | CommonMemo (SQLite) |
-| **Working** | what the current conversation or workflow run has in hand: live state and resume points, resumable by id | CommonMemo (SQLite) |
+| **Log** | everything that happened, in order: messages, tool calls, your domain events | CommonMemo (SQLite or Postgres) |
+| **Working** | what the current conversation or workflow run has in hand: live state and resume points, resumable by id | CommonMemo (SQLite or Postgres) |
 | **Recaps** | short summaries of finished sessions, retrieved by relevance | a wrapped engine |
 | **UserProfile** | durable facts about one user; a newer value supersedes, history is kept | a wrapped engine |
 
@@ -155,6 +156,28 @@ async with mem.session(user_id="u1", agent="support") as s:
 `ctx.turn_text()` for the turn's request (`ctx.render()` gives both).
 `mem.tool_notes(agent)` gives tool memory's advice per tool, and
 `mem.tool_profile(tool)` the numbers behind it.
+
+## On Postgres
+
+SQLite is the default: one file, nothing to run. For memory that several
+processes or machines share, give it a Postgres URL instead
+([ADR 0001](docs/adr/0001-storage.md), [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11)):
+
+```python
+mem = Memory("postgresql://app@db.internal:5432/agents?schema=shop", project="shop")
+```
+
+```bash
+export COMMONMEMO_STORE=postgresql://app@db.internal:5432/agents?schema=shop   # for the CLI, MCP server and hooks
+```
+
+The URL holds everything CommonMemo keeps itself: the Log, sessions, the
+projections and the local engine's recaps. `?schema=` keeps one memory in
+its own schema, so a database can hold several. Writes to the Log go one
+at a time, under a transaction-scoped advisory lock, so log positions
+commit in order. That way a process catching up never skips an event
+another process committed. The whole test suite runs on Postgres in CI,
+including writers in four processes against one reader.
 
 ## Ranking by meaning
 
@@ -511,26 +534,30 @@ v0.0.1, not on PyPI yet ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/iss
 - the CommonADK integration, the MCP server, and hooks for Claude Code,
   Codex and OpenCode.
 
-CI runs the test suite on Python 3.10 and 3.13: 284 tests in the fullest
-environment. It also runs with no extras and with each extra on its own,
-and checks that the core imports none of them.
+CI runs the test suite on Python 3.10 and 3.13: 285 tests in the fullest
+environment. It also runs with no extras, with each extra on its own, and
+once more with everything on Postgres 16. It checks that the core imports
+none of the extras.
 
 Every decision has a record: [ADR 0002](docs/adr/0002-world-fact-trust.md) (who may change a world
 fact), [ADR 0003](docs/adr/0003-procedural-memory.md) (procedural memory) and
-[ADR 0004](docs/adr/0004-history-analytics-and-reversion.md) (history and revert) are accepted. [ADR 0001](docs/adr/0001-storage.md)
-(storage beyond SQLite) is proposed. The design is in [`docs/design.md`](docs/design.md),
+[ADR 0004](docs/adr/0004-history-analytics-and-reversion.md) (history and revert) are accepted, and so is [ADR 0001](docs/adr/0001-storage.md)
+(storage: SQLite by default, Postgres shared; its DynamoDB backend is still to come). The design is in [`docs/design.md`](docs/design.md),
 and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14).
 
 ## Honest caveats
 
-- **Nothing here has run against a real model or backend yet.** The Graphiti
-  and Mem0 engines are tested against their libraries' real types, and
-  learning against a stand-in model, but neither has had a live run
-  ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3): this environment has no model API access). `scripts/live_engines.py`
-  is ready for when one does.
+- **One live run so far, with Claude Code as the model.** It covered the
+  hooks, the MCP tools, procedures, learning and injection, all through real
+  `claude -p` sessions: 5 of 6 checks passed for $0.08, and it found two bugs
+  ([#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49), [#50](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/50)). See [docs/live-runs.md](docs/live-runs.md), and rerun it with
+  `scripts/live_claude_code.py`. It was one run with one model, so it shows the
+  wiring works, not a rate. The Graphiti and Mem0 engines haven't had a live run
+  ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3): they need an OpenAI-compatible LLM and embedder).
 - **The evals show the mechanism, not the benefit to a real model.** A
   scripted agent that only reads what it's shown proves memory put the right
-  thing in front of it. It doesn't prove a real model uses it well. The
+  thing in front of it. It doesn't prove a real model uses it well; the one
+  live run above is a first, small check of that. The
   meaning-based recall result uses a small offline concept embedder, not a
   real one. A live mode with a real model and public long-memory benchmarks
   comes after #3 ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
@@ -543,8 +570,11 @@ and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-S
 - **Without an embedder, ranking matches words.** The keyword ranker is
   stemmed and drops stop words, but "How do I reach them?" won't find
   `preferred_contact` without an embedding ranker or an engine that has one.
-- **One machine.** Storage is SQLite. A shared store (Postgres, then
-  scale-out) is designed but not built ([ADR 0001](docs/adr/0001-storage.md), [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11), [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)).
+- **One Postgres log, written one event at a time.** On Postgres, appends
+  take one lock so positions commit in order. That's simple and correct, but
+  it caps write throughput at one log. Partitioning by user or session, and
+  the scale-out backends in [ADR 0001](docs/adr/0001-storage.md), wait for real numbers ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)).
+  Graphiti and Mem0 keep their own stores either way.
 - **The review screen is a local tool, not an admin console.** It has no
   accounts: the reviewer's name is whatever `--reviewer` says, and it
   relies on a loopback bind plus a per-start token. Fine on your own
@@ -555,8 +585,9 @@ and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-S
 ## Development
 
 ```bash
-pip install -e ".[dev,commonadk,graphiti,mem0,mcp,otel]"
+pip install -e ".[dev,commonadk,graphiti,mem0,mcp,otel,postgres]"
 pytest
+COMMONMEMO_TEST_POSTGRES=postgresql://postgres@localhost:5432/postgres pytest   # the whole suite on Postgres
 python -m evals --md docs/evals.md   # regenerate the eval baseline
 ```
 
@@ -599,5 +630,5 @@ Framework-neutral memory for agents: pushed when it matters, pulled when asked, 
 Topics:
 
 ```
-llm-agents agent-memory memory mcp claude-code ai-agents llm python sqlite observability
+llm-agents agent-memory memory mcp claude-code ai-agents llm python sqlite postgres observability
 ```

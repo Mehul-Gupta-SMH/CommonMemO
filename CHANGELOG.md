@@ -2,6 +2,37 @@
 
 ## 0.0.1 — unreleased
 
+First live run, with Claude Code as the model ([#48](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/48)):
+
+- `scripts/live_claude_code.py` runs five scenarios through real headless
+  `claude -p` sessions, wired with CommonMemo's hooks and MCP server as a
+  user would set them up: preference across sessions, recall on purpose,
+  procedure by description, learning (`ModelLearner` over `claude -p`) and
+  injection. Results, verbatim, are in `docs/live-runs.md`: 5 of 6 checks
+  passed for $0.08.
+- It found two bugs, filed as [#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49) (a turn push's trace lists stable
+  items it didn't deliver) and [#50](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/50) (`memory_recall` leaves no record),
+  plus two weaknesses in [#51](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/51).
+
+Postgres ([#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11), [ADR 0001](docs/adr/0001-storage.md), now accepted; the rest of the ADR is [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)):
+
+- `postgresql://user@host/db` store URLs (`commonmemo[postgres]`), for the
+  Log, sessions and claims, the projections and the local engine's recaps;
+  `?schema=name` gives a memory its own schema. `PostgresStore`, and
+  `SqlStore` underneath both stores; `SQLiteStore` is unchanged.
+- New `commonmemo.sqldb`: one SQL dialect for both databases. SQLite-only
+  SQL (`INSERT OR IGNORE` / `OR REPLACE`) is now `ON CONFLICT` upserts,
+  which SQLite runs too.
+- Log positions commit in order on Postgres (a transaction-scoped advisory
+  lock around appends, claims and settles), so catching up never skips an
+  event committed by another process. Setup DDL is serialized, because
+  `CREATE ... IF NOT EXISTS` races when several processes start at once.
+  `forget_user` and `prune` are now single transactions on both databases.
+- The whole test suite runs on Postgres with `COMMONMEMO_TEST_POSTGRES`,
+  and CI runs it on Postgres 16. New Postgres-only tests cover four writer
+  processes against one reader, exactly-once appends from six threads,
+  schema isolation, and numeric results.
+
 README brought to the level of agent-gauntlet and CommonADK ([#46](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/46)):
 
 - Banner, pitch, CI badge, real inspector screenshots, an offline

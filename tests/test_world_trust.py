@@ -107,6 +107,7 @@ def test_trust_survives_a_rebuild_and_forgetting_the_proposer(tmp_path):
     assert mem.pending_world_facts() == []
 
 
+@pytest.mark.sqlite_only  # edits the SQLite file directly
 def test_an_older_projection_file_rebuilds_itself(tmp_path):
     import sqlite3
 

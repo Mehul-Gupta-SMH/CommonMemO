@@ -49,6 +49,7 @@ def test_a_run_without_an_id_gets_one_and_async_works():
     assert run_id and mem.history().by_run(run_id) == {"world_fact": 1}
 
 
+@pytest.mark.sqlite_only  # edits the SQLite file directly
 def test_a_store_file_from_before_run_id_gets_the_column(tmp_path):
     path = tmp_path / "old.db"
     with sqlite3.connect(path) as c:
