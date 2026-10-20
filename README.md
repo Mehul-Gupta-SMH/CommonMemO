@@ -1,60 +1,123 @@
-# CommonMemo
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="CommonMemo — memory for any agent, on any framework: pushed when it matters, pulled when asked, never trusted blindly" width="100%">
+</p>
 
-Framework-neutral memory for agents and workflows. Four tiers behind one
-`Memory` handle, one install, and a decorator or a subclass to get events in
--- everything else (working state, recaps of past sessions, the user profile,
-retrieval, context for the next turn) is built in.
+**Memory for agents that works the same on every framework, and that you
+can audit, correct and roll back.**
 
-| Tier | Holds | Owned by |
-|---|---|---|
-| **Log** | everything that happened, in order, never edited: messages, tool calls, your domain events | CommonMemo (SQLite) |
-| **Working** | what the current conversation or workflow run has in hand: live state and resume points, resumable by id | CommonMemo (SQLite) |
-| **Recaps** | short summaries of finished sessions, retrieved by relevance | a wrapped engine |
-| **UserProfile** | durable facts about one user; a newer value supersedes, history is kept | a wrapped engine |
+Agents forget everything between sessions, and the memory bolted onto them
+is usually a vector store that anything can write to and nobody can
+inspect. CommonMemo is one `Memory` handle in front of an append-only Log.
+It decides what goes into each turn and records why. Agent and
+model-learned writes wait for an operator's approval before they reach
+anyone else. Every change can be traced back to the events behind it, and
+undone. It runs the same under Google ADK, OpenAI Agents, Claude Agent SDK,
+CrewAI, AutoGen and LangGraph (through [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK)),
+over MCP, and inside Claude Code, Codex and OpenCode through their hooks.
 
-These names are new (before: event, session, episodic, user). In code, a
-recap is a `Recap` (`ctx.recaps`, `engine.search_recaps`) and the profile is
-`engine.user_profile(user_id)`, a list of `Fact`s ([#19](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/19)).
+[![ci](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Beside the tiers, CommonMemo keeps **structured kinds** of memory itself:
-**tool memory** (which tools fail, how, and what fixed it — never the
-users' data), **world facts** (with expiry; an agent's are proposals until
-an operator approves them), **feedback** (ratings and
-corrections), **negatives** ("never do X", and tombstones for "forget
-this"), and **resume points** (checkpoints and replayable steps, so a
-stopped process continues where it was).
+<p align="center">
+  <img src="docs/assets/inspector-session.png" alt="The inspector's session page: one turn's push, item by item, with where each came from and a why link, then the session's timeline" width="49%">
+  <img src="docs/assets/inspector-review.png" alt="The inspector's review page: an agent's proposed world fact beside the value it would replace, a proposed rule, and a learned exemplar that needs a personal-data check before it can be shared" width="49%">
+</p>
 
-Agents use memory in **hybrid** mode: a bounded part is *pushed* each turn —
-a stable part (meant for the agent's instructions), a per-turn part with the
-request, and tool notes in the tools' own descriptions — and agents *pull*
-the rest, and write, through memory tools (`memory_recall`,
-`memory_remember`, ...). All pushed memory is framed as reference data, not
-instructions.
+Real pages, from [`scripts/demo_memory.py`](scripts/demo_memory.py) (offline, no keys). Left: one turn's
+push, item by item: a user's constraint, their profile, the project's facts,
+a lesson learned from an earlier correction, the matched procedure, an
+earlier session's recap, each with a **why** link to the events it came from.
+Right: what waits for review, beside what it would replace.
 
-CommonMemo **wraps** memory engines rather than building one: extraction,
-retrieval and their optimizations belong to engines that specialize in them
-(Graphiti and Mem0). The built-in `local` engine is offline and
-deterministic, so everything works out of the box and in tests.
+---
 
-**Status:** v0.0.1, not yet on PyPI ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). Four tiers, three engines
-(local, Graphiti, Mem0), the structured kinds, hybrid agent memory, the
-CommonADK integration, an MCP server and hooks for Claude Code, Codex and
-OpenCode are in. The Graphiti and Mem0 engines are tested
-against their real libraries' types but have not had a live run against a
-real backend and LLM yet ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). See [`docs/design.md`](docs/design.md) for
-the design and the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) for what's next.
+## Quickstart
 
-## Install
+```bash
+git clone https://github.com/Mehul-Gupta-SMH/CommonMemO.git && cd CommonMemO
+pip install -e .                      # core: stdlib only, offline local engine
+
+# Build a small memory to look at: sessions, facts, procedures, a learned lesson.
+python scripts/demo_memory.py demo.db
+
+# Open it in the browser: turn traces, users, and the review queue.
+commonmemo inspect --store sqlite:///demo.db --project shop --review --open
+
+# The same from a terminal: what one turn was given, and why.
+commonmemo trace support-ada-2 --store sqlite:///demo.db
+commonmemo trace support-ada-2 --why refund_reply/rule/timeline --store sqlite:///demo.db
+
+# Does memory change what an agent does? 16 scenarios, with and without it.
+python -m evals
+
+# Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
+commonmemo setup claude-code --user ada
+```
+
+Nothing above needs an API key or spends money. CommonMemo isn't on PyPI yet
+([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)); once it is:
 
 ```bash
 pip install commonmemo                 # core: stdlib only, local engine
 pip install "commonmemo[commonadk]"    # + CommonADK integration
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
+pip install "commonmemo[mcp]"          # + the official MCP client, for testing the server
 pip install "commonmemo[otel]"         # + turn traces as OpenTelemetry spans
 ```
 
-The core also gives you the `commonmemo` command (`commonmemo mcp`, `commonmemo hook`, below).
+## How it works
+
+```mermaid
+flowchart LR
+    app["your app, an agent SDK,<br/>MCP, or a coding harness"] -- "events: @mem.track, hooks,<br/>CommonADK runs" --> log[("Log<br/>append-only")]
+    log --> kinds["Working state · world facts ·<br/>procedures · tool memory ·<br/>feedback · negatives"]
+    log -- "session close" --> engine["engine: local · Graphiti · Mem0<br/>Recaps · UserProfile"]
+    log -. "optional learner,<br/>any model" .-> learned["lessons · decisions ·<br/>proposals"]
+    kinds --> push["push: stable half +<br/>turn half, traced"]
+    engine --> push
+    learned --> push
+    push --> agent["agent"]
+    agent -- "memory_* tools:<br/>pull and write" --> log
+```
+
+Everything starts as an event in the **Log**, which is never edited. The
+rest is derived from it and can be rebuilt from it:
+
+| Tier | Holds | Owned by |
+|---|---|---|
+| **Log** | everything that happened, in order: messages, tool calls, your domain events | CommonMemo (SQLite) |
+| **Working** | what the current conversation or workflow run has in hand: live state and resume points, resumable by id | CommonMemo (SQLite) |
+| **Recaps** | short summaries of finished sessions, retrieved by relevance | a wrapped engine |
+| **UserProfile** | durable facts about one user; a newer value supersedes, history is kept | a wrapped engine |
+
+Beside the tiers, CommonMemo keeps **structured kinds** itself:
+- **tool memory:** which tools fail, how, and what fixed it; never the users' data;
+- **world facts:** with lifetimes; an agent's are proposals until approved;
+- **procedures:** templates, rules, steps and accepted examples, per task type;
+- **feedback:** ratings and corrections;
+- **negatives:** "never do X", plus tombstones for "forget this";
+- **resume points:** checkpoints and replayable steps.
+
+Agents use memory in **hybrid** mode. A bounded part is *pushed* each turn:
+- a **stable half** for the agent's instructions, which rarely changes, so
+  prompt caching keeps working;
+- a **turn half** with the request;
+- **tool notes**, in the tools' own descriptions.
+
+Agents *pull* the rest, and write, through the `memory_*` tools. Everything
+pushed is framed as reference data, not instructions, and every push is
+recorded as a **turn trace**.
+
+CommonMemo **wraps** memory engines rather than building one. Extraction and
+retrieval belong to engines that specialize in them (Graphiti and Mem0). The
+built-in `local` engine is offline and deterministic, so everything works out
+of the box and in tests.
+
+**Trust** is decided by source, not recency ([ADR 0002](docs/adr/0002-world-fact-trust.md)).
+What an operator or your code writes takes effect at once. What an agent or
+a learner writes for everyone waits in the review queue. A less trusted
+write never silently replaces a more trusted one; it is kept as *disputed*.
 
 ## Use
 
@@ -95,9 +158,10 @@ async with mem.session(user_id="u1", agent="support") as s:
 
 ## Ranking by meaning
 
-Which of a user's 50 facts go in the push, which world facts a request is
-about, what `memory_recall` returns: one ranker decides ([#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)). By default it
-matches words (stemmed, without stop words). Give it an embedder and it
+One ranker decides which of a user's 50 facts go in the push, which world
+facts a request is about, and what `memory_recall` returns
+([#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)). By default
+it matches words, stemmed and without stop words. Give it an embedder and it
 matches meaning, so "How do I reach them?" finds `preferred_contact: email`:
 
 ```python
@@ -106,9 +170,9 @@ from commonmemo import EmbeddingRanker
 mem = Memory(ranker=EmbeddingRanker(my_embed))   # any texts -> vectors function, sync or async
 ```
 
-The Graphiti and Mem0 engines bring their own: their embedder ranks facts
-too, with no setup. Embeddings are cached, and a profile that fits the push
-is never ranked.
+The Graphiti and Mem0 engines bring their own embedder, which ranks facts
+too, with no setup. Embeddings are cached, and a profile small enough to
+push whole is never ranked.
 
 ## World facts as configuration
 
@@ -122,11 +186,13 @@ mem = Memory(project="shop", fact_keys=[
 mem.load_facts("facts.yaml")     # keys and values, versioned with the app; loading again writes nothing new
 ```
 
-The registry is optional ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)). With one, agents are shown the keys to reuse,
-and their writes to an unregistered or near-duplicate key (`refund_period`)
-stay proposals for review. Registered lifetimes make facts go stale by
-default. Pinned facts are always pushed; the rest only when the request is
-about them, so hundreds of facts don't crowd the prompt.
+The registry is optional ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)). With one:
+- agents are shown the keys to reuse;
+- an agent's write to an unregistered or near-duplicate key (`refund_period`)
+  stays a proposal for review;
+- registered lifetimes make facts go stale by default;
+- pinned facts are always pushed; the rest only when the request is about
+  them, so hundreds of facts don't crowd the prompt.
 
 ## How a task is done: procedural memory
 
@@ -146,36 +212,39 @@ use_when: Writing the weekly status report for the team
 
 ```python
 mem.load_procedures("procedures/")        # current at once; a changed file is a new version
-with mem.session(user_id="ada", task="weekly_report") as s:   # or leave task out: matched by use_when
+async with mem.session(user_id="ada", task="weekly_report") as s:   # or leave task out: matched by use_when
     ctx = await s.push_turn(prompt)       # rules, templates and step names, in the turn half
 mem.procedure_outcomes("weekly_report")   # runs, feedback and skipped steps, per version
 ```
 
-Without a named task, the request is matched against the `use_when` lines
-with the same ranker as facts. Agents get `memory_get_procedure` (full steps
-and examples) and `memory_save_procedure`: an agent's entry is its user's own
-way at once, or, for everyone, a proposal an operator approves. Accepted
-examples (`s.save_exemplar(...)`) are the user's data: no one else sees one
-until an operator shares it with `confirm_procedure(id, scrubbed=True)`, and
-`forget_user` removes them.
+When the app doesn't name the task, the request is matched against the
+`use_when` lines with the same ranker as facts. Agents get two tools:
+- `memory_get_procedure` returns the full steps and examples;
+- `memory_save_procedure` saves an entry. For the agent's own user it
+  applies at once; for everyone, it is a proposal an operator approves.
+
+Accepted examples (`s.save_exemplar(...)`) are the user's data. No one else
+sees one until an operator shares it with `confirm_procedure(id, scrubbed=True)`,
+and `forget_user` removes them.
 
 ### Learning from runs
 
-Off by default. Give memory any model, as a function from a prompt to text,
-and each finished session is distilled into decision records, lessons
-(merged when they repeat, pushed to the same user) and proposed
-procedures, rules and exemplar candidates that wait for review:
+Off by default. Give memory any model, as a function from a prompt to text.
+Each finished session is then distilled into:
+- decision records;
+- lessons, merged when they repeat and pushed to the same user;
+- proposed procedures, rules and example candidates, which wait for review.
 
 ```python
 from commonmemo import ModelLearner
 
 mem = Memory(learner=ModelLearner(lambda prompt: my_model(prompt)))   # sync or async
-await mem.distill(session_id)        # or run it later, in a batch
+await mem.distill(session_id)              # or run it later, in a batch
 mem.revert(run_id=f"learn:{session_id}")   # undo what one session taught
 ```
 
 The learner sees messages, tool calls, feedback and step results, with
-forgotten text redacted; never raw reasoning.
+forgotten text redacted. It never sees raw reasoning.
 
 ## Resume a stopped process
 
@@ -193,13 +262,13 @@ with mem.session("job-42") as s:           # same id in a new process = resume
 ```
 
 Rerunning the same code after a crash skips what finished and continues at
-the first step that did not; a side-effecting step interrupted mid-way
-raises `StepInDoubt` instead of repeating itself. Side-effecting steps are
-claimed before they run, so even several workers resuming one session at
-once run each of them at most once; the others get `StepInProgress` while
-the winner's lease is live.
+the first step that didn't. A side-effecting step interrupted mid-way raises
+`StepInDoubt` instead of repeating itself. Side-effecting steps are claimed
+before they run, so even several workers resuming one session at once run
+each of them at most once; the others get `StepInProgress` while the
+winner's lease is live.
 
-## See how memory changes
+## See how memory changes, and undo it
 
 ```python
 with mem.run("deploy-42"):                  # tags everything written inside
@@ -211,33 +280,28 @@ h.velocity(bucket=3600)                     # writes per hour, by kind/source/sc
 h.churn(); h.review_flow(); h.by_run("deploy-42")
 mem.as_of("before v3").world_facts()        # memory as it was then
 mem.diff("before v3")                       # what changed since
-```
 
-And the reins, for when memory goes wrong:
-
-```python
-mem.revert(to="before v3")                 # world facts and negatives back to a snapshot
-mem.revert(run_id="commonadk:r-8812")      # undo one run; later edits by others survive
-mem.freeze(source="agent")                 # agent world-fact writes become proposals
-mem.alerts()                               # velocity spikes, churn, review backlog
+mem.revert(to="before v3")                  # world facts, negatives and procedures back to a snapshot
+mem.revert(run_id="commonadk:r-8812")       # undo one run; later edits by others survive
+mem.freeze(source="agent")                  # agent world-fact writes become proposals
+mem.alerts()                                # velocity spikes, churn, review backlog
 ```
 
 Reverts append compensating events and never delete, so they can be undone
-too. Alerts are on by default and logged to `commonmemo.alerts` ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
-A mockup of where the inspector is heading ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)), with sample data, is at
-<https://mehul-gupta-smh.github.io/CommonMemO/> (source: `pages/index.html`).
+too. Alerts are on by default and logged to `commonmemo.alerts` ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27), [ADR 0004](docs/adr/0004-history-analytics-and-reversion.md)).
 
 ## See what memory did
 
-Every push into an agent's context is recorded as a **turn trace**: what was
-pushed, by reference, where each item came from, and what was left out
-(pushed text only with `MemoryPolicy(trace_text=True)`; `forget_user`
-removes a user's traces).
+Every push into an agent's context is recorded as a **turn trace**. It
+records what was pushed (by reference), where each item came from, and what
+was left out. The pushed text itself is kept only with
+`MemoryPolicy(trace_text=True)`, and `forget_user` removes a user's traces.
 
 ```bash
 commonmemo trace s2 --why refund_window   # why the agent got it: the events it came from
 commonmemo show user ada                  # profile, constraints, what was forgotten, past sessions
 commonmemo inspect --open                 # the same, in a local read-only web page
+commonmemo inspect --review               # also approve and reject what waits for review
 ```
 
 ```python
@@ -245,6 +309,10 @@ mem.traces(session_id="s2"); mem.why("refund_window", session_id="s2")
 from commonmemo.otel import instrument; instrument(mem)   # pushes as OpenTelemetry spans
 ```
 
+The inspector binds to 127.0.0.1 and runs no scripts. With `--review`, each
+approval is a form post carrying a token from that server start, checked
+against its own Host and Origin, and tagged `run_id="review:<reviewer>"`,
+so a review session can be reverted ([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)).
 More in [docs/seeing-what-memory-did.md](docs/seeing-what-memory-did.md) ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)).
 
 ## With Graphiti
@@ -258,7 +326,7 @@ mem = Memory("sqlite:///mem.db", engine=GraphitiEngine(graphiti=Graphiti(uri, us
 ```
 
 Each closed session becomes one Graphiti episode in the user's graph
-partition; retrieval ranks past sessions by the graph facts that match, and
+partition. Retrieval ranks past sessions by the graph facts that match, and
 extracted facts join the user's explicit ones.
 
 ## With Mem0
@@ -271,7 +339,7 @@ mem = Memory("sqlite:///mem.db", engine=Mem0Engine(config={...}))  # Mem0's own 
 ```
 
 Each closed session is handed to Mem0, which extracts and updates the
-user's memories; they join the user's explicit facts, and retrieval ranks
+user's memories. They join the user's explicit facts, and retrieval ranks
 past sessions by the memories that match.
 
 ## With CommonADK
@@ -315,9 +383,10 @@ the project's `.mcp.json`:
 }
 ```
 
-- **Tools:** `memory_recall`, `memory_remember`, `memory_note_fact`,
-  `memory_avoid`, `memory_save_progress`; `--read-only` offers only
-  `memory_recall`. Writes are recorded with `source="agent"`, and an agent's
+- **Tools:** `memory_recall`, `memory_get_procedure` (when procedures exist),
+  `memory_remember`, `memory_note_fact`, `memory_avoid`,
+  `memory_save_progress` and `memory_save_procedure`. With `--read-only`, only
+  the first two. Writes are recorded with `source="agent"`, and an agent's
   world facts are proposals until approved, as in Python.
 - **Push:** the server's instructions carry the stable memory (negatives,
   profile, world facts, lessons); the resource `memory://context` has all of it.
@@ -329,12 +398,12 @@ the project's `.mcp.json`:
 
 The model decides when to call a tool, so MCP alone doesn't capture every
 event; the hooks below do. Tested over real stdio, and against the official
-MCP client (`pip install "commonmemo[mcp]"`) ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)).
+MCP client ([#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4)).
 
 ## Hooks: automatic capture and push in coding harnesses
 
 With hooks, the harness itself hands memory every prompt, tool call and
-reply, and puts memory in front of the session and of each prompt -- nothing
+reply, and puts memory in front of the session and of each prompt. Nothing
 depends on the model calling a tool. `commonmemo setup <harness>` prints
 the config; every event runs `commonmemo hook`, which reads the event's JSON
 on stdin.
@@ -369,80 +438,166 @@ export COMMONMEMO_USER=ada
 | Event | Recorded | Pushed |
 |---|---|---|
 | session start | opens or resumes the session | stable memory, and where a resumed session stands |
-| prompt | the prompt | memory for this turn (relevant recaps, state) |
+| prompt | the prompt | memory for this turn (relevant recaps, the matched procedure, state) |
 | tool call | the call, its result or error (feeds tool memory) | recaps the result brings up that the turn missed |
 | reply | the reply (Claude Code, Codex) | |
 | compaction | a checkpoint, so work survives it | |
 | session end | closes and consolidates the session | |
 
-Memory is also **refreshed mid-run**: when a tool result brings up an
-earlier session that the prompt's push missed, its recap is pushed before
-the next model call (at most 3 times per turn; `MemoryPolicy(refresh=False)`
-turns it off; [#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)). A hook never blocks the harness: on any error it writes to
-stderr and exits 0.
-Each harness session is its own memory session by default. To continue
-**one session across harnesses**, give them the same `--session` (or
-`COMMONMEMO_SESSION`): start in Claude Code, resume in Codex, and Codex is
-told where the work stood; each event records which harness wrote it.
-Recaps of a user's past sessions are shared across harnesses either way, so
-Claude Code also sees what the user did in Codex yesterday, labelled with
-where it happened (`MemoryPolicy(recaps_across_agents=False)` keeps them per
-agent; [#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)). The
-hook payloads are tested against recorded payloads from Claude Code
-2.1.302, and against the schemas built into Codex 0.163.0 ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)).
-Use hooks and the MCP server together: hooks capture and push, the tools let
-the agent recall and save on purpose. Add `--recall-tool` to the hook command
-(or set `COMMONMEMO_RECALL_TOOL=1`) when the MCP server is configured too:
-the push then says when it left things out ("More in memory than shown here:
-5 facts about the user. Call memory_recall with what you need."), so the
-model knows to look ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)).
+What else the hooks do:
+- **Mid-run refresh:** when a tool result brings up an earlier session the
+  prompt's push missed, its recap is pushed before the next model call. At
+  most 3 times per turn; `MemoryPolicy(refresh=False)` turns it off ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)).
+- **Never blocking:** on any error a hook writes to stderr and exits 0.
+- **One session across harnesses:** each harness session is its own memory
+  session by default. Give them the same `--session` (or
+  `COMMONMEMO_SESSION`) to continue one: start in Claude Code, resume in
+  Codex, and Codex is told where the work stood. Each event records which
+  harness wrote it.
+- **Shared recaps:** recaps of a user's past sessions are shared across
+  harnesses either way, labelled with where each happened, so Claude Code
+  sees what the user did in Codex yesterday.
+  `MemoryPolicy(recaps_across_agents=False)` keeps them per agent ([#34](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/34)).
+- **With the MCP server too:** add `--recall-tool` to the hook command (or set
+  `COMMONMEMO_RECALL_TOOL=1`). The push then says when it left things out
+  ("More in memory than shown here: 5 facts about the user. Call
+  memory_recall with what you need."), so the model knows to look ([#23](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/23)).
 
-## Live runs
-
-`scripts/live_engines.py` runs a short scenario on the Graphiti and Mem0
-engines against real backends and an LLM. It is not part of the test
-suite because it spends model tokens:
-
-```bash
-pip install -e ".[graphiti,mem0]" kuzu
-OPENAI_API_KEY=... python scripts/live_engines.py      # Neo4j if NEO4J_* is set, else embedded Kuzu
-```
+Hooks and the MCP server work best together: hooks capture and push, and
+the tools let the agent recall and save on purpose. The hook payloads are
+tested against recorded payloads from Claude Code 2.1.302, and against the
+schemas built into Codex 0.163.0 ([#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5)).
 
 ## Does it help? The evaluation suite
 
-`evals/` runs scenarios with memory and without it, against a scripted agent
-that decides only from the text it is shown: the prompt and the tools'
-descriptions. Among the scenarios:
+`evals/` runs each scenario twice, with memory and without it, against a
+scripted agent. The agent decides only from the text it is shown: the
+prompt and the tools' descriptions. Its rules are the obvious ones a capable
+model would follow. What it can't do is know anything it wasn't shown, and
+that's what the suite measures.
+
+```
+python -m evals                   # prints the report; docs/evals.md is the committed baseline
+```
+
+All **16 of 16** pass with memory. In the **10** scenarios where a run
+without memory makes sense, memory turns a failure into a success in all 10.
+The other 6 are safety checks with nothing to compare against:
 - a tool failure with a known fix is not repeated;
-- a user's "never" is respected;
-- the latest preference wins;
+- a user's "never" is respected, and the latest preference wins;
 - a crashed pipeline resumes without charging twice;
-- a forgotten fact never returns;
+- a forgotten fact never returns, in the push or through recall;
 - stored text never becomes an instruction;
-- one user can't change what another is told;
+- one user's claim doesn't change what another is told;
 - a burst of bad writes is detected, frozen and reverted;
 - a tool result that brings up an older session gets its recap mid-run;
 - when the push leaves things out, the agent is told and recalls them;
 - a fact past its lifetime isn't quoted, and an agent's write doesn't override an operator's;
-- a fact asked about in other words is recalled (by meaning, with an embedder).
+- a fact asked about in other words is recalled (4/4 by meaning, 1/4 by shared words);
+- a request for a known task gets the house template without naming it;
+- a correction in one session becomes a lesson for that user's next one, and no one else's.
 
-```
-python -m evals                   # prints the report; see docs/evals.md for the baseline
-```
+It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
-It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)). A live mode against a real model comes
-after the engines' live run (#3).
+## Status
+
+v0.0.1, not on PyPI yet ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). In:
+- the four tiers and three engines (local, Graphiti, Mem0);
+- the structured kinds: tool memory, world facts, procedures, feedback,
+  negatives, resume points;
+- hybrid agent memory, ranking by meaning, and learning from runs;
+- history, revert, freeze, budgets and alerts;
+- turn traces, the inspector with its review screen, and OpenTelemetry;
+- the CommonADK integration, the MCP server, and hooks for Claude Code,
+  Codex and OpenCode.
+
+CI runs the test suite on Python 3.10 and 3.13: 284 tests in the fullest
+environment. It also runs with no extras and with each extra on its own,
+and checks that the core imports none of them.
+
+Every decision has a record: [ADR 0002](docs/adr/0002-world-fact-trust.md) (who may change a world
+fact), [ADR 0003](docs/adr/0003-procedural-memory.md) (procedural memory) and
+[ADR 0004](docs/adr/0004-history-analytics-and-reversion.md) (history and revert) are accepted. [ADR 0001](docs/adr/0001-storage.md)
+(storage beyond SQLite) is proposed. The design is in [`docs/design.md`](docs/design.md),
+and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14).
+
+## Honest caveats
+
+- **Nothing here has run against a real model or backend yet.** The Graphiti
+  and Mem0 engines are tested against their libraries' real types, and
+  learning against a stand-in model, but neither has had a live run
+  ([#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3): this environment has no model API access). `scripts/live_engines.py`
+  is ready for when one does.
+- **The evals show the mechanism, not the benefit to a real model.** A
+  scripted agent that only reads what it's shown proves memory put the right
+  thing in front of it. It doesn't prove a real model uses it well. The
+  meaning-based recall result uses a small offline concept embedder, not a
+  real one. A live mode with a real model and public long-memory benchmarks
+  comes after #3 ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
+- **Framing isn't a guarantee.** Pushed memory is labelled reference data,
+  and stored text never lands where instructions go (an eval checks this).
+  But it is text a model reads, and some of it came from users and tools. An
+  agent's world facts and procedures for everyone need approval, which
+  limits the reach of a poisoned write. Lessons and an agent's notes for its
+  own user don't.
+- **Without an embedder, ranking matches words.** The keyword ranker is
+  stemmed and drops stop words, but "How do I reach them?" won't find
+  `preferred_contact` without an embedding ranker or an engine that has one.
+- **One machine.** Storage is SQLite. A shared store (Postgres, then
+  scale-out) is designed but not built ([ADR 0001](docs/adr/0001-storage.md), [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11), [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)).
+- **The review screen is a local tool, not an admin console.** It has no
+  accounts: the reviewer's name is whatever `--reviewer` says, and it
+  relies on a loopback bind plus a per-start token. Fine on your own
+  machine; don't expose it.
+- **Learning adds a model call when a session closes.** In the coding-harness
+  hooks, that call runs in the session-end hook.
 
 ## Development
 
 ```bash
 pip install -e ".[dev,commonadk,graphiti,mem0,mcp,otel]"
 pytest
+python -m evals --md docs/evals.md   # regenerate the eval baseline
 ```
 
-Planned work is tracked in issues. The [roadmap (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14)
-lists them; nothing gets coded without an issue.
+`scripts/live_engines.py` runs a short scenario on the Graphiti and Mem0
+engines against real backends and an LLM. It's not part of the test suite,
+because it spends model tokens:
+
+```bash
+pip install -e ".[graphiti,mem0]" kuzu
+OPENAI_API_KEY=... python scripts/live_engines.py      # Neo4j if NEO4J_* is set, else embedded Kuzu
+```
+
+Planned work is tracked in issues, indexed by the [roadmap (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14).
+Nothing gets coded without an issue. An earlier static mockup of the
+inspector, with sample data, is at <https://mehul-gupta-smh.github.io/CommonMemO/> (`pages/index.html`).
+
+## Related
+
+- [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK) — define an agent system once, build it on any agent
+  SDK. CommonMemo plugs into its event stream to give all six targets the same memory.
+- [agent-gauntlet](https://github.com/Mehul-Gupta-SMH/agent-gauntlet) — search agent configurations under deliberate tool
+  failure, and ship the one that survives.
 
 ## License
 
-Apache-2.0
+Apache-2.0. See [LICENSE](LICENSE).
+
+## Repo metadata
+
+This is kept here to be copied into GitHub's **About** box (the ⚙ next to
+"About" on the repo page). The agent proxy blocks writes to repository
+settings, so this is the source of truth until it is pasted across.
+
+Description:
+
+```
+Framework-neutral memory for agents: pushed when it matters, pulled when asked, never trusted blindly. Traced, reviewable and revertible; works with CommonADK, MCP, Claude Code, Codex and OpenCode.
+```
+
+Topics:
+
+```
+llm-agents agent-memory memory mcp claude-code ai-agents llm python sqlite observability
+```

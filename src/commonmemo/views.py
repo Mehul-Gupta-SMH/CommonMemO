@@ -8,6 +8,7 @@ reopen a closed one.
     user_view(mem, "ada")       # profile with provenance, recaps, constraints, tombstones, feedback
     session_view(mem, "s1")     # timeline, where a resume would start, turn traces
     overview(mem)               # recent sessions and users
+    review_queue(mem)           # world facts and procedure entries waiting for review (#45)
 """
 
 from __future__ import annotations
@@ -17,7 +18,18 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from .agent_tools import run_sync
 from .context import _line
-from .events import BOOKKEEPING, ContextPushed, describe
+from .events import (
+    BOOKKEEPING,
+    ContextPushed,
+    DecisionRecorded,
+    LessonLearned,
+    ProcedureConfirmed,
+    ProcedureEntry,
+    ProcedureFollowed,
+    ProcedureRejected,
+    ProcedureRetired,
+    describe,
+)
 from .resume import ResumePoint
 from .traces import TurnTrace
 
@@ -29,9 +41,30 @@ def _when(ts: Optional[float]) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "-"
 
 
+def _story(e: Any) -> Optional[str]:
+    """Readable lines for procedural memory and what learning wrote (#26)."""
+    if isinstance(e, ProcedureEntry):
+        status = ", waiting for review" if e.proposed else ""
+        return f"{e.entry_kind} {e.name!r} for {e.task} ({e.scope}, from {e.source}{status})"
+    if isinstance(e, ProcedureConfirmed):
+        return f"approved {e.entry_kind} {e.name!r} for {e.task}, into {e.scope}"
+    if isinstance(e, ProcedureRejected):
+        return "rejected a procedure entry" + (f": {e.reason}" if e.reason else "")
+    if isinstance(e, ProcedureRetired):
+        return f"retired {e.entry_kind} {e.name!r} for {e.task}" + (f": {e.reason}" if e.reason else "")
+    if isinstance(e, ProcedureFollowed):
+        skipped = f", skipped {', '.join(e.skipped)}" if e.skipped else ""
+        return f"used {e.task} {e.entry_kind} {e.name!r} v{e.version}{skipped}"
+    if isinstance(e, LessonLearned):
+        return f"lesson learned: {e.text}" + (" (seen again)" if e.same_as else "")
+    if isinstance(e, DecisionRecorded):
+        return f"decision: {e.goal}: chose {e.chosen}" + (f"; {e.outcome}" if e.outcome else "")
+    return None
+
+
 def event_line(event: Any) -> str:
     """One readable line for any event."""
-    text = describe(event)
+    text = describe(event) or _story(event)
     if text:
         return text
     if isinstance(event, ContextPushed):
@@ -94,7 +127,8 @@ def _labels(mem: "Memory", traces: list[TurnTrace]) -> dict[str, str]:
     """Readable text for items a trace names only by id (negatives, lessons),
     looked up now from their source events. Traces themselves keep no text."""
     ids = {i["id"] for t in traces for i in t.items if i["kind"] in ("negative", "lesson") and i.get("id")}
-    return {e.id: describe(e) or e.kind for e in mem.store.get_events(ids)}
+    return {e.id: e.text if isinstance(e, LessonLearned) else describe(e) or e.kind
+            for e in mem.store.get_events(ids)}
 
 
 def overview(mem: "Memory", *, limit: int = 2000) -> dict[str, Any]:
@@ -112,7 +146,29 @@ def overview(mem: "Memory", *, limit: int = 2000) -> dict[str, Any]:
             "world": [{"key": w.key, "value": w.value, "scope": w.scope, "source": w.source}
                       for w in mem.world_facts()],
             "pending": [{"key": w.key, "value": w.value, "scope": w.scope, "user_id": w.user_id}
-                        for w in mem.pending_world_facts()]}
+                        for w in mem.pending_world_facts()],
+            "pending_procedures": len(mem.pending_procedures())}
+
+
+def review_queue(mem: "Memory") -> dict[str, Any]:
+    """Everything waiting for review, oldest first, each with what it would
+    replace: proposed and disputed world facts, and procedure entries."""
+    world = []
+    for w in mem.pending_world_facts():
+        current = {c.key: c for c in mem.knowledge.world_facts([w.scope])}.get(w.key)
+        world.append({"id": w.event_id, "key": w.key, "value": w.value, "scope": w.scope, "source": w.source,
+                      "status": w.status, "proposed_by": w.user_id, "note": w.note, "since": _when(w.valid_from),
+                      "current": current.value if current else None})
+    procedures = []
+    for p in mem.pending_procedures():
+        current = next((c for c in mem.knowledge.procedure_entries([p.scope], p.task)
+                        if (c.kind, c.name, c.scope) == (p.kind, p.name, p.scope)), None)
+        procedures.append({"id": p.event_id, "task": p.task, "kind": p.kind, "name": p.name, "scope": p.scope,
+                           "source": p.source, "status": p.status, "proposed_by": p.user_id, "note": p.note,
+                           "use_when": p.use_when, "body": p.body, "since": _when(p.valid_from),
+                           "current": current.body if current else None,
+                           "current_version": current.version if current else None})
+    return {"world": world, "procedures": procedures}
 
 
 # -- text ----------------------------------------------------------------------

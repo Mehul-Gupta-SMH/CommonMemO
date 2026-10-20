@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-labelledby="t d">
+  <title id="t">CommonMemo</title>
+  <desc id="d">Framework-neutral memory for agents: what memory pushes into each turn, what agents pull, and what waits for review.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14202e"/>
+      <stop offset="1" stop-color="#1d3047"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8db8e3"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="300" rx="18" fill="url(#bg)"/>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+    <text x="56" y="112" fill="#f3f1ea" font-size="54" font-weight="700" letter-spacing="-1">CommonMemo</text>
+    <text x="58" y="156" fill="#c9d6e4" font-size="21">Memory for any agent, on any framework:</text>
+    <text x="58" y="186" fill="#c9d6e4" font-size="21">pushed when it matters, pulled when asked,</text>
+    <text x="58" y="216" fill="#c9d6e4" font-size="21">never trusted blindly.</text>
+    <text x="58" y="262" fill="#8a9bb0" font-size="15">Log · Working · Recaps · UserProfile · world facts · procedures · tool memory</text>
+
+    <!-- memory -->
+    <g transform="translate(640,52)">
+      <rect width="240" height="196" rx="12" fill="#22384f" stroke="#3c5876"/>
+      <text x="20" y="32" fill="#f3f1ea" font-size="16" font-weight="600">memory</text>
+      <g font-size="13" fill="#dbe6f1">
+        <rect x="20" y="48" width="96" height="28" rx="6" fill="#2d4a68"/><text x="32" y="67">Log</text>
+        <rect x="124" y="48" width="96" height="28" rx="6" fill="#2d4a68"/><text x="136" y="67">Working</text>
+        <rect x="20" y="84" width="96" height="28" rx="6" fill="#2d4a68"/><text x="32" y="103">Recaps</text>
+        <rect x="124" y="84" width="96" height="28" rx="6" fill="#2d4a68"/><text x="136" y="103">Profile</text>
+        <rect x="20" y="120" width="96" height="28" rx="6" fill="#2d4a68"/><text x="32" y="139">Facts</text>
+        <rect x="124" y="120" width="96" height="28" rx="6" fill="#2d4a68"/><text x="136" y="139">Procedures</text>
+      </g>
+      <text x="20" y="178" fill="#e0a84a" font-size="13">3 proposals waiting for review</text>
+    </g>
+
+    <!-- agent -->
+    <g transform="translate(1000,96)">
+      <rect width="150" height="108" rx="12" fill="#f3f1ea"/>
+      <text x="75" y="48" fill="#14202e" font-size="18" font-weight="700" text-anchor="middle">agent</text>
+      <text x="75" y="72" fill="#4c5a69" font-size="12" text-anchor="middle">any SDK, MCP</text>
+      <text x="75" y="90" fill="#4c5a69" font-size="12" text-anchor="middle">or coding harness</text>
+    </g>
+
+    <!-- push and pull -->
+    <path d="M884,122 L994,122" stroke="#8db8e3" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+    <text x="939" y="112" fill="#8db8e3" font-size="13" text-anchor="middle">push</text>
+    <path d="M994,180 L884,180" stroke="#8db8e3" stroke-width="2.5" fill="none" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+    <text x="939" y="200" fill="#8db8e3" font-size="13" text-anchor="middle">pull · write</text>
+  </g>
+</svg>
