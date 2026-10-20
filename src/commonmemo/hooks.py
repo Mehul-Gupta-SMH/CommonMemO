@@ -58,7 +58,8 @@ MAX_TEXT = 4000
 RESUME_EVENTS = 10
 """How many of a session's latest events SessionStart pushes."""
 
-_MEMORY_TOOLS = ("memory_recall", "memory_remember", "memory_note_fact", "memory_avoid", "memory_save_progress")
+_MEMORY_TOOLS = ("memory_recall", "memory_get_procedure", "memory_remember", "memory_note_fact", "memory_avoid",
+                 "memory_save_progress", "memory_save_procedure")
 
 # The events each harness is configured for in `setup`; Codex has no
 # PostToolUseFailure (a failed call arrives as a PostToolUse).

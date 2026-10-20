@@ -2,6 +2,42 @@
 
 ## 0.0.1 — unreleased
 
+Procedural memory, phase 1 ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26), [ADR 0003](docs/adr/0003-procedural-memory.md), accepted):
+
+- New kind: **templates, rules, procedures and exemplars per task type**
+  (`commonmemo.procedures`, events `ProcedureEntry`, `ProcedureConfirmed`,
+  `ProcedureRejected`, `ProcedureRetired`, `ProcedureFollowed`). Scopes
+  `global`, `project:<name>`, `user:<id>`; the most specific wins.
+- `Memory.load_procedures(dir)`: Markdown files with a front matter block
+  (task from the directory, name from the file), or JSON/YAML; current at
+  once, idempotent, a changed body is a new version.
+- `Memory.session(task=...)` / `context(task=...)` names the task; otherwise
+  the request is matched against `use_when` lines by the memory's ranker
+  (`MemoryPolicy.min_procedure_score`, 0.3). The turn half gets rules and
+  templates (clipped at `max_procedure_chars`) and a procedure's step names.
+- Agent tools: `memory_get_procedure(task)` (only when tasks exist; its
+  description lists them) and `memory_save_procedure` (the user's own way at
+  once, or for everyone as a proposal). Also over MCP and the hooks.
+- Review as for world facts: `pending_procedures`, `confirm_procedure`,
+  `reject_procedure`, `retire_procedure`; a less trusted source is kept as
+  disputed instead of replacing a more trusted entry.
+- Exemplars (`Session.save_exemplar`) stay in the user's scope; sharing one
+  needs `confirm_procedure(id, scrubbed=True)`, which also redacts the
+  user's known profile values. `forget_user` removes the user's entries,
+  exemplars and proposals; approved copies stay.
+- Runs: each pushed or pulled entry is in the turn trace, and at close the
+  session records `ProcedureFollowed` with the steps of a step-backed
+  procedure it never finished (`Session.follow` to state it yourself).
+  `Memory.procedure_outcomes(task)`: runs, ratings, corrections and skipped
+  steps per entry version.
+- Keyword ranking: single letters are no longer terms ("week's" no longer
+  adds "s"), and a final "e" is dropped from longer stems, so "write" and
+  "writing" match.
+- New eval scenario **procedure by description** (15 of 15): two report
+  requests that don't name the task get the house template; an unrelated
+  request gets none.
+- Projection schema version 4: existing projection files rebuild from the Log.
+
 Ranking by meaning ([#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)):
 
 - New `commonmemo.ranking`: a `Ranker` decides which profile facts make the

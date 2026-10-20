@@ -277,7 +277,7 @@ class ContextPushed(MemoryEvent):
     (`chars`), and is what `Memory.traces` / `Memory.why` read (#25).
 
     `items` are references, not text: one dict per pushed item with its
-    `kind` ("fact", "world", "negative", "lesson", "recap"), its key or id,
+    `kind` ("fact", "world", "negative", "lesson", "procedure", "recap"), its key or id,
     and where it came from (`source`, `events`, `score`). `more` counts what
     was left out (`MemoryContext.more`). `text` is the pushed text itself,
     only with `MemoryPolicy.trace_text`. Traces carry the user's id, so
@@ -348,6 +348,79 @@ class Unfreeze(MemoryEvent):
     freeze_id: str
 
 
+class ProcedureEntry(MemoryEvent):
+    """How a type of task is done (ADR 0003): one `template` (the shape of a
+    good result), `rule` (a constraint it must follow), `procedure` (the
+    steps that produce it) or `exemplar` (an accepted result, as a
+    reference), for `task`.
+
+    `(scope, task, entry_kind, name)` identifies an entry; a later write with
+    a different body is its next version. `scope` is `global`,
+    `project:<name>` or `user:<id>` (one user's own way of doing it); the
+    more specific wins. `steps` names a procedure's steps (`@mem.step` names,
+    when they are backed by steps). Like a world fact, an entry from a less
+    trusted `source` never replaces a more trusted one, and `proposed`
+    entries wait for `Memory.confirm_procedure`; `None` decides by source."""
+
+    task: str
+    entry_kind: str
+    name: str
+    body: str
+    use_when: str = ""
+    """One line saying when it applies; requests are matched against it."""
+    steps: tuple[str, ...] = ()
+    scope: str = "global"
+    source: str = "explicit"
+    proposed: Optional[bool] = None
+    note: Optional[str] = None
+
+
+class ProcedureConfirmed(MemoryEvent):
+    """An operator approved a proposed entry (`entry_id`), into `scope`. It
+    carries a copy of the entry (scrubbed, for an exemplar shared beyond its
+    user), so the approval stands after the original is forgotten."""
+
+    entry_id: str
+    task: str
+    entry_kind: str
+    name: str
+    body: str
+    use_when: str = ""
+    steps: tuple[str, ...] = ()
+    scope: str = "global"
+
+
+class ProcedureRejected(MemoryEvent):
+    entry_id: str
+    reason: Optional[str] = None
+
+
+class ProcedureRetired(MemoryEvent):
+    """`(scope, task, entry_kind, name)` no longer applies. History is kept."""
+
+    task: str
+    entry_kind: str
+    name: str
+    scope: str = "global"
+    reason: Optional[str] = None
+    source: str = "explicit"
+
+
+class ProcedureFollowed(MemoryEvent):
+    """A session used an entry (`entry_id`, at `version`): pushed, pulled, or
+    stated by the app. `skipped` lists a procedure's steps the session never
+    finished, when its steps are backed by `@mem.step` (`steps_tracked`).
+    With feedback in the same session, this gives per-version outcomes."""
+
+    entry_id: str
+    task: str
+    entry_kind: str
+    name: str
+    version: int
+    skipped: tuple[str, ...] = ()
+    steps_tracked: bool = False
+
+
 class ExternalEvent(MemoryEvent):
     """An event from another system, kept verbatim (`source` names it,
     e.g. `commonadk.tool_call`). Integrations translate into this."""
@@ -359,6 +432,7 @@ class ExternalEvent(MemoryEvent):
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
     WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze,
+    ProcedureEntry, ProcedureConfirmed, ProcedureRejected, ProcedureRetired, ProcedureFollowed,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -405,6 +479,11 @@ __all__ = [
     "Forgotten",
     "Checkpoint",
     "ContextPushed",
+    "ProcedureEntry",
+    "ProcedureConfirmed",
+    "ProcedureRejected",
+    "ProcedureRetired",
+    "ProcedureFollowed",
     "StepStarted",
     "StepFinished",
     "StepFailed",

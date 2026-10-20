@@ -102,6 +102,7 @@ tool memory, for one, is shared across users, which user facts never are.
 | **Feedback** | ratings, comments, corrections | user × agent | `Feedback` | lessons, push (stable) |
 | **Negatives** | "never suggest phone calls"; tombstones ("forget my old address") | user, agent, project, global | `Negative`, `Forgotten` | push first (stable), never ranked out; tombstones filter facts |
 | **Resume points** | last checkpoint, completed and interrupted steps | session | `Checkpoint`, `@mem.step` | push when resuming (turn); steps replay |
+| **Procedures** | the weekly report's template, rules and steps; accepted examples | task × (`global`, `project:<name>`, `user:<id>`) | `ProcedureEntry` (files, apps, agents) | push for the named or matched task (turn) + `memory_get_procedure` |
 
 Deliberately **not** a kind: raw model reasoning. It is not available
 uniformly across providers (summaries, encrypted reasoning, or none),
@@ -290,6 +291,39 @@ hides only what came before it, so a fact the user states again afterwards
 shows again. Tombstones and step/checkpoint events are left out of what
 engines extract from, so a forgotten fact is not re-learned from its own
 tombstone.
+
+### Procedures: how a task is done
+
+[ADR 0003](adr/0003-procedural-memory.md), [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26). Entries are keyed by task type and kind
+(template, rule, procedure, exemplar) and name; a changed body is a new
+version, so `procedure_outcomes` can compare versions by the feedback their
+runs got and the steps runs skipped. The more specific scope wins (user
+over project over global), and a user's own entry ("my reports skip the
+risks section") overrides the project's by name.
+
+A request finds its task in order: named by the app (`session(task=...)`),
+matched against `use_when` lines by the memory's ranker above
+`MemoryPolicy.min_procedure_score`, or asked for by the agent
+(`memory_get_procedure`, whose description lists the tasks). The push
+carries rules and templates in full (each clipped) and a procedure as its
+step names; exemplars are pull only. Each pushed or pulled entry is in the
+turn trace, and at close the session records `ProcedureFollowed` for it,
+with the steps of a step-backed procedure (`@mem.step` names) it never
+finished.
+
+Trust follows ADR 0002. Files and application code are current at once; an
+agent's entry for everyone, or a learned one, is a proposal
+(`confirm_procedure` / `reject_procedure`), and a less trusted source never
+replaces a more trusted entry (it is kept as disputed). An agent may write
+an entry in its own user's scope without review, as it may write that
+user's facts. Exemplars are the user's data: written in the user's scope,
+shared only through `confirm_procedure(..., scrubbed=True)` (the user's
+known profile values are redacted on the way), removed by `forget_user`;
+the approved copy is the operator's and stays.
+
+Still to come (phase 2): learning at consolidation (decision records,
+merged lessons, proposed entries; off by default, behind an extra), and
+procedures in `revert`.
 
 ### Resume points: restarting a stopped process
 
@@ -576,9 +610,10 @@ inspector first, OpenTelemetry as the first exporter. See
 - [ADR 0002 — who may change a world fact](adr/0002-world-fact-trust.md) (accepted): agent-written
   world facts are proposals until an operator approves them; a less trusted source never
   supersedes a more trusted one ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)).
-- [ADR 0003 — procedural memory](adr/0003-procedural-memory.md) (proposed): templates, rules,
-  procedures and exemplars keyed by task type; how a request finds its procedure; learned and
-  agent-written entries are proposals ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26)).
+- [ADR 0003 — procedural memory](adr/0003-procedural-memory.md) (accepted): templates, rules,
+  procedures and exemplars keyed by task type, written and learned ones in one place; the app
+  names the task, matching by description is the fallback; learned and agent-written entries
+  are proposals; full exemplars stay with their user until approved and scrubbed ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26)).
 - [ADR 0004 — memory history](adr/0004-history-analytics-and-reversion.md) (proposed): metrics from the
   Log, point-in-time reads, and reverting by appending compensating events, never deleting;
   freeze and budgets reuse proposals; `forget_user` always wins ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
@@ -598,7 +633,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, fourteen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, fifteen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
@@ -611,6 +646,10 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
   capture and push, and one session continuing across harnesses. **Shipped:**
   `commonmemo hook` / `commonmemo setup`; one handler for all three (OpenCode
   through a JS shim); tested against recorded payloads and Codex's own schemas
+- [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory (ADR 0003). **Phase 1 shipped:** templates, rules,
+  procedures and exemplars per task type, loaded from files or written by apps and agents;
+  versions, trust and review, push for the named or matched task, `memory_get_procedure`,
+  per-version outcomes. Still to come: learning at consolidation (absorbs #9)
 - [#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25) — seeing what memory did. **Shipped:** turn traces (`Memory.traces`,
   `Memory.why`), `commonmemo show` / `trace`, the read-only `commonmemo inspect`,
   and OpenTelemetry spans (`commonmemo.otel`). Still to come: provenance for
@@ -625,9 +664,6 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) — task memory: open loops and commitments, for proactive follow-ups
 - [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27) — memory analytics and reins: velocity, delta, churn; point-in-time
   reads, diff and snapshots; revert by time or cause; freeze and budgets; see ADR 0004
-- [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory: templates, rules, procedures and exemplars per
-  task type, written by people or learned from runs (absorbs #9: decision records and lessons
-  distilled at consolidation); see ADR 0003
 - [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) — agent-relationship memory from multi-agent handoffs
 - [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) — benchmark the memory workload
 - [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — storage interface for projections, Postgres, DynamoDB (see ADR 0001)

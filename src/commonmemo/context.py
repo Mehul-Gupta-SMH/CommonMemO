@@ -29,6 +29,7 @@ from .events import MemoryEvent, Message, ToolInvoked, UserFact
 
 if TYPE_CHECKING:
     from .knowledge import FeedbackRecord, NegativeRecord, WorldRecord
+    from .procedures import TaskProcedures
     from .resume import ResumePoint
 
 STABLE_HEADER = (
@@ -73,6 +74,13 @@ class MemoryPolicy:
     min_recall_score: Optional[float] = None
     """How related a fact, world fact or lesson must be for `memory_recall`
     to return it; None uses the ranker's own threshold (`ranking.py`)."""
+    min_procedure_score: float = 0.3
+    """How well a request must match a task's `use_when` lines for its
+    templates, rules and steps to be pushed when the app didn't name the task
+    (`procedures.py`): a share of the request's words, or a cosine similarity
+    with an embedding ranker. Below it, the agent can still pull them."""
+    max_procedure_chars: int = 1500
+    """Each pushed template or rule is cut to this; the full text is on pull."""
     trace_text: bool = False
     """Keep the pushed text itself in each turn trace (`ContextPushed.text`),
     not only references to what was pushed. Off by default: the text repeats
@@ -147,6 +155,9 @@ class MemoryContext:
     state: dict[str, Any] = field(default_factory=dict)
     recent: list[MemoryEvent] = field(default_factory=list)
     resume: Optional["ResumePoint"] = None
+    procedure: Optional["TaskProcedures"] = None
+    """How the task this turn is about is done (ADR 0003): named by the app,
+    or matched by the request. In the turn half."""
     policy: MemoryPolicy = field(default_factory=MemoryPolicy)
     agent: Optional[str] = None
     """The agent this context is for; recaps from other agents say whose they are."""
@@ -217,6 +228,11 @@ class MemoryContext:
         sections = []
         if self.resume is not None and not self.resume.is_fresh:
             sections.append("## Resuming earlier work\n" + "\n".join(f"- {line}" for line in self.resume.lines()))
+        if self.procedure:
+            lines = self.procedure.turn_lines(max_chars=self.policy.max_procedure_chars, tool=self.recall_tool)
+            sections.append(f"## How {self.procedure.task} is done "
+                            "(the agreed way; where the user's request differs, the request wins)\n"
+                            + "\n".join(f"- {line}" for line in lines))
         if self.world_turn:
             sections.append("## Facts for this request\n" + "\n".join(f"- {world_line(w)}" for w in self.world_turn))
         if self.recaps:

@@ -6,9 +6,9 @@ memory tools, bound to one session:
 
     commonmemo mcp --user ada --agent claude-code      # or: python -m commonmemo.mcp
 
-- **Tools** (the pull half): `memory_recall`, and unless `--read-only`,
-  `memory_remember`, `memory_note_fact`, `memory_avoid`,
-  `memory_save_progress`. They are `agent_tools.py`'s functions, so agent
+- **Tools** (the pull half): `memory_recall`, `memory_get_procedure`, and
+  unless `--read-only`, `memory_remember`, `memory_note_fact`,
+  `memory_avoid`, `memory_save_progress`, `memory_save_procedure`. They are `agent_tools.py`'s functions, so agent
   writes are recorded with `source="agent"` and agent-written world facts
   wait for approval, exactly as in Python.
 - **Instructions** (the push half, where the harness supports it): the
@@ -217,6 +217,8 @@ class MemoryMCPServer:
             f"CommonMemo memory{who} (session {self.session.session_id}).",
             "Call memory_recall when the request may depend on an earlier conversation that is not in front of you.",
         ]
+        if self.memory.tasks(user_id=self.session.user_id):
+            lines.append("Before doing one of the tasks memory_get_procedure lists, call it for how it is done here.")
         if not self.read_only:
             lines.append("Save durable facts the user states with memory_remember, things to stop doing with "
                          "memory_avoid, and progress on long tasks with memory_save_progress.")

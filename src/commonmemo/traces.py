@@ -39,6 +39,11 @@ def trace_items(ctx: MemoryContext) -> tuple[dict[str, Any], ...]:
     items += [{"kind": "world", "key": w.key, "scope": w.scope, "source": w.source, "status": w.status,
                "half": "turn", "events": [w.event_id]} for w in ctx.world_turn]
     items += [{"kind": "lesson", "id": f.event_id, "source": f.kind, "events": [f.event_id]} for f in ctx.lessons]
+    if ctx.procedure:
+        p = ctx.procedure
+        items += [{"kind": "procedure", "key": e.key, "id": e.event_id, "task": e.task, "entry": e.kind,
+                   "version": e.version, "scope": e.scope, "source": e.source, "how": p.how, "score": p.score,
+                   "events": [e.event_id]} for e in p.pushed]
     items += [{"kind": "recap", "id": r.id, "session": r.session_id, "agent": r.agent, "score": r.score,
                "events": list(r.source_event_ids)} for r in ctx.recaps]
     return tuple(items)
@@ -76,7 +81,7 @@ class TurnTrace:
         out = [f"{self.reason} push, {self.chars} chars" + (f", by {self.agent}" if self.agent else "")]
         for i in self.items:
             what = i.get("key") or labels.get(i.get("id") or "") or i.get("id")
-            extra = ", ".join(f"{k} {i[k]}" for k in ("scope", "source", "status", "score", "session")
+            extra = ", ".join(f"{k} {i[k]}" for k in ("version", "how", "scope", "source", "status", "score", "session")
                               if i.get(k) is not None)
             out.append(f"  {i['kind']}: {what}" + (f" ({extra})" if extra else ""))
         cut = ", ".join(f"{n} {k}" for k, n in self.more.items() if n > 0)

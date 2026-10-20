@@ -36,6 +36,7 @@ from .events import (
     MemoryEvent,
     Message,
     Negative,
+    ProcedureFollowed,
     StepFailed,
     StepFinished,
     UserFact,
@@ -99,7 +100,8 @@ class Session:
     (`async with` or `with`), or call `aclose()` yourself."""
 
     def __init__(
-        self, memory: "Memory", record: SessionRecord, *, run_id: Optional[str] = None, agent: Optional[str] = None
+        self, memory: "Memory", record: SessionRecord, *, run_id: Optional[str] = None, agent: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> None:
         self.memory = memory
         self._record = record
@@ -113,6 +115,9 @@ class Session:
         """What consolidation produced at close (empty until then)."""
         self._token: Optional[contextvars.Token] = None
         self._closed = not record.is_open
+        self.task = task
+        """The type of task this session does (`weekly_report`), when the app
+        knows it: its procedures are pushed without matching (ADR 0003)."""
         self.recall_tool = False
         """Whether the agent working in this session has `memory_recall`
         (set by `build_agent_tools`); the push then says when it left
@@ -222,6 +227,69 @@ class Session:
             raise ValueError("commonmemo: forget() needs a user")
         return self.record(Forgotten(key=key, pattern=pattern))
 
+    def save_procedure(self, task: str, kind: str, name: str, body: str, *, use_when: str = "",
+                       steps: Optional[list[str]] = None, for_user: bool = False,
+                       source: str = "explicit") -> MemoryEvent:
+        """Record how `task` is done (see `Memory.save_procedure`): for
+        everyone in the project, or with `for_user=True` this user's own way
+        ("my reports skip the risks section")."""
+        scope = self._user_scope() if for_user else self.memory.project_scope
+        return self.record(self.memory._procedure_entry(task, kind, name, body, use_when=use_when, steps=steps,
+                                                        scope=scope, source=source))
+
+    def save_exemplar(self, task: str, body: str, *, name: Optional[str] = None, use_when: str = "",
+                      source: str = "explicit") -> MemoryEvent:
+        """Keep an accepted result of `task` as a reference. It is the user's
+        data: only this user sees it until an operator shares it
+        (`Memory.confirm_procedure(..., scrubbed=True)`); `forget_user`
+        removes it."""
+        name = name or f"{time.strftime('%Y-%m-%d')}-{self.session_id[:8]}"
+        return self.record(self.memory._procedure_entry(task, "exemplar", name, body, use_when=use_when, steps=None,
+                                                        scope=self._user_scope(), source=source))
+
+    def _user_scope(self) -> str:
+        if self.user_id is None:
+            raise ValueError("commonmemo: a user's own procedure or exemplar needs a session with a user")
+        return f"user:{self.user_id}"
+
+    def follow(self, task: str, name: Optional[str] = None, *, skipped: tuple[str, ...] = ()) -> list[MemoryEvent]:
+        """Record that this session used `task`'s entries (or the one named
+        `name`), with the steps it skipped. Pushed and pulled entries are
+        recorded at close without this; call it when the app knows better."""
+        found = self.memory.procedures(task, user_id=self.user_id).entries
+        return [self.record(ProcedureFollowed(entry_id=e.event_id, task=e.task, entry_kind=e.kind, name=e.name,
+                                              version=e.version, skipped=tuple(skipped), steps_tracked=True))
+                for e in found if name is None or e.name == name]
+
+    def _record_followed(self) -> None:
+        """At close: a `ProcedureFollowed` for each entry this session was
+        given (pushed or pulled) and didn't record itself, with the steps of a
+        step-backed procedure it never finished."""
+        given: dict[str, None] = {}
+        for push in self.events(kinds=[ContextPushed.kind]):
+            for item in push.items:
+                if item.get("kind") == "procedure" and item.get("id"):
+                    given[item["id"]] = None
+        done = {e.entry_id for e in self.events(kinds=[ProcedureFollowed.kind])}
+        steps = self.memory.knowledge.steps(self.session_id)
+
+        def step_name(step_id: str) -> str:
+            # `Report.gather_metrics:<args>` -> `gather_metrics`: steps are
+            # named by qualified function name, procedures by the plain one.
+            return step_id.split(":", 1)[0].rsplit(".", 1)[-1]
+
+        ran = {step_name(s.step_id) for s in steps}
+        finished = {step_name(s.step_id) for s in steps if s.status == "finished"}
+        for entry_id in given:
+            e = self.memory.knowledge.procedure_entry(entry_id)
+            if e is None or entry_id in done:
+                continue
+            tracked = bool(set(e.steps) & ran)
+            self.record(ProcedureFollowed(
+                entry_id=e.event_id, task=e.task, entry_kind=e.kind, name=e.name, version=e.version,
+                skipped=tuple(s for s in e.steps if s not in finished) if tracked else (), steps_tracked=tracked,
+            ))
+
     def checkpoint(self, label: str, data: Optional[dict[str, Any]] = None) -> MemoryEvent:
         """Record a restart point: what a process needs to continue from
         here. `data` must be JSON-serializable."""
@@ -281,12 +349,14 @@ class Session:
         recaps: Optional[int] = None,
         recent: Optional[int] = None,
         local_only: bool = False,
+        task: Optional[str] = None,
     ) -> MemoryContext:
         """What memory pushes for a turn about `query` (see `MemoryPolicy`):
         negatives, user facts, world facts, lessons and tool notes (stable);
-        relevant past recaps, session state, recent events and where a
-        resumed process stands (turn). `recaps` / `recent` override the
-        policy. `local_only` skips the wrapped engine's own search."""
+        how the task is done, relevant past recaps, session state, recent
+        events and where a resumed process stands (turn). `recaps` /
+        `recent` override the policy, `task` the session's task. `local_only`
+        skips the wrapped engine's own search."""
         policy = policy or self.memory.policy
         if recaps is not None or recent is not None:
             from dataclasses import replace
@@ -299,6 +369,7 @@ class Session:
         ctx = await self.memory._long_term(
             query, user_id=self.user_id, agent=self.agent, policy=policy,
             scopes=self.scopes, local_only=local_only, exclude_session=self.session_id, all_facts=True,
+            task=task or self.task,
         )
         ctx.recall_tool = self.recall_tool
         # Facts stated in this session reach the engine only at close, but
@@ -372,7 +443,7 @@ class Session:
         # only: no graph or LLM round trip per step, whatever the engine.
         found = await self.memory._long_term(
             query, user_id=self.user_id, agent=self.agent, scopes=self.scopes, local_only=True,
-            policy=replace(policy, recaps=max(5, policy.recaps), min_recap_score=0.0),
+            policy=replace(policy, recaps=max(5, policy.recaps), min_recap_score=0.0), procedures=False,
         )
         words = content_words(query)
         new = [r for r in found.recaps
@@ -396,6 +467,7 @@ class Session:
         events to the engine. Closing twice is a no-op."""
         if self._closed:
             return self.recaps
+        self._record_followed()
         self._closed = True
         closed_at = time.time()
         self.memory.store.close_session(self.session_id, closed_at)
