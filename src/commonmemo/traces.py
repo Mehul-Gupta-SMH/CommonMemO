@@ -39,6 +39,8 @@ def trace_items(ctx: MemoryContext) -> tuple[dict[str, Any], ...]:
     items += [{"kind": "world", "key": w.key, "scope": w.scope, "source": w.source, "status": w.status,
                "half": "turn", "events": [w.event_id]} for w in ctx.world_turn]
     items += [{"kind": "lesson", "id": f.event_id, "source": f.kind, "events": [f.event_id]} for f in ctx.lessons]
+    items += [{"kind": "lesson", "id": x.event_id, "source": "learned", "sessions": x.sessions,
+               "events": [x.event_id]} for x in ctx.learned]
     if ctx.procedure:
         p = ctx.procedure
         items += [{"kind": "procedure", "key": e.key, "id": e.event_id, "task": e.task, "entry": e.kind,

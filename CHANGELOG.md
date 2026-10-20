@@ -2,6 +2,32 @@
 
 ## 0.0.1 — unreleased
 
+Learning from runs, procedural memory phase 2 ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26), ADR 0003 section 6):
+
+- `Memory(learner=...)`, off by default. `ModelLearner(complete)` works with
+  any model: `complete(prompt) -> text`, sync or async. `Learner` is the
+  protocol for writing your own. `Memory.distill(session_id)` runs it on
+  demand; at close it runs by itself, once per session.
+- It writes decision records (`DecisionRecorded`, `Memory.decisions`, and
+  `[decision]` lines in `memory_recall`), lessons for the session's user
+  (`LessonLearned`, merged with an earlier lesson above
+  `MemoryPolicy.lesson_merge_score`, pushed as "Lessons from past
+  sessions"), and proposed templates, rules, procedures and exemplar
+  candidates (`source="extracted"`, waiting for review).
+- The learner sees messages, tool calls, feedback, step results and followed
+  procedures, with forgotten text redacted; never raw reasoning. Its reply is
+  parsed defensively; a failing learner never fails the close. Sessions
+  without a user learn no lessons.
+- `forget_user` removes the user's decisions and lessons.
+- `revert` now covers procedures (`REVERTIBLE` gains `"procedure"`):
+  changed entries are restored as their next version, added ones retired,
+  and proposals from what is reverted rejected. Everything one session's
+  learning wrote carries `run_id="learn:<session>"`, so it reverts by cause.
+- New eval scenario **learning from runs** (16 of 16): a correction in one
+  session becomes a lesson that changes the same user's next answer, and no
+  other user's.
+- Projection schema version 5.
+
 Procedural memory, phase 1 ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26), [ADR 0003](docs/adr/0003-procedural-memory.md), accepted):
 
 - New kind: **templates, rules, procedures and exemplars per task type**

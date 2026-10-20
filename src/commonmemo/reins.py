@@ -17,8 +17,8 @@ audited, can itself be reverted, and rebuilds agree with live memory.
   *without* those events, and memory is brought to that state. Changes made
   later by others survive.
 
-Reverts cover the kinds CommonMemo owns that make claims: world facts and
-negatives. Tool memory and feedback are observations of what happened, so
+Reverts cover the kinds CommonMemo owns that make claims: world facts,
+negatives and procedures (a restored entry is its next version). Tool memory and feedback are observations of what happened, so
 they are never "reverted"; Recaps and the UserProfile are held by the
 engine (ADR 0004 decision: owned kinds only). Because the replay uses
 today's Log, nothing a user asked to forget can come back.
@@ -46,6 +46,9 @@ from .events import (
     MemoryEvent,
     Negative,
     NegativeRevoked,
+    ProcedureEntry,
+    ProcedureRejected,
+    ProcedureRetired,
     Reverted,
     UserFact,
     WorldFact,
@@ -60,7 +63,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("commonmemo.alerts")
 
-REVERTIBLE = ("world_fact", "negative")
+REVERTIBLE = ("world_fact", "negative", "procedure")
 """Kinds a revert restores. Tool memory and feedback are observations, and
 Recaps and the UserProfile live in the engine (ADR 0004)."""
 
@@ -92,6 +95,11 @@ def _world_state(k: Knowledge, now: float) -> dict[tuple[str, str], tuple[str, O
 def _negative_state(k: Knowledge) -> dict[tuple[str, str], str]:
     """`(scope, statement) -> event id` of the active negatives."""
     return {(n.scope, n.statement): n.event_id for n in k.all_negatives()}
+
+
+def _procedure_state(k: Knowledge) -> dict[tuple[str, str, str, str], tuple[str, str, tuple[str, ...]]]:
+    """`(scope, task, kind, name) -> (body, use_when, steps)` of the current entries."""
+    return {(p.scope, p.task, p.kind, p.name): (p.body, p.use_when, p.steps) for p in k.all_procedures()}
 
 
 @dataclass
@@ -165,6 +173,22 @@ def plan_revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = N
         for (s, statement), event_id in sorted(after_n.items()):
             if in_scope(s) and (s, statement) not in before_n:
                 events.append(NegativeRevoked(negative_id=event_id))
+
+    if "procedure" in kinds:
+        before_p, after_p = _procedure_state(target), _procedure_state(current)
+        for (s, task, kind, name), (body, use_when, steps) in sorted(before_p.items()):
+            if in_scope(s) and after_p.get((s, task, kind, name)) != (body, use_when, steps):
+                user_id = s.split(":", 1)[1] if s.startswith("user:") else None
+                events.append(ProcedureEntry(task=task, entry_kind=kind, name=name, body=body, use_when=use_when,
+                                             steps=steps, scope=s, source="revert", proposed=False, user_id=user_id))
+        for (s, task, kind, name) in sorted(set(after_p) - set(before_p)):
+            if in_scope(s):
+                events.append(ProcedureRetired(task=task, entry_kind=kind, name=name, scope=s, source="revert",
+                                               reason=f"reverted {what}"))
+        target_pending = {p.event_id for p in target.pending_procedures()}
+        for p in current.pending_procedures():
+            if p.event_id not in target_pending and in_scope(p.scope):
+                events.append(ProcedureRejected(entry_id=p.event_id, reason=f"reverted {what}"))
 
     current.close()
     target.close()

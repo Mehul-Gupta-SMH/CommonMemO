@@ -321,9 +321,30 @@ shared only through `confirm_procedure(..., scrubbed=True)` (the user's
 known profile values are redacted on the way), removed by `forget_user`;
 the approved copy is the operator's and stays.
 
-Still to come (phase 2): learning at consolidation (decision records,
-merged lessons, proposed entries; off by default, behind an extra), and
-procedures in `revert`.
+**Learning from runs** (`learning.py`, phase 2). Off by default:
+`Memory(learner=...)` takes any `Learner`, and `ModelLearner(complete)` wraps
+any prompt-to-text function, sync or async, so no provider is built in. At
+close (or `Memory.distill(session_id)`), the session's messages, tool calls,
+feedback, step results and followed procedures go to the learner, with
+forgotten text redacted. Raw reasoning is never an input. It returns:
+
+- decision records (`DecisionRecorded`), returned by `memory_recall`;
+- lessons for the session's user (`LessonLearned`); one the ranker scores at
+  least `MemoryPolicy.lesson_merge_score` against an earlier lesson is merged
+  into it (decided at write time and recorded as `same_as`), and lessons are
+  pushed in the stable half, the most often seen first. Sessions without a
+  user learn no lessons: one would reach every user of the agent unreviewed;
+- proposed templates, rules and procedures, and exemplar candidates in the
+  user's scope (`source="extracted"`), which wait for review.
+
+What a learner returns is parsed defensively (counts and lengths capped,
+malformed items dropped). Learning runs once per session, tagged
+`run_id="learn:<session>"`, so `revert(run_id=...)` undoes what one session
+taught; a failing learner is logged and never fails the close.
+
+`revert` covers procedures too: an entry changed since the target point is
+restored as its next version, one added since is retired, and proposals
+that exist only because of what is reverted are rejected.
 
 ### Resume points: restarting a stopped process
 
@@ -633,7 +654,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, fifteen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, sixteen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
@@ -649,7 +670,8 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory (ADR 0003). **Phase 1 shipped:** templates, rules,
   procedures and exemplars per task type, loaded from files or written by apps and agents;
   versions, trust and review, push for the named or matched task, `memory_get_procedure`,
-  per-version outcomes. Still to come: learning at consolidation (absorbs #9)
+  per-version outcomes. **Phase 2 shipped:** learning from runs with any model (decision
+  records, merged lessons, proposals), and procedures in `revert` (absorbs #9)
 - [#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25) — seeing what memory did. **Shipped:** turn traces (`Memory.traces`,
   `Memory.why`), `commonmemo show` / `trace`, the read-only `commonmemo inspect`,
   and OpenTelemetry spans (`commonmemo.otel`). Still to come: provenance for

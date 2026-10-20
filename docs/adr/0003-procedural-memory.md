@@ -1,6 +1,6 @@
 # ADR 0003 — Procedural memory: a task-type axis, and how a request finds its procedure
 
-**Status:** Accepted · **Date:** 2026-10-17 (accepted 2026-10-20) · Sections 1–5 and 7 shipped; section 6 (learning) is next · **Tracks:** [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) (supersedes #9)
+**Status:** Accepted · **Date:** 2026-10-17 (accepted 2026-10-20) · Shipped: sections 1–5 and 7 in #43, section 6 in phase 2 (learning takes any model through `ModelLearner`; no extra is needed) · **Tracks:** [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) (supersedes #9)
 
 ## Context
 

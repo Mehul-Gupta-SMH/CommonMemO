@@ -421,6 +421,33 @@ class ProcedureFollowed(MemoryEvent):
     steps_tracked: bool = False
 
 
+class DecisionRecorded(MemoryEvent):
+    """A decision a session made, distilled at close by a learner (#26):
+    the goal, the plan, the approach chosen and the ones rejected, and how
+    it turned out. Never the model's raw reasoning: only what the session's
+    events show."""
+
+    goal: str
+    chosen: str
+    plan: str = ""
+    rejected: tuple[str, ...] = ()
+    outcome: str = ""
+    task: Optional[str] = None
+
+
+class LessonLearned(MemoryEvent):
+    """A lesson distilled from a session ("check the timezone before
+    scheduling"), for the user it came from (`scope` is `user:<id>`).
+    `same_as` names the lesson it repeats, decided at write time: the two
+    are merged, and the merged one counts the sessions it was seen in."""
+
+    text: str
+    scope: str
+    task: Optional[str] = None
+    same_as: Optional[str] = None
+    source: str = "extracted"
+
+
 class ExternalEvent(MemoryEvent):
     """An event from another system, kept verbatim (`source` names it,
     e.g. `commonadk.tool_call`). Integrations translate into this."""
@@ -433,6 +460,7 @@ BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
     WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze,
     ProcedureEntry, ProcedureConfirmed, ProcedureRejected, ProcedureRetired, ProcedureFollowed,
+    DecisionRecorded, LessonLearned,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -484,6 +512,8 @@ __all__ = [
     "ProcedureRejected",
     "ProcedureRetired",
     "ProcedureFollowed",
+    "DecisionRecorded",
+    "LessonLearned",
     "StepStarted",
     "StepFinished",
     "StepFailed",

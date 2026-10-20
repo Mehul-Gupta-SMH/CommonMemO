@@ -28,7 +28,7 @@ from .engines.base import Recap, Fact
 from .events import MemoryEvent, Message, ToolInvoked, UserFact
 
 if TYPE_CHECKING:
-    from .knowledge import FeedbackRecord, NegativeRecord, WorldRecord
+    from .knowledge import FeedbackRecord, LessonRecord, NegativeRecord, WorldRecord
     from .procedures import TaskProcedures
     from .resume import ResumePoint
 
@@ -79,6 +79,9 @@ class MemoryPolicy:
     templates, rules and steps to be pushed when the app didn't name the task
     (`procedures.py`): a share of the request's words, or a cosine similarity
     with an embedding ranker. Below it, the agent can still pull them."""
+    lesson_merge_score: float = 0.8
+    """A learned lesson this close to an earlier one (by the ranker) is
+    merged with it: counted as seen again, not stored twice."""
     max_procedure_chars: int = 1500
     """Each pushed template or rule is cut to this; the full text is on pull."""
     trace_text: bool = False
@@ -128,7 +131,7 @@ _KINDS = {
     "facts": ("fact about the user", "facts about the user"),
     "world": ("known fact", "known facts"),
     "negatives": ("standing constraint", "standing constraints"),
-    "lessons": ("feedback note", "feedback notes"),
+    "lessons": ("feedback note or lesson", "feedback notes and lessons"),
     "entries": ("entry cut for length", "entries cut for length"),
 }
 
@@ -150,6 +153,8 @@ class MemoryContext:
     world_turn: list["WorldRecord"] = field(default_factory=list)
     """With a key registry: unpinned facts the request is about, for the turn half."""
     lessons: list["FeedbackRecord"] = field(default_factory=list)
+    learned: list["LessonRecord"] = field(default_factory=list)
+    """Lessons a learner distilled from this user's past sessions (`learning.py`)."""
     tool_notes: dict[str, list[str]] = field(default_factory=dict)
     recaps: list[Recap] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
@@ -196,6 +201,8 @@ class MemoryContext:
             sections.append("## Known facts\n" + "\n".join(f"- {world_line(w)}" for w in self.world))
         if self.lessons:
             sections.append("## Feedback from past sessions\n" + "\n".join(f"- {l.line()}" for l in self.lessons))
+        if self.learned:
+            sections.append("## Lessons from past sessions\n" + "\n".join(f"- {x.line()}" for x in self.learned))
         if self.tool_notes and self.policy.tool_notes_in_text:
             sections.append(
                 "## Tool notes (observed in past calls)\n"
