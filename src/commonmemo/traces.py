@@ -106,7 +106,8 @@ class Why:
         out = [f"{self.item['kind']} {what}: pushed in a {self.trace.reason} push to session {self.trace.session_id}"]
         for e in self.sources:
             source = getattr(e, "source", None)
-            out.append(f"  from {e.kind} {e.id} in session {e.session_id}" + (f", source {source}" if source else ""))
+            where = f" in session {e.session_id}" if e.session_id else ""
+            out.append(f"  from {e.kind} {e.id}{where}" + (f", source {source}" if source else ""))
         if not self.sources:
             out.append("  (its source events are no longer in the Log: pruned or forgotten)")
         return out

@@ -229,7 +229,7 @@ def session_page(mem: Memory, session_id: str) -> Optional[str]:
     return _page(f"Session {session_id}", f"<h1>Session {_e(session_id)}</h1>"
                  f"<p class=muted>user {user} · agent {_e(v['agent'] or '-')} · opened {_e(v['opened'])} · {status}</p>"
                  f"<h2>Turn traces</h2>{traces}<h2>A resume would start from</h2><ul>{resume}</ul>"
-                 f"<h2>Timeline</h2>{_table(['when', 'agent', 'event'], timeline, 'no events', nowrap=(1,))}")
+                 f"<h2>Timeline</h2>{_table(['when', 'agent', 'event'], timeline, 'no events', nowrap=(0, 1))}")
 
 
 def why_page(mem: Memory, session_id: str, key: str) -> Optional[str]:

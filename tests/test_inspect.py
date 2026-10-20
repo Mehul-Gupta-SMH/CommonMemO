@@ -114,3 +114,19 @@ def test_inspector_is_read_only_and_has_json(inspector):
     assert status == 200 and headers["Content-Type"] == "application/json"
     assert data["item"]["key"] == "preferred_contact" and data["sources"][0]["session_id"] == "s1"
     assert json.loads(get(inspector + "/api/user/ada")[2])["facts"][0]["key"] == "preferred_contact"
+
+
+def test_the_demo_memory_builds_and_every_event_reads_as_a_sentence(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("demo_memory", Path(__file__).parent.parent / "scripts" / "demo_memory.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    demo.build(tmp_path / "demo.db")
+    mem = Memory(f"sqlite:///{tmp_path / 'demo.db'}", project="shop")
+    view = session_view(mem, "support-ada-2")
+    assert not [t["line"] for t in view["timeline"] if "{" in t["line"]]  # no raw payload dumps
+    assert "Use calendar days, not working days." in view["labels"].values()
+    assert len(mem.pending_procedures()) == 2 and len(mem.pending_world_facts()) == 1
+    asyncio.run(mem.aclose())

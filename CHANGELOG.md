@@ -2,6 +2,19 @@
 
 ## 0.0.1 — unreleased
 
+README brought to the level of agent-gauntlet and CommonADK ([#46](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/46)):
+
+- Banner, pitch, CI badge, real inspector screenshots, an offline
+  quickstart, How it works (a diagram), Status, Honest caveats, Related and
+  repo metadata. Stale parts corrected: the MCP tool list, what `revert`
+  covers, the eval list, the inspector's review mode.
+- `scripts/demo_memory.py` builds the small memory the screenshots come
+  from (offline, no keys).
+- The inspector and `commonmemo show` / `trace` now describe procedure,
+  lesson and decision events in words instead of raw payloads; a learned
+  lesson in a trace is labelled with its text; the timeline's time column no
+  longer wraps; `--why` no longer prints "in session None".
+
 Review screen in the inspector ([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)):
 
 - `/review` lists proposed and disputed world facts and procedure entries,

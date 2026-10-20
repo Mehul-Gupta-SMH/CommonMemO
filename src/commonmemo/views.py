@@ -18,7 +18,18 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from .agent_tools import run_sync
 from .context import _line
-from .events import BOOKKEEPING, ContextPushed, describe
+from .events import (
+    BOOKKEEPING,
+    ContextPushed,
+    DecisionRecorded,
+    LessonLearned,
+    ProcedureConfirmed,
+    ProcedureEntry,
+    ProcedureFollowed,
+    ProcedureRejected,
+    ProcedureRetired,
+    describe,
+)
 from .resume import ResumePoint
 from .traces import TurnTrace
 
@@ -30,9 +41,30 @@ def _when(ts: Optional[float]) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "-"
 
 
+def _story(e: Any) -> Optional[str]:
+    """Readable lines for procedural memory and what learning wrote (#26)."""
+    if isinstance(e, ProcedureEntry):
+        status = ", waiting for review" if e.proposed else ""
+        return f"{e.entry_kind} {e.name!r} for {e.task} ({e.scope}, from {e.source}{status})"
+    if isinstance(e, ProcedureConfirmed):
+        return f"approved {e.entry_kind} {e.name!r} for {e.task}, into {e.scope}"
+    if isinstance(e, ProcedureRejected):
+        return "rejected a procedure entry" + (f": {e.reason}" if e.reason else "")
+    if isinstance(e, ProcedureRetired):
+        return f"retired {e.entry_kind} {e.name!r} for {e.task}" + (f": {e.reason}" if e.reason else "")
+    if isinstance(e, ProcedureFollowed):
+        skipped = f", skipped {', '.join(e.skipped)}" if e.skipped else ""
+        return f"used {e.task} {e.entry_kind} {e.name!r} v{e.version}{skipped}"
+    if isinstance(e, LessonLearned):
+        return f"lesson learned: {e.text}" + (" (seen again)" if e.same_as else "")
+    if isinstance(e, DecisionRecorded):
+        return f"decision: {e.goal}: chose {e.chosen}" + (f"; {e.outcome}" if e.outcome else "")
+    return None
+
+
 def event_line(event: Any) -> str:
     """One readable line for any event."""
-    text = describe(event)
+    text = describe(event) or _story(event)
     if text:
         return text
     if isinstance(event, ContextPushed):
@@ -95,7 +127,8 @@ def _labels(mem: "Memory", traces: list[TurnTrace]) -> dict[str, str]:
     """Readable text for items a trace names only by id (negatives, lessons),
     looked up now from their source events. Traces themselves keep no text."""
     ids = {i["id"] for t in traces for i in t.items if i["kind"] in ("negative", "lesson") and i.get("id")}
-    return {e.id: describe(e) or e.kind for e in mem.store.get_events(ids)}
+    return {e.id: e.text if isinstance(e, LessonLearned) else describe(e) or e.kind
+            for e in mem.store.get_events(ids)}
 
 
 def overview(mem: "Memory", *, limit: int = 2000) -> dict[str, Any]:
