@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence
 
 from ..events import BOOKKEEPING, ExternalEvent, MemoryEvent, Message, ToolInvoked, UserFact, describe
+from ..sqldb import connect
 from ..stores.base import SessionRecord
 from .base import Engine, Recap, Fact
 
@@ -114,20 +115,29 @@ def summarize(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
 
 
 class LocalEngine(Engine):
-    """`LocalEngine("mem.db")`, or `LocalEngine()` for an in-memory one."""
+    """`LocalEngine("mem.db")`, `LocalEngine("postgresql://...")`, or
+    `LocalEngine()` for an in-memory one."""
 
     name = "local"
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
-        if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        self._conn = connect(self.path, lock="local")
         self._lock = threading.Lock()
-        with self._lock:
+        with self._lock, self._conn.setup():
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
+
+    @contextmanager
+    def _write(self) -> Iterator[None]:
+        """One atomic write; called with `self._lock` held."""
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
 
     async def ingest(
         self, session: SessionRecord, events: Sequence[MemoryEvent]
@@ -144,10 +154,13 @@ class LocalEngine(Engine):
             ended_at=max(e.ts for e in events),
             source_event_ids=tuple(e.id for e in events),
         )
-        with self._lock:
+        with self._lock, self._write():
             # Idempotent per session: a re-ingest replaces, never duplicates.
             self._conn.execute(
-                "INSERT OR REPLACE INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET "
+                "session_id = excluded.session_id, user_id = excluded.user_id, agent = excluded.agent, "
+                "summary = excluded.summary, started_at = excluded.started_at, ended_at = excluded.ended_at, "
+                "sources = excluded.sources",
                 (
                     recap.id,
                     recap.session_id,
@@ -172,10 +185,9 @@ class LocalEngine(Engine):
                     "INSERT INTO facts VALUES (?, ?, ?, ?, NULL, ?, ?)",
                     (user_id, fact.key, fact.value, fact.ts, json.dumps([fact.id]), session.session_id),
                 )
-            self._conn.commit()
         return [recap]
 
-    def _row_to_recap(self, row: sqlite3.Row, score: Optional[float] = None) -> Recap:
+    def _row_to_recap(self, row: Any, score: Optional[float] = None) -> Recap:
         return Recap(
             id=row["id"],
             session_id=row["session_id"],
@@ -252,7 +264,8 @@ class LocalEngine(Engine):
     def set_external_id(self, session_id: str, system: str, external_id: str) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO external_ids VALUES (?, ?, ?)", (session_id, system, external_id)
+                "INSERT INTO external_ids VALUES (?, ?, ?) ON CONFLICT (session_id, system) DO UPDATE SET "
+                "external_id = excluded.external_id", (session_id, system, external_id)
             )
             self._conn.commit()
 
@@ -283,14 +296,13 @@ class LocalEngine(Engine):
         return {r["external_id"]: r["session_id"] for r in rows}
 
     async def forget_user(self, user_id: str) -> int:
-        with self._lock:
+        with self._lock, self._write():
             n = self._conn.execute(
                 "DELETE FROM external_ids WHERE session_id IN (SELECT session_id FROM episodes WHERE user_id = ?)",
                 (user_id,),
             ).rowcount
             n += self._conn.execute("DELETE FROM episodes WHERE user_id = ?", (user_id,)).rowcount
             n += self._conn.execute("DELETE FROM facts WHERE user_id = ?", (user_id,)).rowcount
-            self._conn.commit()
         return n
 
     async def aclose(self) -> None:

@@ -439,10 +439,47 @@ Phase 2 adds the reins (`reins.py`):
 Phase 3 would re-consolidate engine memory after a revert; it isn't planned
 for now.
 
+## Storage
+
+[ADR 0001](adr/0001-storage.md) (accepted). Everything CommonMemo keeps itself (the Log,
+sessions and claims, the projections in `knowledge.py`, and the local
+engine's recaps and facts) is plain SQL in one dialect that SQLite and
+Postgres both accept, run through `sqldb.py`:
+
+- **SQLite** (default): `sqlite:///mem.db`, one file, standard library only.
+- **Postgres** (`commonmemo[postgres]`): `postgresql://user@host/db`, with
+  `?schema=name` to give one memory its own schema. `REAL` columns become
+  `DOUBLE PRECISION` (Postgres' `REAL` is too coarse for timestamps), and
+  numeric aggregates come back as numbers.
+
+**Ordering.** The projections catch up by log position. That requires that
+an event becomes visible only once every earlier position is visible. On
+SQLite one writer at a time gives that. On Postgres, appends, claims and
+settles take one transaction-scoped advisory lock per memory, so positions
+commit in order across processes. This serializes the log's writes;
+partitioning the log by user or session is the step after measurements
+(#17).
+
+**Setup.** `CREATE ... IF NOT EXISTS` isn't safe when several processes
+start at once on Postgres (two can both find a table missing), so creating
+schemas and tables holds one database-wide advisory lock.
+
+**Tests.** `COMMONMEMO_TEST_POSTGRES=postgresql://... pytest` runs the whole
+suite on Postgres. `tests/conftest.py` makes a throwaway database, and
+`tests/pg/sitecustomize.py` maps every SQLite target, in the test process
+and in the CLI, MCP and hook subprocesses, to a schema in it. CI runs it on
+Postgres 16. Running it this way found three Postgres bugs before release:
+the setup race, ambiguous upsert columns, and the test mode itself silently
+not applying.
+
+Still to come ([#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)): the DynamoDB backend and a projection storage
+interface defined by operations, not SQL; tool counters without a hot row;
+log partitioning; archiving old events to object storage.
+
 ## Developer surface
 
 ```python
-mem = Memory("sqlite:///mem.db", engine="local")
+mem = Memory("sqlite:///mem.db", engine="local")   # or "postgresql://user@host/db?schema=x"
 
 @mem.track                         # sync or async; bare or configured
 def tool(...): ...

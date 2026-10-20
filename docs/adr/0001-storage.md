@@ -1,6 +1,6 @@
 # ADR 0001 — Storage for the memory CommonMemo owns
 
-**Status:** Proposed · **Date:** 2026-10-16 · **Tracks:** [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11), [#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16), [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)
+**Status:** Accepted (2026-10-20): SQLite by default and Postgres as the shared backend are shipped ([#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11)); the DynamoDB backend, the projection storage interface and tool counters without a hot row are still to come · **Date:** 2026-10-16 · **Tracks:** [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11), [#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16), [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)
 
 ## Question
 
@@ -123,7 +123,7 @@ Two hot spots exist at any scale and in any database:
 | **Kafka / Kinesis / EventStoreDB** | ✅ | ✅ projections as idempotent consumers | ⚠️ needs a read model elsewhere | ❌ needs another store | ❌ immutable log; deletion only via crypto-shredding | ❌ | very high | heavy | Rejected as primary; maybe an ingestion buffer at "Platform" scale |
 | **Object storage (S3)** | ✅ | n/a | ❌ | ❌ | ✅ | ❌ | unlimited | none | **Archive tier** for old events |
 
-## Decision (proposed)
+## Decision
 
 **Relational and ACID, partitioned by user and session, with the scaling path
 inside the Postgres protocol — plus one non-SQL backend to keep the storage

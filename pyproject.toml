@@ -39,6 +39,11 @@ mem0 = [
 mcp = [
     "mcp>=2",
 ]
+# Postgres for the Log, the projections and the local engine's recaps
+# (`postgresql://...` store URLs; ADR 0001).
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 # Turn traces as OpenTelemetry spans (commonmemo.otel); add your own exporter.
 otel = [
     "opentelemetry-api>=1.20",

@@ -77,7 +77,7 @@ from .resume import make_step
 from .runs import Run, current_run
 from .session import Session, current_session
 from .tool_memory import ToolProfile
-from .stores import SQLiteStore, Store, store_from_url
+from .stores import SqlStore, Store, store_from_url
 from .stores.base import SessionRecord
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -124,7 +124,7 @@ class Memory:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
             options: dict[str, Any] = {}
-            if engine == "local" and isinstance(self.store, SQLiteStore):
+            if engine == "local" and isinstance(self.store, SqlStore):  # the same file or database
                 options["path"] = self.store.path
             engine = engine_from_name(engine, **options)
         engine.bind(self.store)
