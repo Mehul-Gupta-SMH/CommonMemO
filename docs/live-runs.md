@@ -66,7 +66,9 @@ deliberately simple, and each one is stated with its scenario.
 
 ### Bugs found
 
-Neither is fixed here: this branch changes no library code.
+Both are now fixed: [#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49) (a trace lists only what its push delivered) and
+[#50](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/50) (a recall is recorded as a `recall` trace). Each reproduction below
+is now a test in `tests/test_traces.py`. The run itself predates the fixes.
 
 **1. A turn push's trace lists items that push never delivered.**
 `Session._trace` (`src/commonmemo/session.py:418-425`) records

@@ -2,6 +2,16 @@
 
 ## 0.0.1 — unreleased
 
+Traces tell the truth (bugs found by the live run):
+
+- [#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49): a push's trace lists only the items in the text it delivered.
+  A turn push (`push_turn`, the hooks' `UserPromptSubmit`) no longer claims
+  the stable half's facts, constraints and lessons; `trace_items(ctx, part)`.
+- [#50](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/50): `memory_recall` records what it returned as a `recall` trace
+  (references, like any push; the query only with `trace_text`), so
+  `commonmemo trace`, `why` and the inspector show what the agent pulled.
+  Read-only tools still record nothing.
+
 First live run, with Claude Code as the model ([#48](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/48)):
 
 - `scripts/live_claude_code.py` runs five scenarios through real headless

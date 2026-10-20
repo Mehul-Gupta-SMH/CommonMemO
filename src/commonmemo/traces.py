@@ -27,20 +27,25 @@ if TYPE_CHECKING:
     from .memory import Memory
 
 
-def trace_items(ctx: MemoryContext) -> tuple[dict[str, Any], ...]:
-    """One reference per item `ctx` pushes: kind, key or id, and provenance."""
+def trace_items(ctx: MemoryContext, part: str = "all") -> tuple[dict[str, Any], ...]:
+    """One reference per item `ctx` pushes, in the `part` that was delivered
+    ("stable", "turn" or "all"): kind, key or id, and provenance (#49)."""
     items: list[dict[str, Any]] = []
-    items += [{"kind": "negative", "id": n.event_id, "scope": n.scope, "source": n.source, "events": [n.event_id]}
-              for n in ctx.negatives]
-    items += [{"kind": "fact", "key": f.key, "source": "profile", "events": list(f.source_event_ids)}
-              for f in ctx.facts]
-    items += [{"kind": "world", "key": w.key, "scope": w.scope, "source": w.source, "status": w.status,
-               "events": [w.event_id]} for w in ctx.world]
+    if part in ("stable", "all"):
+        items += [{"kind": "negative", "id": n.event_id, "scope": n.scope, "source": n.source,
+                   "events": [n.event_id]} for n in ctx.negatives]
+        items += [{"kind": "fact", "key": f.key, "source": "profile", "events": list(f.source_event_ids)}
+                  for f in ctx.facts]
+        items += [{"kind": "world", "key": w.key, "scope": w.scope, "source": w.source, "status": w.status,
+                   "events": [w.event_id]} for w in ctx.world]
+        items += [{"kind": "lesson", "id": f.event_id, "source": f.kind, "events": [f.event_id]}
+                  for f in ctx.lessons]
+        items += [{"kind": "lesson", "id": x.event_id, "source": "learned", "sessions": x.sessions,
+                   "events": [x.event_id]} for x in ctx.learned]
+    if part == "stable":
+        return tuple(items)
     items += [{"kind": "world", "key": w.key, "scope": w.scope, "source": w.source, "status": w.status,
                "half": "turn", "events": [w.event_id]} for w in ctx.world_turn]
-    items += [{"kind": "lesson", "id": f.event_id, "source": f.kind, "events": [f.event_id]} for f in ctx.lessons]
-    items += [{"kind": "lesson", "id": x.event_id, "source": "learned", "sessions": x.sessions,
-               "events": [x.event_id]} for x in ctx.learned]
     if ctx.procedure:
         p = ctx.procedure
         items += [{"kind": "procedure", "key": e.key, "id": e.event_id, "task": e.task, "entry": e.kind,
@@ -65,12 +70,14 @@ class TurnTrace:
     more: dict[str, int]
     chars: int
     text: Optional[str] = None
+    query: Optional[str] = None
+    """What a recall asked for (only with `MemoryPolicy.trace_text`)."""
 
     @classmethod
     def from_event(cls, e: ContextPushed) -> "TurnTrace":
         items = tuple(e.items) or tuple({"kind": "recap", "id": rid, "events": []} for rid in e.recap_ids)
         return cls(e.id, e.ts, e.session_id, e.user_id, e.agent, e.reason, items, dict(e.more or {}),
-                   e.chars, e.text)
+                   e.chars, e.text, getattr(e, "query", None))
 
     def find(self, key: str) -> list[dict[str, Any]]:
         """The items pushed under `key` (a fact or world fact key, or an id)."""
@@ -80,7 +87,8 @@ class TurnTrace:
         """The trace in plain text, one line per item, for terminals and logs.
         `labels` maps ids to readable text (see `views.session_view`)."""
         labels = labels or {}
-        out = [f"{self.reason} push, {self.chars} chars" + (f", by {self.agent}" if self.agent else "")]
+        what = f"recall of {self.query!r}" if self.reason == "recall" and self.query else f"{self.reason} push"
+        out = [f"{what}, {self.chars} chars" + (f", by {self.agent}" if self.agent else "")]
         for i in self.items:
             what = i.get("key") or labels.get(i.get("id") or "") or i.get("id")
             extra = ", ".join(f"{k} {i[k]}" for k in ("version", "how", "scope", "source", "status", "score", "session")

@@ -57,7 +57,7 @@ def build(path: Path) -> None:
 
     with mem.session("support-ada-1", user_id="ada", agent="support") as s:
         s.message("user", "I'd like to return my order 1042, it doesn't fit.")
-        asyncio.run(s.push_turn("I'd like to return my order 1042, it doesn't fit."))
+        asyncio.run(s.push("I'd like to return my order 1042, it doesn't fit.", part="all"))
         try:
             lookup_order("1042")
         except ValueError:
@@ -75,7 +75,7 @@ def build(path: Path) -> None:
 
     with mem.session("support-ada-2", user_id="ada", agent="claude-code") as s:
         s.message("user", "Where's my refund for A-1042?")
-        asyncio.run(s.push_turn("Where's my refund for A-1042?"))
+        asyncio.run(s.push("Where's my refund for A-1042?", part="all"))
         lookup_order("A-1042")
         s.message("assistant", "It was issued on Oct 6; expect it within 5 calendar days.")
         s.save_exemplar("refund_reply", "Thanks for reaching out, Ada.\n\nYour refund for A-1042 was issued on "
@@ -84,7 +84,7 @@ def build(path: Path) -> None:
 
     with mem.session("support-bob-1", user_id="bob", agent="support") as s:
         s.message("user", "Can I still return the boots I bought last month?")
-        asyncio.run(s.push_turn("Can I still return the boots I bought last month?"))
+        asyncio.run(s.push("Can I still return the boots I bought last month?", part="all"))
 
     asyncio.run(mem.aclose())
 

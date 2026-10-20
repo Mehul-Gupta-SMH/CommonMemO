@@ -129,7 +129,7 @@ def handle(
         return _push(event, run_sync(s.push_turn(prompt, recent=0)).turn_text())
     if event in ("PostToolUse", "PostToolUseFailure"):
         name = payload.get("tool_name") or "unknown"
-        if not name.endswith(_MEMORY_TOOLS):  # the memory tools' own calls are already in memory
+        if not name.endswith(_MEMORY_TOOLS):  # the memory tools record themselves (writes, pull and recall traces)
             failed = event == "PostToolUseFailure"
             response = payload.get("tool_response")
             arguments = payload.get("tool_input")
