@@ -2,6 +2,25 @@
 
 ## 0.0.1 — unreleased
 
+World facts as configuration ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24), decisions recorded there):
+
+- **Optional key registry** (`commonmemo.facts`): `FactKey(key, description,
+  allowed=, lifetime=, pinned=)` via `Memory(fact_keys=...)`,
+  `Memory.register_fact_key` or `Memory.load_facts`. `memory_note_fact`
+  lists registered keys (and so does its MCP schema). An agent's write to an
+  unregistered key, a near-duplicate of a registered one, or a disallowed
+  value stays a proposal with a note (`WorldFact.note`), even with approval
+  off; an operator's disallowed value raises `ValueError`.
+- **Per-key lifetimes** set `valid_until` when a write doesn't.
+- **Pinned facts** stay in the stable half; with a registry, the rest are
+  ranked by the request (key, value and description) into the turn half
+  (`MemoryContext.world_turn`, "Facts for this request"), or left to recall
+  and counted in the "more available" line.
+- **Bulk import** from JSON or YAML, idempotent (`source="import"`, shown as
+  "config").
+- Eval scenarios **staleness** and **precedence**; 13 of 13 pass.
+- Conditional facts are later: [#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38).
+
 Seeing what memory did ([#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25)):
 
 - **Turn traces.** `ContextPushed` now records each pushed item by

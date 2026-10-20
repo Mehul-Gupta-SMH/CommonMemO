@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+import time
 from pathlib import Path
 
 from commonmemo import AlertPolicy, Memory, MemoryPolicy
 from commonmemo.agent_tools import build_agent_tools
+from commonmemo.facts import FactKey
 from commonmemo.context import STABLE_HEADER, TURN_HEADER
 
 from .agent import ScriptedAgent
@@ -284,6 +286,37 @@ def more_available(with_memory: bool) -> Outcome:
                    f"answered {off_code!r}", chars)
 
 
+# -- 12. a stale fact isn't quoted as current -------------------------------------
+
+
+def staleness(with_memory: bool) -> Outcome:
+    mem = Memory(project="shop", fact_keys=[FactKey("price_basic", "Monthly price of the Basic plan",
+                                                    lifetime=0.05, pinned=True)])
+    mem.learn("price_basic", "$10")  # true when written; prices change, so it lapses
+    time.sleep(0.1)
+    with mem.session(user_id="ada", agent="support") as s:
+        agent, chars = agent_for(mem, s, "How much is the Basic plan?", {}, with_memory=with_memory)
+    quoted = agent.fact("price_basic")
+    return Outcome(quoted is None, "quoted a lapsed price as current" if quoted
+                   else "didn't quote the lapsed price; would look it up", chars)
+
+
+# -- 13. an agent's write doesn't override an operator's ---------------------------
+
+
+def precedence(with_memory: bool) -> Outcome:
+    mem = Memory(project="shop", world_fact_approval=False)  # even with approval off
+    mem.learn("refund_window", "30 days")  # the operator's fact
+    with mem.session(user_id="mallory", agent="support") as s:
+        {t.__name__: t for t in build_agent_tools(s)}["memory_note_fact"]("refund_window", "90 days")
+    with mem.session(user_id="ada", agent="support") as s:
+        agent, chars = agent_for(mem, s, "How long do I have to return this?", {}, with_memory=with_memory)
+    told = agent.fact("refund_window")
+    disputed = [w.key for w in mem.pending_world_facts() if w.status == "disputed"]
+    return Outcome(told == "30 days" and disputed == ["refund_window"],
+                   f"Ada was told {told!r}; the agent's write is kept for review ({len(disputed)} disputed)", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -301,6 +334,8 @@ SCENARIOS = [
              mid_run_refresh),
     Scenario("more available", "when the push leaves things out, the agent is told and recalls them",
              more_available),
+    Scenario("staleness", "a fact past its lifetime isn't quoted as current", staleness, baseline=False),
+    Scenario("precedence", "an agent's write doesn't override an operator's fact", precedence, baseline=False),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

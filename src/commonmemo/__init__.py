@@ -28,6 +28,7 @@ from .events import (
     WorldFact,
     event_from_dict,
 )
+from .facts import FactKey
 from .history import Diff, History, MemoryView
 from .memory import Memory
 from .reins import Alert, AlertPolicy, Budget, RevertResult
@@ -45,6 +46,7 @@ __all__ = [
     "current_session",
     "MemoryContext",
     "MemoryPolicy",
+    "FactKey",
     "WorldFact",
     "Feedback",
     "Negative",

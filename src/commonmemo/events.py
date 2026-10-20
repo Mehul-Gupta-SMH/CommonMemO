@@ -183,6 +183,8 @@ class WorldFact(MemoryEvent):
     valid_until: Optional[float] = None
     source: str = "explicit"
     proposed: Optional[bool] = None
+    note: Optional[str] = None
+    """Why a proposal waits for review, when the registry says (`facts.py`)."""
 
 
 class WorldFactConfirmed(MemoryEvent):

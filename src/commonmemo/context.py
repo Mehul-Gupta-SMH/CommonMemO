@@ -92,7 +92,7 @@ def _line(event: MemoryEvent) -> str:
     return f"{event.kind}: {event.payload}"
 
 
-_SOURCE_LABEL = {"explicit": "operator", "confirmed": "confirmed by an operator", "agent": "agent",
+_SOURCE_LABEL = {"explicit": "operator", "import": "config", "confirmed": "confirmed by an operator", "agent": "agent",
                  "tool": "tool result", "extracted": "extracted", "revert": "restored by a revert"}
 
 
@@ -134,6 +134,10 @@ class MemoryContext:
     negatives: list["NegativeRecord"] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
     world: list["WorldRecord"] = field(default_factory=list)
+    """World facts for the stable half: all of them, or, with a key registry,
+    the pinned ones."""
+    world_turn: list["WorldRecord"] = field(default_factory=list)
+    """With a key registry: unpinned facts the request is about, for the turn half."""
     lessons: list["FeedbackRecord"] = field(default_factory=list)
     tool_notes: dict[str, list[str]] = field(default_factory=dict)
     recaps: list[Recap] = field(default_factory=list)
@@ -210,6 +214,8 @@ class MemoryContext:
         sections = []
         if self.resume is not None and not self.resume.is_fresh:
             sections.append("## Resuming earlier work\n" + "\n".join(f"- {line}" for line in self.resume.lines()))
+        if self.world_turn:
+            sections.append("## Facts for this request\n" + "\n".join(f"- {world_line(w)}" for w in self.world_turn))
         if self.recaps:
             sections.append("## Relevant past sessions\n" + "\n".join(f"- {self.recap_line(e)}" for e in self.recaps))
         if self.state:

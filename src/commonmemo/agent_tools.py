@@ -76,7 +76,8 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
         lines = []
         lines += [f"[user] {f.key}: {f.value}" for f in ctx.facts if _overlap(query, f"{f.key} {f.value}")]
-        lines += [f"[fact] {world_line(w)}" for w in ctx.world if _overlap(query, f"{w.key} {w.value}")]
+        lines += [f"[fact] {world_line(w)}" for w in [*ctx.world, *ctx.world_turn]
+                  if _overlap(query, f"{w.key} {w.value}")]
         lines += [f"[feedback] {l.line()}" for l in ctx.lessons if _overlap(query, l.line())]
         lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
@@ -114,8 +115,17 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         """
         event = session.learn(key, value, ttl=valid_for_seconds or None, source="agent")
         if event.proposed:
-            return f"Proposed fact (other users see it once an operator approves it): {key} = {value}"
+            why = f" Note: {event.note}." if event.note else ""
+            return f"Proposed fact (other users see it once an operator approves it): {key} = {value}.{why}"
         return f"Saved fact: {key} = {value}"
+
+    if memory.fact_keys:
+        # List the registered keys where the model reads them: the tool's own
+        # description, so it reuses `refund_window` instead of inventing
+        # `refund_period`.
+        head, _, args = (memory_note_fact.__doc__ or "").partition("\n\n        Args:")
+        known = "\n".join(f"        - {line}" for line in memory.fact_keys.agent_lines())
+        memory_note_fact.__doc__ = f"{head}\n\n        Use one of these keys when it fits:\n{known}\n\n        Args:{args}"
 
     def memory_avoid(statement: str, reason: str = "") -> str:
         """Record something to never do again for this user (or, without a

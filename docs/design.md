@@ -235,12 +235,28 @@ matters ([ADR 0002](adr/0002-world-fact-trust.md)):
 - **The agent sees age and source**: `refund_window: 30 days (as of
   2026-10-14, operator)`.
 
-Still open ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24)): an **optional** per-project key registry (decided: names,
-descriptions, allowed values, default lifetime, pinned or not; with a
-registry, an agent write to an unregistered or near-duplicate key stays a
-proposal), per-key lifetimes, pinned versus query-ranked facts, and bulk
-import. Conditional facts ("30 days in the EU") come later ([#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38));
-until then, per-region differences use project scopes.
+World facts are a small set of curated operational facts, managed like
+configuration, not a document store: prose that needs retrieval belongs in
+the app's RAG. An **optional key registry** ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24), `facts.py`) says which keys
+exist and how they behave: `FactKey(key, description, allowed=, lifetime=,
+pinned=)`, given to `Memory(fact_keys=...)`, `register_fact_key`, or a
+JSON/YAML file through `load_facts`. Without one, nothing changes. With one:
+
+- **Agents reuse keys.** `memory_note_fact`'s description lists them. An
+  agent's write to an unregistered key, a near-duplicate of a registered one,
+  or a value outside `allowed` stays a proposal with a note saying why, even
+  with approval off; an operator's disallowed value is a `ValueError`.
+- **Lifetimes.** A registered key's `lifetime` sets `valid_until` when the
+  write doesn't: facts go stale by default, not by opt-in.
+- **Pinned facts** go in the stable half; the rest are ranked by the request
+  (by shared words with the key, value and description; by meaning with
+  [#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)) and pushed with the turn, or left to `memory_recall`. The stable half stays
+  small, and cached, however many facts exist.
+- **Bulk import** is idempotent: a fact whose current value matches isn't
+  written again (`source="import"`, an operator's rank).
+
+Conditional facts ("30 days in the EU") come later ([#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38)); until then,
+per-region differences use project scopes.
 
 ### Feedback
 
@@ -569,7 +585,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, eleven
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, thirteen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
