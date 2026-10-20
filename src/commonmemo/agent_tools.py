@@ -72,16 +72,28 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             # Best first, by the memory's ranker: by meaning with an embedder (#21).
             return run_sync(rank(memory.ranker, query, items, text, threshold=bar))[0]
 
+        found = MemoryContext(
+            facts=related(ctx.facts, lambda f: f"{f.key} {f.value}"),
+            world=related([*ctx.world, *ctx.world_turn], memory._world_text),
+            lessons=related(ctx.lessons, lambda item: item.line()),
+            learned=related(ctx.learned, lambda x: x.text),
+            recaps=ctx.recaps, policy=memory.policy, agent=session.agent,
+        )
+        decisions = (related(memory.decisions(user_id=session.user_id)[:50],
+                             lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5] if session.user_id is not None else [])
         lines = []
-        lines += [f"[user] {f.key}: {f.value}" for f in related(ctx.facts, lambda f: f"{f.key} {f.value}")]
-        lines += [f"[fact] {world_line(w)}" for w in related([*ctx.world, *ctx.world_turn], memory._world_text)]
-        lines += [f"[feedback] {item.line()}" for item in related(ctx.lessons, lambda item: item.line())]
-        lines += [f"[lesson] {x.line()}" for x in related(ctx.learned, lambda x: x.text)]
-        if session.user_id is not None:
-            decisions = memory.decisions(user_id=session.user_id)[:50]
-            lines += [f"[decision] {d.line()}" for d in related(decisions, lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5]]
-        lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
-        return "\n".join(lines) if lines else "Nothing in memory matches that."
+        lines += [f"[user] {f.key}: {f.value}" for f in found.facts]
+        lines += [f"[fact] {world_line(w)}" for w in found.world]
+        lines += [f"[feedback] {item.line()}" for item in found.lessons]
+        lines += [f"[lesson] {x.line()}" for x in found.learned]
+        lines += [f"[decision] {d.line()}" for d in decisions]
+        lines += [f"[past session] {ctx.recap_line(e)}" for e in found.recaps]
+        text = "\n".join(lines) if lines else "Nothing in memory matches that."
+        if writes and not session.closed:  # what the agent pulled, as a trace (#50); read-only tools record nothing
+            session._trace("recall", found, text, extra=tuple(
+                {"kind": "decision", "id": d.event_id, "source": "learned", "events": [d.event_id]} for d in decisions
+            ), query=query)
+        return text
 
     def memory_get_procedure(task: str) -> str:
         """How a type of task is done here: its templates (the shape of a good

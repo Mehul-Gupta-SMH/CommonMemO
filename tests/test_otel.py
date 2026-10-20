@@ -38,7 +38,7 @@ def test_every_push_becomes_a_span_under_the_current_one(spans):
     instrument(mem, tracer=tracer)
     with tracer.start_as_current_span("llm.call"):
         with mem.session("s2", user_id="ada", agent="support") as s:
-            asyncio.run(s.push_turn("hello"))
+            asyncio.run(s.push("hello", part="all"))  # both halves, so the facts are in it (#49)
     llm = next(sp for sp in exporter.get_finished_spans() if sp.name == "llm.call")
     [push] = [sp for sp in exporter.get_finished_spans() if sp.name == SPAN_NAME]
     assert push.parent.span_id == llm.context.span_id  # next to the LLM call

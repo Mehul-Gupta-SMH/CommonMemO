@@ -16,11 +16,12 @@ Each push appends a `ContextPushed` event:
 
 | Field | What it holds |
 |---|---|
-| `reason` | `start` (a session began), `turn` (a request) or `refresh` (mid-run, after a tool result) |
-| `items` | one reference per pushed item: its kind (`fact`, `world`, `negative`, `lesson`, `recap`), key or id, source, score, and the events it came from |
+| `reason` | `start` (a session began), `turn` (a request), `refresh` (mid-run, after a tool result), or what the agent pulled: `pull` (`memory_get_procedure`) and `recall` (`memory_recall`) |
+| `items` | one reference per item **in the text that was delivered**: its kind (`fact`, `world`, `negative`, `lesson`, `procedure`, `recap`, `decision`), key or id, source, score, and the events it came from. A turn push delivers the turn half, so its trace lists that half's items; the stable half's are in the push that delivered them ([#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49)) |
 | `more` | what the push left out (facts past the limit, near-miss recaps, entries cut for length) |
 | `chars` | how much was pushed (~4 characters per token) |
 | `text` | the pushed text itself, **only** with `MemoryPolicy(trace_text=True)` |
+| `query` | for a `recall`, what the agent asked for; also **only** with `trace_text` ([#50](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/50)) |
 
 Traces hold references, not text, by default: the text repeats user data,
 and references are enough to answer "why". Traces carry the user's id, so

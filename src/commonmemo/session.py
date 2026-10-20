@@ -407,7 +407,7 @@ class Session:
         ("start", "turn", ...); a "turn" push starts a new refresh budget."""
         ctx = await self.context(query, **kwargs)
         text = {"turn": ctx.turn_text, "stable": ctx.stable_text, "all": ctx.render}[part]()
-        self._trace(reason, ctx, text)
+        self._trace(reason, ctx, text, part=part)
         return ctx
 
     async def push_turn(self, query: str, **kwargs: Any) -> MemoryContext:
@@ -415,13 +415,19 @@ class Session:
         `refresh` calls in the turn push only what's new."""
         return await self.push(query, reason="turn", **kwargs)
 
-    def _trace(self, reason: str, ctx: MemoryContext, text: str) -> None:
+    def _trace(self, reason: str, ctx: MemoryContext, text: str, *, part: str = "all",
+               extra: tuple[dict[str, Any], ...] = (), query: Optional[str] = None) -> None:
+        """Record what was delivered (`part` of `ctx`, plus `extra` items) as
+        a turn trace. `query` is what a recall asked for, kept like the text:
+        only with `MemoryPolicy.trace_text`."""
         from .traces import trace_items
 
+        items = trace_items(ctx, part) + tuple(extra)
+        keep_text = self.memory.policy.trace_text
         self.record(ContextPushed(
-            reason=reason, recap_ids=tuple(r.id for r in ctx.recaps), chars=len(text), items=trace_items(ctx),
-            more={k: n for k, n in ctx.more.items() if n > 0},
-            text=text if self.memory.policy.trace_text else None,
+            reason=reason, recap_ids=tuple(i["id"] for i in items if i["kind"] == "recap"), chars=len(text),
+            items=items, more={k: n for k, n in ctx.more.items() if n > 0},
+            text=text if keep_text else None, query=query if keep_text else None,
         ))
 
     async def refresh(self, text: str) -> Optional[MemoryContext]:

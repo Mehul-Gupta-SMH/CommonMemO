@@ -30,7 +30,7 @@ def db(tmp_path):
         s.never("call me", reason="hates calls")
         s.message("user", "the charger firmware rollback bricked unit 7")
     with mem.session("s2", user_id="ada", agent="codex") as s:
-        asyncio.run(s.push_turn("charger firmware rollback"))
+        asyncio.run(s.push("charger firmware rollback", part="all"))  # both halves, as an app delivers them
         s.checkpoint("halfway", {"next": "c.py"})
     with mem.session("s3", user_id="mallory", agent="support") as s:
         s.message("user", ATTACK)

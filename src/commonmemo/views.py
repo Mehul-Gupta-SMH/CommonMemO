@@ -68,7 +68,10 @@ def event_line(event: Any) -> str:
     if text:
         return text
     if isinstance(event, ContextPushed):
-        return f"memory pushed ({event.reason}): {len(event.items) or len(event.recap_ids)} items, {event.chars} chars"
+        n = len(event.items) or len(event.recap_ids)
+        if event.reason == "recall":
+            return f"agent recalled from memory: {n} items, {event.chars} chars"
+        return f"memory pushed ({event.reason}): {n} items, {event.chars} chars"
     if isinstance(event, BOOKKEEPING):
         fields = {k: v for k, v in event.payload.items() if v not in (None, "", (), [], {})}
         return f"{event.kind}: {fields}"

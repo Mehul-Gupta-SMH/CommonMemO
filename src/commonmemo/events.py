@@ -272,7 +272,8 @@ class Checkpoint(MemoryEvent):
 class ContextPushed(MemoryEvent):
     """A turn trace: what memory pushed into an agent's context, at the start
     of a session (`reason="start"`), of a turn (`"turn"`, `Session.push_turn`)
-    or mid-run (`"refresh"`, `Session.refresh`). It bounds refreshes, keeps a
+    or mid-run (`"refresh"`, `Session.refresh`), and what the agent pulled
+    (`"pull"`, `memory_get_procedure`; `"recall"`, `memory_recall`). It bounds refreshes, keeps a
     recap from being pushed twice in one turn, records what each push cost
     (`chars`), and is what `Memory.traces` / `Memory.why` read (#25).
 
@@ -289,6 +290,9 @@ class ContextPushed(MemoryEvent):
     items: tuple[dict[str, Any], ...] = ()
     more: dict[str, int] = dataclasses.field(default_factory=dict)
     text: Optional[str] = None
+    query: Optional[str] = None
+    """What a `memory_recall` asked for (`reason="recall"`), only with
+    `MemoryPolicy.trace_text`."""
 
 
 class StepStarted(MemoryEvent):
