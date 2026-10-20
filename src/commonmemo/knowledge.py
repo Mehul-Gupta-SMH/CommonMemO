@@ -36,6 +36,11 @@ from .events import (
     MemoryEvent,
     Negative,
     NegativeRevoked,
+    ProcedureConfirmed,
+    ProcedureEntry,
+    ProcedureFollowed,
+    ProcedureRejected,
+    ProcedureRetired,
     StepFailed,
     StepFinished,
     StepStarted,
@@ -115,17 +120,30 @@ CREATE TABLE IF NOT EXISTS freezes (
     event_id TEXT PRIMARY KEY, ts REAL NOT NULL, scope TEXT, source TEXT, reason TEXT,
     active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS procedures (
+    event_id TEXT PRIMARY KEY, scope TEXT NOT NULL, task TEXT NOT NULL, entry_kind TEXT NOT NULL,
+    name TEXT NOT NULL, use_when TEXT NOT NULL, body TEXT NOT NULL, steps TEXT NOT NULL,
+    version INTEGER NOT NULL, source TEXT NOT NULL, rank INTEGER NOT NULL,
+    status TEXT NOT NULL,  -- current | superseded | retired | proposed | disputed | confirmed | rejected
+    valid_from REAL NOT NULL, valid_to REAL, user_id TEXT, session_id TEXT, note TEXT
+);
+CREATE INDEX IF NOT EXISTS procedures_current ON procedures(task, status);
+CREATE TABLE IF NOT EXISTS procedure_runs (
+    event_id TEXT PRIMARY KEY, ts REAL NOT NULL, session_id TEXT, user_id TEXT,
+    entry_id TEXT NOT NULL, task TEXT NOT NULL, entry_kind TEXT NOT NULL, name TEXT NOT NULL,
+    version INTEGER NOT NULL, skipped TEXT NOT NULL, steps_tracked INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS knowledge_meta (
     key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
-           "negatives", "tombstones", "checkpoints", "steps", "freezes"]
+           "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs"]
 
 
 @dataclass(frozen=True)
@@ -165,6 +183,64 @@ def source_rank(source: str) -> int:
 def _world_record(r: sqlite3.Row) -> WorldRecord:
     return WorldRecord(r["scope"], r["key"], r["value"], r["valid_from"], r["valid_until"], r["source"],
                        r["event_id"], r["status"], r["user_id"], r["note"])
+
+
+@dataclass(frozen=True)
+class ProcedureRecord:
+    """One procedural entry (ADR 0003), as the projection holds it."""
+
+    event_id: str
+    scope: str
+    task: str
+    kind: str
+    """`template`, `rule`, `procedure` or `exemplar`."""
+    name: str
+    use_when: str
+    body: str
+    steps: tuple[str, ...]
+    version: int
+    """1 for the first body that became current, then +1 per change (0 while pending)."""
+    source: str
+    status: str
+    valid_from: float
+    user_id: Optional[str] = None
+    note: Optional[str] = None
+
+    @property
+    def pending(self) -> bool:
+        return self.status in PENDING
+
+    @property
+    def key(self) -> str:
+        """How traces name it: `task/kind/name`."""
+        return f"{self.task}/{self.kind}/{self.name}"
+
+
+def _procedure_record(r: sqlite3.Row) -> ProcedureRecord:
+    return ProcedureRecord(r["event_id"], r["scope"], r["task"], r["entry_kind"], r["name"], r["use_when"],
+                           r["body"], tuple(json.loads(r["steps"])), r["version"], r["source"], r["status"],
+                           r["valid_from"], r["user_id"], r["note"])
+
+
+@dataclass
+class ProcedureOutcome:
+    """How runs that used one version of an entry went (`Memory.procedure_outcomes`)."""
+
+    task: str
+    kind: str
+    name: str
+    version: int
+    runs: int = 0
+    rated: int = 0
+    positive: int = 0
+    negative: int = 0
+    corrections: int = 0
+    skipped: dict[str, int] = field(default_factory=dict)
+    """Step name -> runs that never finished it (runs with tracked steps only)."""
+
+    @property
+    def approval(self) -> Optional[float]:
+        return self.positive / self.rated if self.rated else None
 
 
 @dataclass(frozen=True)
@@ -426,6 +502,84 @@ class Knowledge:
         if current is not None and source_rank(e.source) >= current["rank"]:
             self._world_end(current, e.ts, "retracted", note=e.reason)
 
+    def _procedure_current(self, scope: str, task: str, kind: str, name: str) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM procedures WHERE scope = ? AND task = ? AND entry_kind = ? AND name = ? "
+            "AND status = 'current'", (scope, task, kind, name),
+        ).fetchone()
+
+    def _procedure_insert(self, e: MemoryEvent, scope: str, task: str, kind: str, name: str, use_when: str,
+                          body: str, steps: Sequence[str], source: str, rank: int, status: str,
+                          note: Optional[str] = None) -> None:
+        version = 0
+        if status == "current":
+            row = self._conn.execute(
+                "SELECT MAX(version) v FROM procedures WHERE scope = ? AND task = ? AND entry_kind = ? AND name = ?",
+                (scope, task, kind, name),
+            ).fetchone()
+            version = (row["v"] or 0) + 1
+        self._conn.execute(
+            "INSERT OR IGNORE INTO procedures VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+            (e.id, scope, task, kind, name, use_when, body, json.dumps(list(steps)), version, source, rank,
+             status, e.ts, e.user_id, e.session_id, note),
+        )
+
+    def _procedure_replace(self, e: MemoryEvent, scope: str, task: str, kind: str, name: str, use_when: str,
+                           body: str, steps: Sequence[str], source: str, rank: int,
+                           note: Optional[str] = None) -> None:
+        """Make this the current entry: a new version, unless nothing changed."""
+        current = self._procedure_current(scope, task, kind, name)
+        if current is not None:
+            if (current["body"], current["use_when"], json.loads(current["steps"])) == (body, use_when, list(steps)):
+                return  # the same entry again (a file loaded at every start): no new version
+            self._conn.execute(
+                "UPDATE procedures SET status = 'superseded', valid_to = ? WHERE event_id = ?",
+                (e.ts, current["event_id"]),
+            )
+        self._procedure_insert(e, scope, task, kind, name, use_when, body, steps, source, rank, "current", note)
+
+    def _procedure(self, e: ProcedureEntry) -> None:
+        rank = source_rank(e.source)
+        proposed = e.proposed if e.proposed is not None else rank <= 1
+        args = (e.scope, e.task, e.entry_kind, e.name, e.use_when, e.body, e.steps, e.source, rank)
+        if proposed:
+            self._procedure_insert(e, *args, "proposed", note=e.note)
+            return
+        current = self._procedure_current(e.scope, e.task, e.entry_kind, e.name)
+        if current is not None and current["rank"] > rank:
+            self._procedure_insert(e, *args, "disputed", note=f"conflicts with a {current['source']} entry")
+            return
+        self._procedure_replace(e, *args, note=e.note)
+
+    def _procedure_confirmed(self, e: ProcedureConfirmed) -> None:
+        self._conn.execute(
+            "UPDATE procedures SET status = 'confirmed' WHERE event_id = ? AND status IN ('proposed', 'disputed')",
+            (e.entry_id,),
+        )
+        self._procedure_replace(e, e.scope, e.task, e.entry_kind, e.name, e.use_when, e.body, e.steps,
+                                "confirmed", 3, note=f"confirmed {e.entry_id}")
+
+    def _procedure_rejected(self, e: ProcedureRejected) -> None:
+        self._conn.execute(
+            "UPDATE procedures SET status = 'rejected', note = ? WHERE event_id = ? AND status IN ('proposed', 'disputed')",
+            (e.reason, e.entry_id),
+        )
+
+    def _procedure_retired(self, e: ProcedureRetired) -> None:
+        current = self._procedure_current(e.scope, e.task, e.entry_kind, e.name)
+        if current is not None and source_rank(e.source) >= current["rank"]:
+            self._conn.execute(
+                "UPDATE procedures SET status = 'retired', valid_to = ?, note = COALESCE(?, note) WHERE event_id = ?",
+                (e.ts, e.reason, current["event_id"]),
+            )
+
+    def _procedure_followed(self, e: ProcedureFollowed) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO procedure_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (e.id, e.ts, e.session_id, e.user_id, e.entry_id, e.task, e.entry_kind, e.name, e.version,
+             json.dumps(list(e.skipped)), int(e.steps_tracked)),
+        )
+
     def _feedback(self, e: Feedback) -> None:
         self._conn.execute(
             'INSERT OR IGNORE INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -619,6 +773,86 @@ class Knowledge:
             ).fetchall()
         return [(r["value"], r["valid_from"], r["valid_to"]) for r in rows]
 
+    # -- procedural memory (ADR 0003) ----------------------------------------
+
+    def procedure_entries(self, scopes: Sequence[str], task: Optional[str] = None) -> list[ProcedureRecord]:
+        """Current entries in `scopes` (for `task`, or every task), with the
+        most specific scope winning per `(task, kind, name)`: later scopes in
+        `scopes` are more specific."""
+        if not scopes:
+            return []
+        marks = ",".join("?" * len(scopes))
+        sql = f"SELECT * FROM procedures WHERE status = 'current' AND scope IN ({marks})"
+        params: list[Any] = list(scopes)
+        if task is not None:
+            sql += " AND task = ?"
+            params.append(task)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        order = {s: i for i, s in enumerate(scopes)}
+        best: dict[tuple[str, str, str], sqlite3.Row] = {}
+        for r in sorted(rows, key=lambda r: order[r["scope"]]):
+            best[(r["task"], r["entry_kind"], r["name"])] = r
+        return [_procedure_record(r) for r in sorted(best.values(), key=lambda r: (r["task"], r["valid_from"]))]
+
+    def procedure_entry(self, event_id: str) -> Optional[ProcedureRecord]:
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM procedures WHERE event_id = ?", (event_id,)).fetchone()
+        return _procedure_record(r) if r else None
+
+    def pending_procedures(self, task: Optional[str] = None) -> list[ProcedureRecord]:
+        """Proposed and disputed entries, oldest first."""
+        sql = f"SELECT * FROM procedures WHERE status IN ({','.join('?' * len(PENDING))})"
+        params: list[Any] = list(PENDING)
+        if task is not None:
+            sql += " AND task = ?"
+            params.append(task)
+        with self._lock:
+            rows = self._conn.execute(sql + " ORDER BY valid_from", params).fetchall()
+        return [_procedure_record(r) for r in rows]
+
+    def procedure_versions(self, scope: str, task: str, kind: str, name: str) -> list[ProcedureRecord]:
+        """Every version that was current, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM procedures WHERE scope = ? AND task = ? AND entry_kind = ? AND name = ? "
+                "AND version > 0 ORDER BY version", (scope, task, kind, name),
+            ).fetchall()
+        return [_procedure_record(r) for r in rows]
+
+    def procedure_outcomes(self, task: Optional[str] = None) -> list[ProcedureOutcome]:
+        """Per entry version: the runs that used it, and the feedback given in
+        those runs' sessions."""
+        sql = "SELECT * FROM procedure_runs" + (" WHERE task = ?" if task is not None else "") + " ORDER BY ts"
+        with self._lock:
+            runs = self._conn.execute(sql, (task,) if task is not None else ()).fetchall()
+            sessions = {r["session_id"] for r in runs if r["session_id"]}
+            feedback: dict[str, list[sqlite3.Row]] = {}
+            if sessions:
+                marks = ",".join("?" * len(sessions))
+                for f in self._conn.execute(f"SELECT * FROM feedback WHERE session_id IN ({marks})",
+                                            tuple(sessions)).fetchall():
+                    feedback.setdefault(f["session_id"], []).append(f)
+        out: dict[tuple[str, str, str, int], ProcedureOutcome] = {}
+        counted: set[tuple[Any, ...]] = set()
+        for r in runs:
+            ident = (r["task"], r["entry_kind"], r["name"], r["version"])
+            if (ident, r["session_id"]) in counted and r["session_id"] is not None:
+                continue  # one run per session, however often it was pushed
+            counted.add((ident, r["session_id"]))
+            o = out.setdefault(ident, ProcedureOutcome(*ident))
+            o.runs += 1
+            if r["steps_tracked"]:
+                for step in json.loads(r["skipped"]):
+                    o.skipped[step] = o.skipped.get(step, 0) + 1
+            for f in feedback.get(r["session_id"], []):
+                if f["rating"] is not None:
+                    o.rated += 1
+                    o.positive += f["rating"] > 0
+                    o.negative += f["rating"] < 0
+                o.corrections += f["kind"] == "correction"
+        return sorted(out.values(), key=lambda o: (o.task, o.kind, o.name, o.version))
+
     # -- feedback -----------------------------------------------------------
 
     def _feedback_rows(self, user_id: Optional[str], agent: Optional[str], limit: Optional[int]) -> list[FeedbackRecord]:
@@ -718,6 +952,14 @@ class Knowledge:
                 "DELETE FROM negatives WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
             ).rowcount
             n += self._conn.execute("DELETE FROM tombstones WHERE user_id = ?", (user_id,)).rowcount
+            # The user's own entries, their exemplars, and what they proposed;
+            # an approved copy (`ProcedureConfirmed`, scrubbed) is the
+            # operator's and stays.
+            n += self._conn.execute(
+                "DELETE FROM procedures WHERE scope = ? OR (user_id = ? AND (entry_kind = 'exemplar' "
+                "OR status IN ('proposed', 'disputed', 'rejected')))", (f"user:{user_id}", user_id),
+            ).rowcount
+            n += self._conn.execute("DELETE FROM procedure_runs WHERE user_id = ?", (user_id,)).rowcount
             if session_ids:
                 marks = ",".join("?" * len(session_ids))
                 for table in ("checkpoints", "steps", "tool_last"):
@@ -753,11 +995,18 @@ _HANDLERS = {
     StepStarted: Knowledge._step_started,
     StepFinished: Knowledge._step_finished,
     StepFailed: Knowledge._step_failed,
+    ProcedureEntry: Knowledge._procedure,
+    ProcedureConfirmed: Knowledge._procedure_confirmed,
+    ProcedureRejected: Knowledge._procedure_rejected,
+    ProcedureRetired: Knowledge._procedure_retired,
+    ProcedureFollowed: Knowledge._procedure_followed,
 }
 
 __all__ = [
     "Knowledge",
     "WorldRecord",
+    "ProcedureRecord",
+    "ProcedureOutcome",
     "source_rank",
     "FreezeRecord",
     "FeedbackRecord",

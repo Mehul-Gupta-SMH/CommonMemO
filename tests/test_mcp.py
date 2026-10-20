@@ -62,7 +62,7 @@ def test_full_session_over_stdio(tmp_path):
     assert "suggest phone calls" in init["instructions"]  # stable memory is pushed
     tools = {t["name"]: t for t in r[2]["result"]["tools"]}
     assert set(tools) == {"memory_recall", "memory_remember", "memory_note_fact",
-                          "memory_avoid", "memory_save_progress"}
+                          "memory_avoid", "memory_save_progress", "memory_save_procedure"}
     note = tools["memory_note_fact"]["inputSchema"]
     assert note["required"] == ["key", "value"]
     assert note["properties"]["valid_for_seconds"] == {

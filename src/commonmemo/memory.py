@@ -35,6 +35,10 @@ from .events import (
     MemoryEvent,
     Negative,
     NegativeRevoked,
+    ProcedureConfirmed,
+    ProcedureEntry,
+    ProcedureRejected,
+    ProcedureRetired,
     ToolInvoked,
     UserFact,
     WorldFact,
@@ -45,7 +49,17 @@ from .events import (
     Freeze,
     Unfreeze,
 )
-from .knowledge import FeedbackSummary, FreezeRecord, Knowledge, NegativeRecord, WorldRecord, source_rank
+from .knowledge import (
+    FeedbackSummary,
+    FreezeRecord,
+    Knowledge,
+    NegativeRecord,
+    ProcedureOutcome,
+    ProcedureRecord,
+    WorldRecord,
+    source_rank,
+)
+from .procedures import ProcedureImport, TaskProcedures, check_kind, match, parse_steps, scrub
 from .reins import (
     REVERTIBLE,
     Alert,
@@ -167,8 +181,11 @@ class Memory:
         agent: Optional[str] = None,
         ttl: Optional[float] = None,
         run_id: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> Session:
         """Open a new session, or resume an existing one by `session_id`.
+        `task` names the type of task it does (`weekly_report`), so its
+        procedures are pushed without matching (see `procedures.py`).
 
         Resuming checks ownership: a session that belongs to one user can
         never be resumed as another (that would leak one user's working
@@ -194,7 +211,7 @@ class Memory:
                 expires_at=now + ttl if ttl is not None else None,
             )
         )
-        return Session(self, record, run_id=run_id, agent=agent)
+        return Session(self, record, run_id=run_id, agent=agent, task=task)
 
     def run(self, run_id: Optional[str] = None) -> Run:
         """Tag every event written inside it with `run_id` (generated when
@@ -370,9 +387,13 @@ class Memory:
         local_only: bool = False,
         exclude_session: Optional[str] = None,
         all_facts: bool = False,
+        task: Optional[str] = None,
+        procedures: bool = True,
     ) -> MemoryContext:
         """`all_facts` leaves the profile uncut, for a caller that adds facts
-        to it and cuts it itself (`Session.context`)."""
+        to it and cuts it itself (`Session.context`). `task` names the task,
+        else the request is matched against the known ones; `procedures=False`
+        skips that (a mid-run refresh has no use for it)."""
         engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
         # A user's recaps are theirs whichever agent (harness) they worked
         # in; without a user, an agent's recaps stay its own.
@@ -407,7 +428,9 @@ class Memory:
             world = related + rest  # the ones the request is about make the cut first
         negatives = self.knowledge.negatives(scopes)
         lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
+        procedure = await self._procedure_for(query, task, user_id, policy) if procedures else None
         return MemoryContext(
+            procedure=procedure,
             negatives=negatives[: policy.max_negatives],
             facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
             world=world[: policy.max_world],
@@ -425,6 +448,21 @@ class Memory:
                 "lessons": len(lessons) - policy.max_lessons,
             },
         )
+
+    async def _procedure_for(self, query: Optional[str], task: Optional[str], user_id: Optional[str],
+                             policy: MemoryPolicy) -> Optional[TaskProcedures]:
+        """The task the turn is about: named, else matched by its `use_when`
+        lines (ADR 0003). None when there is none."""
+        if task is not None:
+            found = self.procedures(task, user_id=user_id)
+            return found if found else None
+        entries = self.knowledge.procedure_entries(self._procedure_scopes(user_id))
+        hit = await match(self.ranker, query, entries, policy.min_procedure_score)
+        if hit is None:
+            return None
+        found = self.procedures(hit[0], user_id=user_id)
+        found.how, found.score = "matched", round(hit[1], 3)
+        return found
 
     def _world_text(self, w: WorldRecord) -> str:
         spec = self.fact_keys.get(w.key)
@@ -569,6 +607,122 @@ class Memory:
         """Current world facts in `scopes` (default: global + the project)."""
         scopes = scopes or (["global"] + ([self.project_scope] if self.project else []))
         return self.knowledge.world_facts(scopes, include_stale=include_stale)
+
+    # -- procedural memory (ADR 0003) --------------------------------------------
+
+    def _procedure_scopes(self, user_id: Optional[str]) -> list[str]:
+        """Broadest first, so the more specific entry wins."""
+        return ["global"] + ([self.project_scope] if self.project else []) + ([f"user:{user_id}"] if user_id else [])
+
+    def save_procedure(self, task: str, kind: str, name: str, body: str, *, use_when: str = "",
+                       steps: Optional[Iterable[str]] = None, scope: Optional[str] = None,
+                       source: str = "explicit") -> MemoryEvent:
+        """Record how `task` is done: a `template`, `rule`, `procedure` or
+        `exemplar` named `name`. A changed body is a new version. `steps`
+        default to a procedure's numbered lines. From an agent or a learner
+        (`source="agent"` / `"extracted"`), an entry for everyone is a
+        proposal (`confirm_procedure`); in a user's scope, an agent's entry
+        applies to that user at once. See `procedures.py`."""
+        return self.record(self._procedure_entry(task, kind, name, body, use_when=use_when, steps=steps,
+                                                 scope=scope or self.project_scope, source=source))
+
+    def _procedure_entry(self, task: str, kind: str, name: str, body: str, *, use_when: str,
+                         steps: Optional[Iterable[str]], scope: str, source: str) -> ProcedureEntry:
+        check_kind(kind)
+        rank = source_rank(source)
+        if kind == "exemplar" and rank <= 1 and not scope.startswith("user:"):
+            raise ValueError("commonmemo: an exemplar from an agent or a learner is the user's data: write it in "
+                             "the user's scope; an operator shares it with confirm_procedure(..., scrubbed=True)")
+        # Decided now and recorded, so a rebuild from the Log agrees.
+        own = scope.startswith("user:") and source == "agent"
+        proposed = rank <= 1 and not own
+        steps = tuple(steps) if steps is not None else (parse_steps(body) if kind == "procedure" else ())
+        # A user's own entry carries their id even outside a session, so
+        # `forget_user` removes it from the Log too.
+        user_id = scope.split(":", 1)[1] if scope.startswith("user:") else None
+        return ProcedureEntry(task=task, entry_kind=kind, name=name, body=body.strip(), use_when=use_when.strip(),
+                              steps=steps, scope=scope, source=source, proposed=proposed, user_id=user_id)
+
+    def load_procedures(self, source: Any, *, scope: Optional[str] = None) -> ProcedureImport:
+        """Write the entries in a directory of Markdown files, a JSON/YAML
+        file, or a list of dicts, as an operator's (current at once). Entries
+        whose current version already matches are skipped, so loading at
+        every start is safe (see `procedures.py`)."""
+        from .procedures import load
+
+        return load(self, source, scope=scope)
+
+    def procedures(self, task: str, *, user_id: Optional[str] = None) -> TaskProcedures:
+        """How `task` is done, as `user_id` sees it: current entries, the most
+        specific scope winning (user over project over global)."""
+        return TaskProcedures(task, self.knowledge.procedure_entries(self._procedure_scopes(user_id), task))
+
+    def tasks(self, *, user_id: Optional[str] = None) -> dict[str, str]:
+        """`{task: its use_when lines}` for every task with current entries."""
+        out: dict[str, set[str]] = {}
+        for e in self.knowledge.procedure_entries(self._procedure_scopes(user_id)):
+            out.setdefault(e.task, set()).update([e.use_when] if e.use_when else [])
+        return {t: "; ".join(sorted(lines)) for t, lines in sorted(out.items())}
+
+    def pending_procedures(self, task: Optional[str] = None) -> list[ProcedureRecord]:
+        """Entries waiting for review: proposals, and entries a less trusted
+        source wrote over a more trusted one. Settle each with
+        `confirm_procedure` or `reject_procedure`."""
+        return self.knowledge.pending_procedures(task)
+
+    def confirm_procedure(self, entry_id: str, *, scope: Optional[str] = None, body: Optional[str] = None,
+                          scrubbed: bool = False) -> MemoryEvent:
+        """Approve a pending entry, or share a user's own entry more widely:
+        it becomes current in `scope` (default: the entry's own scope, or the
+        project for a user's entry) with an operator's rank. `body` corrects
+        it on the way. An exemplar leaves its user's scope only with
+        `scrubbed=True` (you checked it for personal data); the user's known
+        profile values are redacted from it too."""
+        record = self.knowledge.procedure_entry(entry_id)
+        if record is None or not (record.pending or (record.status == "current" and record.scope.startswith("user:"))):
+            raise ValueError(f"commonmemo: no pending or user-scoped procedure entry {entry_id!r} "
+                             "(see pending_procedures())")
+        own = record.scope.startswith("user:")
+        target = scope or (self.project_scope if own and not record.pending else record.scope)
+        text = record.body if body is None else body
+        if own and not target.startswith("user:") and record.kind == "exemplar":
+            if not scrubbed:
+                raise ValueError("commonmemo: sharing an exemplar beyond its user needs scrubbed=True: check it for "
+                                 "personal data first (pass a cleaned body= if needed)")
+            text = scrub(text, self._profile_values(record.scope.split(":", 1)[1]))
+        return self._append_outside_session(ProcedureConfirmed(
+            entry_id=entry_id, task=record.task, entry_kind=record.kind, name=record.name, body=text,
+            use_when=record.use_when, steps=record.steps, scope=target,
+        ))
+
+    def _profile_values(self, user_id: str) -> list[str]:
+        from .agent_tools import run_sync
+
+        values = [e.value for e in self.store.events(user_id=user_id, kinds=[UserFact.kind])]
+        try:
+            values += [f.value for f in run_sync(self.engine.user_profile(user_id))]
+        except Exception:  # noqa: BLE001 -- the stated facts are redacted either way
+            logging.getLogger("commonmemo").warning("commonmemo: couldn't read %s's profile to scrub", user_id)
+        return values
+
+    def reject_procedure(self, entry_id: str, *, reason: Optional[str] = None) -> MemoryEvent:
+        """Turn down a pending entry. It stays in the history."""
+        record = self.knowledge.procedure_entry(entry_id)
+        if record is None or not record.pending:
+            raise ValueError(f"commonmemo: no pending procedure entry {entry_id!r} (see pending_procedures())")
+        return self._append_outside_session(ProcedureRejected(entry_id=entry_id, reason=reason))
+
+    def retire_procedure(self, task: str, kind: str, name: str, *, scope: Optional[str] = None,
+                         reason: Optional[str] = None) -> MemoryEvent:
+        """`name` no longer applies to `task`. History is kept."""
+        return self._append_outside_session(ProcedureRetired(
+            task=task, entry_kind=check_kind(kind), name=name, scope=scope or self.project_scope, reason=reason,
+        ))
+
+    def procedure_outcomes(self, task: Optional[str] = None) -> list[ProcedureOutcome]:
+        """Per entry version: how many runs used it, the feedback in those
+        runs, and the steps runs skipped. Which version worked better."""
+        return self.knowledge.procedure_outcomes(task)
 
     def never(self, statement: str, *, scope: str = "global", reason: Optional[str] = None) -> MemoryEvent:
         """Record a negative outside a session; `scope` is a full scope

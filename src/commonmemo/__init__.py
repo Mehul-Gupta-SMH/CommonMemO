@@ -23,6 +23,8 @@ from .events import (
     MemoryEvent,
     Message,
     Negative,
+    ProcedureEntry,
+    ProcedureFollowed,
     ToolInvoked,
     UserFact,
     WorldFact,
@@ -32,6 +34,7 @@ from .facts import FactKey
 from .ranking import EmbeddingRanker, KeywordRanker
 from .history import Diff, History, MemoryView
 from .memory import Memory
+from .procedures import TaskProcedures
 from .reins import Alert, AlertPolicy, Budget, RevertResult
 from .resume import ResumePoint, StepInDoubt, StepInProgress
 from .runs import Run, current_run
@@ -55,6 +58,9 @@ __all__ = [
     "Negative",
     "Forgotten",
     "Checkpoint",
+    "ProcedureEntry",
+    "ProcedureFollowed",
+    "TaskProcedures",
     "ResumePoint",
     "StepInDoubt",
     "StepInProgress",

@@ -6,22 +6,23 @@ commonmemo 0.0.1 · Python 3.13.16 · 2026-10-20
 
 | Scenario | Checks | With memory | Without | Memory added (chars) | Time (ms) |
 |---|---|---|---|---:|---:|
-| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 7 |
+| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 8 |
 | negatives | a user's "never" is respected in a later session | pass | fail | 288 | 4 |
 | latest preference | the newest value of a changed preference is used | pass | fail | 222 | 5 |
-| resume after crash | a rerun skips finished steps and never repeats a side effect | pass | fail | 0 | 65 |
-| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 57 |
+| resume after crash | a rerun skips finished steps and never repeats a side effect | pass | fail | 0 | 79 |
+| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 63 |
 | forgetting | a forgotten fact never comes back, in the push or through recall | pass | n/a | 202 | 6 |
 | injection | stored text is never placed where instructions go | pass | n/a | 535 | 4 |
-| world-fact isolation | one user's claim doesn't change what another user is told | pass | n/a | 245 | 5 |
-| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 15 |
-| more available | when the push leaves things out, the agent is told and recalls them | pass | fail | 1465 | 12 |
-| staleness | a fact past its lifetime isn't quoted as current | pass | n/a | 0 | 104 |
+| world-fact isolation | one user's claim doesn't change what another user is told | pass | n/a | 245 | 4 |
+| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 13 |
+| more available | when the push leaves things out, the agent is told and recalls them | pass | fail | 1465 | 14 |
+| staleness | a fact past its lifetime isn't quoted as current | pass | n/a | 0 | 105 |
 | precedence | an agent's write doesn't override an operator's fact | pass | n/a | 245 | 4 |
-| recall by meaning | a fact asked about in other words is recalled | pass | fail | 0 | 17 |
-| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 70 |
+| recall by meaning | a fact asked about in other words is recalled | pass | fail | 0 | 16 |
+| procedure by description | a request for a known task gets the house template, unnamed | pass | fail | 301 | 4 |
+| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 58 |
 
-14 of 14 pass with memory; memory turned a failure into a success in 8 of the 8 scenarios that have a without-memory baseline.
+15 of 15 pass with memory; memory turned a failure into a success in 9 of the 9 scenarios that have a without-memory baseline.
 
 Details (with memory):
 
@@ -38,4 +39,5 @@ Details (with memory):
 - **staleness:** didn't quote the lapsed price; would look it up
 - **precedence:** Ada was told '30 days'; the agent's write is kept for review (1 disputed)
 - **recall by meaning:** recalled 4/4 with an embedding ranker (offline concept embedder), 1/4 by shared words; 0 unrelated facts returned
+- **procedure by description:** used the template in 2/2 report requests; pushed to an unrelated request: False
 - **detect, freeze, revert:** alert raised: True; world facts after revert and freeze: {'refund_window': '30 days'}

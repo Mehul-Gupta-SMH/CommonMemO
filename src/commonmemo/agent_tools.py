@@ -27,7 +27,7 @@ import concurrent.futures
 import json
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
-from .context import world_line
+from .context import MemoryContext, world_line
 from .events import Checkpoint, Negative, UserFact
 from .ranking import rank
 
@@ -79,8 +79,39 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
 
+    def memory_get_procedure(task: str) -> str:
+        """How a type of task is done here: its templates (the shape of a good
+        result), rules, step-by-step procedures, and accepted examples. Use it
+        before doing one of the tasks listed below, or when memory pointed you
+        at it.
+
+        Args:
+            task: The task's name, as listed.
+        """
+        known = memory.tasks(user_id=session.user_id)
+        found = memory.procedures(task, user_id=session.user_id) if task else None
+        if not found:
+            listing = "\n".join(f"- {t}: {w}" if w else f"- {t}" for t, w in known.items())
+            head = f"No procedure for {task!r}. " if task else ""
+            return head + ("Known tasks:\n" + listing if known else "No procedures are recorded yet.")
+        found.how = "pulled"
+        text = found.full_text()
+        if writes and not session.closed:  # read-only tools record nothing
+            session._trace("pull", MemoryContext(procedure=found, policy=memory.policy, agent=session.agent), text)
+        return text
+
+    reads: list[Callable[..., str]] = [memory_recall]
+    tasks = memory.tasks(user_id=session.user_id)
+    if tasks:
+        # Only when there is something to get; the task names go where the
+        # model reads them, the tool's description.
+        head, _, args = (memory_get_procedure.__doc__ or "").partition("\n\n        Args:")
+        listing = "\n".join(f"        - {t}: {w}" if w else f"        - {t}" for t, w in list(tasks.items())[:40])
+        memory_get_procedure.__doc__ = f"{head}\n\n        Known tasks:\n{listing}\n\n        Args:{args}"
+        reads.append(memory_get_procedure)
+
     if not writes:
-        return [memory_recall]
+        return reads
 
     def memory_remember(key: str, value: str) -> str:
         """Save a durable fact about the current user for future sessions,
@@ -154,7 +185,38 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         session.record(Checkpoint(label=note, data=data))
         return "Progress saved."
 
-    return [memory_recall, memory_remember, memory_note_fact, memory_avoid, memory_save_progress]
+    def memory_save_procedure(task: str, kind: str, name: str, body: str, use_when: str = "",
+                              for_everyone: bool = False) -> str:
+        """Save how a type of task is done, for next time: a "template" (the
+        shape of a good result), a "rule" it must follow, a "procedure" (its
+        steps, one numbered line each), or an "exemplar" (a result the user
+        accepted). By default it is this user's own way; for_everyone=True
+        proposes it for every user, and an operator approves it first.
+        Exemplars always stay with this user.
+
+        Args:
+            task: Short snake_case name of the task, e.g. "weekly_report".
+            kind: "template", "rule", "procedure" or "exemplar".
+            name: Short name of this entry, e.g. "default".
+            body: The template, rule, steps or example itself.
+            use_when: One line saying when it applies.
+            for_everyone: Propose it for every user instead of keeping it for this one.
+        """
+        if kind not in ("template", "rule", "procedure", "exemplar"):
+            return f"Not saved: kind must be template, rule, procedure or exemplar, not {kind!r}."
+        if kind == "exemplar":
+            if session.user_id is None:
+                return "Not saved: an exemplar belongs to a user, and this session has none."
+            event = session.save_exemplar(task, body, name=name, use_when=use_when, source="agent")
+        else:
+            # Without a user there is no "own way": it can only be a proposal.
+            mine = not for_everyone and session.user_id is not None
+            event = session.save_procedure(task, kind, name, body, use_when=use_when, for_user=mine, source="agent")
+        if event.proposed:
+            return f"Proposed {kind} {name!r} for {task} (other users get it once an operator approves it)."
+        return f"Saved {kind} {name!r} for {task} (this user's own)."
+
+    return [*reads, memory_remember, memory_note_fact, memory_avoid, memory_save_progress, memory_save_procedure]
 
 
 __all__ = ["build_agent_tools"]

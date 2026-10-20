@@ -354,6 +354,32 @@ def recall_by_meaning(with_memory: bool) -> Outcome:
                    f"{kw_hits}/{n} by shared words; {noise} unrelated facts returned")
 
 
+# -- procedural memory: the house way of doing a task (#26) ------------------------
+
+REPORT_TEMPLATE = "## Highlights\n## Risks\n## Next week"
+
+
+def procedure_by_description(with_memory: bool) -> Outcome:
+    mem = Memory(project="acme")
+    mem.load_procedures([
+        {"task": "weekly_report", "kind": "template", "name": "default", "body": REPORT_TEMPLATE,
+         "use_when": "Writing the weekly status report for the team"},
+        {"task": "weekly_report", "kind": "rule", "name": "length", "body": "Keep it under 300 words."},
+    ])
+    requests = ["Can you write up this week's status report?", "Draft the weekly report for the team please"]
+    with mem.session(user_id="ada") as s:
+        sections = []
+        for request in requests:  # the app doesn't name the task: matched by description
+            agent, chars = agent_for(mem, s, request, {}, with_memory=with_memory)
+            sections.append(agent.report_sections())
+        unrelated, _ = prompt_for(s, "What's the refund window?", with_memory=with_memory)
+    right = sum(found == ["Highlights", "Risks", "Next week"] for found in sections)
+    noise = "How weekly_report is done" in unrelated
+    return Outcome(right == len(requests) and not noise,
+                   f"used the template in {right}/{len(requests)} report requests; "
+                   f"pushed to an unrelated request: {noise}", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -374,6 +400,8 @@ SCENARIOS = [
     Scenario("staleness", "a fact past its lifetime isn't quoted as current", staleness, baseline=False),
     Scenario("precedence", "an agent's write doesn't override an operator's fact", precedence, baseline=False),
     Scenario("recall by meaning", "a fact asked about in other words is recalled", recall_by_meaning),
+    Scenario("procedure by description", "a request for a known task gets the house template, unnamed",
+             procedure_by_description),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

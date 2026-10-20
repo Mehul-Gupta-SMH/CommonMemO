@@ -128,6 +128,37 @@ stay proposals for review. Registered lifetimes make facts go stale by
 default. Pinned facts are always pushed; the rest only when the request is
 about them, so hundreds of facts don't crowd the prompt.
 
+## How a task is done: procedural memory
+
+Templates, rules, step-by-step procedures and accepted examples, per task
+type ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26), [ADR 0003](docs/adr/0003-procedural-memory.md)). Write them as files next to your code:
+
+```markdown
+<!-- procedures/weekly_report/default.md -->
+---
+kind: template
+use_when: Writing the weekly status report for the team
+---
+## Highlights
+## Risks
+## Next week
+```
+
+```python
+mem.load_procedures("procedures/")        # current at once; a changed file is a new version
+with mem.session(user_id="ada", task="weekly_report") as s:   # or leave task out: matched by use_when
+    ctx = await s.push_turn(prompt)       # rules, templates and step names, in the turn half
+mem.procedure_outcomes("weekly_report")   # runs, feedback and skipped steps, per version
+```
+
+Without a named task, the request is matched against the `use_when` lines
+with the same ranker as facts. Agents get `memory_get_procedure` (full steps
+and examples) and `memory_save_procedure`: an agent's entry is its user's own
+way at once, or, for everyone, a proposal an operator approves. Accepted
+examples (`s.save_exemplar(...)`) are the user's data: no one else sees one
+until an operator shares it with `confirm_procedure(id, scrubbed=True)`, and
+`forget_user` removes them.
+
 ## Resume a stopped process
 
 ```python

@@ -15,7 +15,8 @@ def test_tools_are_plain_typed_documented_sync_functions():
     with mem.session(user_id="u1") as s:
         tools = mem.agent_tools(s)
     assert [t.__name__ for t in tools] == [
-        "memory_recall", "memory_remember", "memory_note_fact", "memory_avoid", "memory_save_progress"]
+        "memory_recall", "memory_remember", "memory_note_fact", "memory_avoid", "memory_save_progress",
+        "memory_save_procedure"]
     for t in tools:
         assert not inspect.iscoroutinefunction(t)  # not every framework awaits tools
         assert inspect.getdoc(t)

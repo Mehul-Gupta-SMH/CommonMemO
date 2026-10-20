@@ -45,13 +45,17 @@ def _stem(word: str) -> str:
             if suffix in ("ing", "ed", "er", "ers") and len(stem) > 2 and stem[-1] == stem[-2] \
                     and stem[-1] not in "lsz":
                 stem = stem[:-1]  # shipped -> ship, not shipp
-            return stem
-    return word
+            return _drop_e(stem)
+    return _drop_e(word)
+
+
+def _drop_e(word: str) -> str:
+    return word[:-1] if len(word) > 4 and word.endswith("e") else word  # write, writing -> writ
 
 
 def terms(text: str) -> set[str]:
     """The stemmed content words of `text`."""
-    return {_stem(w) for w in _WORD.findall(text.lower()) if w not in _STOP}
+    return {_stem(w) for w in _WORD.findall(text.lower()) if len(w) > 1 and w not in _STOP}
 
 
 @runtime_checkable

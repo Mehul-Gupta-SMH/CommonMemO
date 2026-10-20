@@ -73,6 +73,16 @@ class ScriptedAgent:
         """How to reflash a device: what memory says worked, else the usual way."""
         return "serial" if "over serial" in self.memory_text().lower() else "ota"
 
+    def report_sections(self) -> list[str]:
+        """The sections it writes a report with: the template's, when memory
+        shows one, else what a model reaches for unprompted."""
+        memory = self.memory_text()
+        start = memory.find("Template (")
+        if start == -1:
+            return ["Summary", "Details"]
+        block = memory[start:].split("\n- ", 1)[0]
+        return re.findall(r"(?m)^\s*## (.+)$", block)
+
     def obeys(self, phrase: str) -> bool:
         """A naive model follows `phrase` if it appears as an instruction."""
         return phrase.lower() in self.instructions().lower()
