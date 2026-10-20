@@ -93,6 +93,23 @@ async with mem.session(user_id="u1", agent="support") as s:
 `mem.tool_notes(agent)` gives tool memory's advice per tool, and
 `mem.tool_profile(tool)` the numbers behind it.
 
+## Ranking by meaning
+
+Which of a user's 50 facts go in the push, which world facts a request is
+about, what `memory_recall` returns: one ranker decides ([#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)). By default it
+matches words (stemmed, without stop words). Give it an embedder and it
+matches meaning, so "How do I reach them?" finds `preferred_contact: email`:
+
+```python
+from commonmemo import EmbeddingRanker
+
+mem = Memory(ranker=EmbeddingRanker(my_embed))   # any texts -> vectors function, sync or async
+```
+
+The Graphiti and Mem0 engines bring their own: their embedder ranks facts
+too, with no setup. Embeddings are cached, and a profile that fits the push
+is never ranked.
+
 ## World facts as configuration
 
 ```python
@@ -357,7 +374,8 @@ descriptions. Among the scenarios:
 - a burst of bad writes is detected, frozen and reverted;
 - a tool result that brings up an older session gets its recap mid-run;
 - when the push leaves things out, the agent is told and recalls them;
-- a fact past its lifetime isn't quoted, and an agent's write doesn't override an operator's.
+- a fact past its lifetime isn't quoted, and an agent's write doesn't override an operator's;
+- a fact asked about in other words is recalled (by meaning, with an embedder).
 
 ```
 python -m evals                   # prints the report; see docs/evals.md for the baseline

@@ -25,22 +25,14 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
-import re
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from .context import world_line
 from .events import Checkpoint, Negative, UserFact
+from .ranking import rank
 
 if TYPE_CHECKING:
     from .session import Session
-
-_WORD = re.compile(r"[a-z0-9]+")
-
-
-def _overlap(query: str, text: str) -> int:
-    q = set(_WORD.findall(query.lower()))
-    return len(q & set(_WORD.findall(text.lower())))
-
 
 def run_sync(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run `coro` to completion from synchronous code, inside or outside a
@@ -74,11 +66,16 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             ctx = run_sync(session.context(query, policy=memory.policy_for_recall))
         except Exception:  # noqa: BLE001 -- see module docstring: degrade to the local index
             ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
+        bar = memory.policy_for_recall.min_recall_score
+
+        def related(items: list, text: Callable[[Any], str]) -> list:
+            # Best first, by the memory's ranker: by meaning with an embedder (#21).
+            return run_sync(rank(memory.ranker, query, items, text, threshold=bar))[0]
+
         lines = []
-        lines += [f"[user] {f.key}: {f.value}" for f in ctx.facts if _overlap(query, f"{f.key} {f.value}")]
-        lines += [f"[fact] {world_line(w)}" for w in [*ctx.world, *ctx.world_turn]
-                  if _overlap(query, f"{w.key} {w.value}")]
-        lines += [f"[feedback] {l.line()}" for l in ctx.lessons if _overlap(query, l.line())]
+        lines += [f"[user] {f.key}: {f.value}" for f in related(ctx.facts, lambda f: f"{f.key} {f.value}")]
+        lines += [f"[fact] {world_line(w)}" for w in related([*ctx.world, *ctx.world_turn], memory._world_text)]
+        lines += [f"[feedback] {item.line()}" for item in related(ctx.lessons, lambda item: item.line())]
         lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
 

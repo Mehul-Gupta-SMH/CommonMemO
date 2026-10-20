@@ -23,10 +23,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from ..events import MemoryEvent
 from ..stores.base import SessionRecord, Store
+
+if TYPE_CHECKING:
+    from ..ranking import Ranker
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,11 @@ class Engine(ABC):
     @abstractmethod
     async def forget_user(self, user_id: str) -> int:
         """Delete everything this engine holds about `user_id`."""
+
+    def ranker(self) -> Optional["Ranker"]:
+        """A ranker by meaning, for engines that embed text (see
+        `ranking.py`); None leaves ranking to `Memory`'s default."""
+        return None
 
     def bind(self, store: "Store") -> None:
         """Called once by `Memory` with its store, before any other method.

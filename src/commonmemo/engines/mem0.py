@@ -46,6 +46,7 @@ from datetime import datetime
 from typing import Any, Optional, Protocol, Sequence
 
 from ..events import BOOKKEEPING, MemoryEvent, Message, ToolInvoked, UserFact, describe
+from ..ranking import EmbeddingRanker, sync_embedder
 from ..stores.base import SessionRecord, Store
 from ._ranking import rank_by_hits
 from .base import Engine, Recap, Fact
@@ -194,6 +195,13 @@ class Mem0Engine(Engine):
     def bind(self, store: Store) -> None:
         if self._index is None:
             self._index = LocalEngine(getattr(store, "path", ":memory:"))
+
+    def ranker(self) -> Optional[EmbeddingRanker]:
+        """Rank facts with Mem0's own embedding model."""
+        model = getattr(getattr(self.backend, "memory", None), "embedding_model", None)
+        if model is None:
+            return None
+        return EmbeddingRanker(sync_embedder(lambda text: model.embed(text, "search")))
 
     @property
     def index(self) -> LocalEngine:

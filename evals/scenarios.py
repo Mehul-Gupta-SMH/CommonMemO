@@ -11,9 +11,11 @@ from pathlib import Path
 from commonmemo import AlertPolicy, Memory, MemoryPolicy
 from commonmemo.agent_tools import build_agent_tools
 from commonmemo.facts import FactKey
+from commonmemo.ranking import EmbeddingRanker
 from commonmemo.context import STABLE_HEADER, TURN_HEADER
 
 from .agent import ScriptedAgent
+from .embedder import embed
 from .harness import Outcome, Scenario, agent_for, prompt_for
 
 
@@ -317,6 +319,41 @@ def precedence(with_memory: bool) -> Outcome:
                    f"Ada was told {told!r}; the agent's write is kept for review ({len(disputed)} disputed)", chars)
 
 
+# -- 14. recall finds a fact asked about in other words ----------------------------
+
+RECALL_QUESTIONS = [
+    ("How do I reach them?", "preferred_contact", "email"),
+    ("What should I cook for them?", "diet", "vegetarian"),
+    ("Where do I send the parcel?", "home_address", "12 Baker Street"),
+    ("Which size do they wear?", "shoe_size", "42"),
+]
+
+
+def recall_by_meaning(with_memory: bool) -> Outcome:
+    def accuracy(ranker) -> tuple[int, int]:
+        mem = Memory(ranker=ranker)
+        with mem.session(user_id="ada") as s:
+            for _, key, value in RECALL_QUESTIONS:
+                s.remember(key, value)
+            for i in range(10):
+                s.remember(f"note_{i}", f"misc {i}")
+        with mem.session(user_id="ada") as s:
+            recall = {t.__name__: t for t in build_agent_tools(s)}["memory_recall"]
+            answers = [recall(q) for q, _, _ in RECALL_QUESTIONS]
+        hits = sum(f"{key}: {value}" in a for a, (_, key, value) in zip(answers, RECALL_QUESTIONS))
+        noise = sum(a.count("[user] note_") for a in answers)  # unrelated facts recall returned
+        return hits, noise
+
+    if not with_memory:
+        return Outcome(False, "no memory: nothing to recall")
+    hits, noise = accuracy(EmbeddingRanker(embed))
+    kw_hits, _ = accuracy(None)
+    n = len(RECALL_QUESTIONS)
+    return Outcome(hits == n and noise == 0,
+                   f"recalled {hits}/{n} with an embedding ranker (offline concept embedder), "
+                   f"{kw_hits}/{n} by shared words; {noise} unrelated facts returned")
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -336,6 +373,7 @@ SCENARIOS = [
              more_available),
     Scenario("staleness", "a fact past its lifetime isn't quoted as current", staleness, baseline=False),
     Scenario("precedence", "an agent's write doesn't override an operator's fact", precedence, baseline=False),
+    Scenario("recall by meaning", "a fact asked about in other words is recalled", recall_by_meaning),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

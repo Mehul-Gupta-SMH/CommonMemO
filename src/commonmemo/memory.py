@@ -30,7 +30,7 @@ from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
 from .facts import FactKey, FactRegistry, ImportResult
 from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
-from .engines.local import content_words
+from .ranking import KeywordRanker, Ranker, rank
 from .events import (
     MemoryEvent,
     Negative,
@@ -102,6 +102,7 @@ class Memory:
         budgets: Optional[dict[str, Union[Budget, int]]] = None,
         alerts: Optional[AlertPolicy] = None,
         fact_keys: Optional[Iterable[FactKey]] = None,
+        ranker: Optional[Ranker] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -128,6 +129,9 @@ class Memory:
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
         """Default lifetime of a session in seconds (`None`: no expiry)."""
+        self.ranker: Ranker = ranker or self.engine.ranker() or KeywordRanker()
+        """Ranks facts and recall results against a request (see `ranking.py`):
+        yours, else the engine's embedder, else shared words."""
         self.fact_keys = FactRegistry()
         """The optional world-fact key registry (see `facts.py`): what keys
         exist, their allowed values and lifetimes, and which are pinned."""
@@ -394,24 +398,18 @@ class Memory:
             # rest are ranked by the request and pushed with the turn, so the
             # stable half stays small (and cached) however many facts exist.
             pinned = [w for w in world if self.fact_keys.pinned(w.key)]
-            words = content_words(query or "")
-            scored = []
-            for w in world:
-                if not self.fact_keys.pinned(w.key):
-                    spec = self.fact_keys.get(w.key)
-                    about = f"{w.key} {w.value} {spec.description if spec else ''}"
-                    scored.append((len(words & content_words(about)), w))
-            matched = [w for n, w in sorted(scored, key=lambda t: -t[0]) if n > 0]
+            unpinned = [w for w in world if not self.fact_keys.pinned(w.key)]
+            matched, _ = await rank(self.ranker, query, unpinned, self._world_text)
             world, world_turn = pinned, matched[: policy.max_world]
-            world_more = max(0, len(pinned) - policy.max_world) + len(scored) - len(world_turn)
-        elif query and len(world) > policy.max_world:
-            words = set(query.lower().split())
-            world.sort(key=lambda w: -len(words & set(f"{w.key} {w.value}".lower().split())))
+            world_more = max(0, len(pinned) - policy.max_world) + len(unpinned) - len(world_turn)
+        elif len(world) > policy.max_world:
+            related, rest = await rank(self.ranker, query, world, self._world_text)
+            world = related + rest  # the ones the request is about make the cut first
         negatives = self.knowledge.negatives(scopes)
         lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
         return MemoryContext(
             negatives=negatives[: policy.max_negatives],
-            facts=facts if all_facts else facts[: policy.max_facts],
+            facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
             world=world[: policy.max_world],
             world_turn=world_turn,
             lessons=lessons[: policy.max_lessons],
@@ -427,6 +425,18 @@ class Memory:
                 "lessons": len(lessons) - policy.max_lessons,
             },
         )
+
+    def _world_text(self, w: WorldRecord) -> str:
+        spec = self.fact_keys.get(w.key)
+        return f"{w.key} {w.value} {spec.description if spec else ''}"
+
+    async def _pick_facts(self, query: Optional[str], facts: list[Fact], limit: int) -> list[Fact]:
+        """The `limit` facts to push: all of them if they fit; else the ones
+        related to the request first (#21), then the rest in order."""
+        if len(facts) <= limit:
+            return facts
+        related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}")
+        return (related + rest)[:limit]
 
     def _visible_facts(self, user_id: str, facts: list[Fact]) -> list[Fact]:
         """`facts` minus what the user asked to forget. A tombstone hides

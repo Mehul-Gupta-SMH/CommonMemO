@@ -70,6 +70,9 @@ class MemoryPolicy:
     """A recap is pushed mid-run only when it shares at least this many
     distinct words with the new text. (Tool output is long and noisy, so the
     turn's relevance threshold, a share of the query's words, doesn't fit.)"""
+    min_recall_score: Optional[float] = None
+    """How related a fact, world fact or lesson must be for `memory_recall`
+    to return it; None uses the ranker's own threshold (`ranking.py`)."""
     trace_text: bool = False
     """Keep the pushed text itself in each turn trace (`ContextPushed.text`),
     not only references to what was pushed. Off by default: the text repeats

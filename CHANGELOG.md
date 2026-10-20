@@ -2,6 +2,24 @@
 
 ## 0.0.1 — unreleased
 
+Ranking by meaning ([#21](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/21)):
+
+- New `commonmemo.ranking`: a `Ranker` decides which profile facts make the
+  push (when there are more than `max_facts`: related ones first, not the
+  first 20), which world facts a request is about, and what `memory_recall`
+  returns. `KeywordRanker` (default, no dependencies: stemmed terms, stop
+  words dropped) or `EmbeddingRanker(embed)` (cosine similarity from any sync
+  or async embedder, cached). `Memory(ranker=...)`; without one, the
+  engine's (`Engine.ranker()`: Graphiti's embedder, Mem0's embedding model),
+  else keywords. `MemoryPolicy.min_recall_score` sets recall's bar.
+- `memory_recall` no longer filters by raw shared words; it uses the ranker,
+  best first.
+- New eval scenario **recall by meaning** (14 of 14): four questions phrased
+  unlike the stored keys; 4/4 recalled with an embedding ranker, 1/4 by
+  shared words. The eval uses a small offline concept embedder
+  (`evals/embedder.py`), not a model; a live comparison comes with #18's live
+  mode.
+
 World facts as configuration ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/24), decisions recorded there):
 
 - **Optional key registry** (`commonmemo.facts`): `FactKey(key, description,
