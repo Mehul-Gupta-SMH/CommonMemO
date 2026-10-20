@@ -54,7 +54,7 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
 
     def memory_recall(query: str) -> str:
         """Search long-term memory: past sessions, facts about the user,
-        known world facts, and past feedback. Use it when the request may
+        known world facts, past feedback, lessons and decisions. Use it when the request may
         depend on something from an earlier conversation that is not in
         front of you. Returns matching entries, best first, or a note that
         nothing matched.
@@ -76,6 +76,10 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         lines += [f"[user] {f.key}: {f.value}" for f in related(ctx.facts, lambda f: f"{f.key} {f.value}")]
         lines += [f"[fact] {world_line(w)}" for w in related([*ctx.world, *ctx.world_turn], memory._world_text)]
         lines += [f"[feedback] {item.line()}" for item in related(ctx.lessons, lambda item: item.line())]
+        lines += [f"[lesson] {x.line()}" for x in related(ctx.learned, lambda x: x.text)]
+        if session.user_id is not None:
+            decisions = memory.decisions(user_id=session.user_id)[:50]
+            lines += [f"[decision] {d.line()}" for d in related(decisions, lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5]]
         lines += [f"[past session] {ctx.recap_line(e)}" for e in ctx.recaps]
         return "\n".join(lines) if lines else "Nothing in memory matches that."
 

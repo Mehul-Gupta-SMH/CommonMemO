@@ -73,6 +73,10 @@ class ScriptedAgent:
         """How to reflash a device: what memory says worked, else the usual way."""
         return "serial" if "over serial" in self.memory_text().lower() else "ota"
 
+    def distance_unit(self) -> str:
+        """The unit it answers in: what memory says this user wants, else miles."""
+        return "km" if "use km" in self.memory_text().lower() else "miles"
+
     def report_sections(self) -> list[str]:
         """The sections it writes a report with: the template's, when memory
         shows one, else what a model reaches for unprompted."""

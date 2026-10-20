@@ -159,6 +159,24 @@ examples (`s.save_exemplar(...)`) are the user's data: no one else sees one
 until an operator shares it with `confirm_procedure(id, scrubbed=True)`, and
 `forget_user` removes them.
 
+### Learning from runs
+
+Off by default. Give memory any model, as a function from a prompt to text,
+and each finished session is distilled into decision records, lessons
+(merged when they repeat, pushed to the same user) and proposed
+procedures, rules and exemplar candidates that wait for review:
+
+```python
+from commonmemo import ModelLearner
+
+mem = Memory(learner=ModelLearner(lambda prompt: my_model(prompt)))   # sync or async
+await mem.distill(session_id)        # or run it later, in a batch
+mem.revert(run_id=f"learn:{session_id}")   # undo what one session taught
+```
+
+The learner sees messages, tool calls, feedback and step results, with
+forgotten text redacted; never raw reasoning.
+
 ## Resume a stopped process
 
 ```python

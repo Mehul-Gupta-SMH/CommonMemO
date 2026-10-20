@@ -53,6 +53,7 @@ from .knowledge import (
     FeedbackSummary,
     FreezeRecord,
     Knowledge,
+    DecisionRecord,
     NegativeRecord,
     ProcedureOutcome,
     ProcedureRecord,
@@ -90,6 +91,7 @@ def _clip(value: Any, max_chars: int) -> str:
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from .learning import Learned, Learner
     from .traces import TurnTrace, Why
 
 MORE_PROBE = 5
@@ -117,6 +119,7 @@ class Memory:
         alerts: Optional[AlertPolicy] = None,
         fact_keys: Optional[Iterable[FactKey]] = None,
         ranker: Optional[Ranker] = None,
+        learner: Optional["Learner"] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -146,6 +149,9 @@ class Memory:
         self.ranker: Ranker = ranker or self.engine.ranker() or KeywordRanker()
         """Ranks facts and recall results against a request (see `ranking.py`):
         yours, else the engine's embedder, else shared words."""
+        self.learner = learner
+        """Distills finished sessions into decision records, lessons and
+        proposed procedures (`learning.py`). None (the default): no learning."""
         self.fact_keys = FactRegistry()
         """The optional world-fact key registry (see `facts.py`): what keys
         exist, their allowed values and lifetimes, and which are pinned."""
@@ -428,6 +434,7 @@ class Memory:
             world = related + rest  # the ones the request is about make the cut first
         negatives = self.knowledge.negatives(scopes)
         lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
+        learned = self.knowledge.learned_lessons([f"user:{user_id}"]) if user_id is not None else []
         procedure = await self._procedure_for(query, task, user_id, policy) if procedures else None
         return MemoryContext(
             procedure=procedure,
@@ -436,6 +443,7 @@ class Memory:
             world=world[: policy.max_world],
             world_turn=world_turn,
             lessons=lessons[: policy.max_lessons],
+            learned=learned[: policy.max_lessons],
             tool_notes=self.tool_notes(agent),
             recaps=shown,
             policy=policy,
@@ -445,7 +453,7 @@ class Memory:
                 "facts": len(facts) - policy.max_facts,
                 "world": world_more,
                 "negatives": len(negatives) - policy.max_negatives,
-                "lessons": len(lessons) - policy.max_lessons,
+                "lessons": max(0, len(lessons) - policy.max_lessons) + max(0, len(learned) - policy.max_lessons),
             },
         )
 
@@ -719,6 +727,21 @@ class Memory:
             task=task, entry_kind=check_kind(kind), name=name, scope=scope or self.project_scope, reason=reason,
         ))
 
+    async def distill(self, session_id: str, *, learner: Optional["Learner"] = None,
+                      force: bool = False) -> "Learned":
+        """Learn from a finished session: decision records, lessons merged
+        with earlier ones, proposed procedures and exemplar candidates (see
+        `learning.py`). Runs at close by itself when the memory has a
+        learner; call it to learn later or in a batch. Once per session
+        unless `force`."""
+        from .learning import distill
+
+        return await distill(self, session_id, learner=learner, force=force)
+
+    def decisions(self, *, user_id: Optional[str] = None, session_id: Optional[str] = None) -> list[DecisionRecord]:
+        """Decision records distilled from sessions, newest first."""
+        return self.knowledge.decisions(user_id=user_id, session_id=session_id)
+
     def procedure_outcomes(self, task: Optional[str] = None) -> list[ProcedureOutcome]:
         """Per entry version: how many runs used it, the feedback in those
         runs, and the steps runs skipped. Which version worked better."""
@@ -784,7 +807,7 @@ class Memory:
     def revert(self, *, to: Point = None, run_id: Optional[str] = None, source: Optional[str] = None,
                session_id: Optional[str] = None, kinds: Iterable[str] = REVERTIBLE, scope: Optional[str] = None,
                reason: Optional[str] = None, dry_run: bool = False) -> RevertResult:
-        """Bring world facts and negatives back: `to=` a point (log position,
+        """Bring world facts, negatives and procedures back: `to=` a point (log position,
         time or snapshot), or undo a cause (`run_id=`, `source=`,
         `session_id=`). Appends compensating events tagged
         `run_id="revert:<id>"`; never deletes. `dry_run=True` only plans.

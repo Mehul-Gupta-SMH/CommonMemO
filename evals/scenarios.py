@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -380,6 +382,36 @@ def procedure_by_description(with_memory: bool) -> Outcome:
                    f"pushed to an unrelated request: {noise}", chars)
 
 
+# -- learning from runs: a correction becomes a lesson (#26, phase 2) -------------------
+
+
+def _scripted_model(prompt: str) -> str:
+    """A stand-in for a model: turns each correction in the session into a
+    lesson, and proposes nothing else."""
+    session = prompt.split("\nSession", 1)[-1]
+    lessons = [{"text": f"Use {right}, not {wrong}."}
+               for wrong, right in re.findall(r"not '(.+?)' but '(.+?)'", session)]
+    return json.dumps({"lessons": lessons})
+
+
+def learning_from_runs(with_memory: bool) -> Outcome:
+    from commonmemo import ModelLearner
+
+    mem = Memory(learner=ModelLearner(_scripted_model))
+    with mem.session(user_id="ada", agent="guide") as s:
+        s.message("user", "How long is the ridge trail?")
+        s.message("assistant", "About 8 miles.")
+        s.correct("miles", "km")
+    with mem.session(user_id="ada", agent="guide") as s:
+        agent, chars = agent_for(mem, s, "How far is the lake loop?", {}, with_memory=with_memory)
+        unit = agent.distance_unit()
+    with mem.session(user_id="bob", agent="guide") as s:
+        other, _ = agent_for(mem, s, "How far is the lake loop?", {}, with_memory=with_memory)
+    leaked = other.distance_unit() == "km"
+    return Outcome(unit == "km" and not leaked,
+                   f"answered in {unit} after the correction; another user's answer changed: {leaked}", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -402,6 +434,8 @@ SCENARIOS = [
     Scenario("recall by meaning", "a fact asked about in other words is recalled", recall_by_meaning),
     Scenario("procedure by description", "a request for a known task gets the house template, unnamed",
              procedure_by_description),
+    Scenario("learning from runs", "a correction in one session becomes a lesson for that user's next one",
+             learning_from_runs),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

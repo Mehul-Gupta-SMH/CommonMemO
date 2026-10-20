@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 import time
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, Iterator, Optional
@@ -474,6 +475,11 @@ class Session:
         self._record.closed_at = closed_at
         if consolidate:
             self.recaps = await self.memory.engine.ingest(self._record, self.events())
+            if self.memory.learner is not None:
+                try:
+                    await self.memory.distill(self.session_id)
+                except Exception:  # noqa: BLE001 -- learning is optional; closing must not fail
+                    logging.getLogger("commonmemo").exception("commonmemo: learning from %s failed", self.session_id)
         return self.recaps
 
     async def __aenter__(self) -> "Session":

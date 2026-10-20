@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from .events import (
     Checkpoint,
+    DecisionRecorded,
+    LessonLearned,
     Feedback,
     Forgotten,
     Freeze,
@@ -133,17 +135,26 @@ CREATE TABLE IF NOT EXISTS procedure_runs (
     entry_id TEXT NOT NULL, task TEXT NOT NULL, entry_kind TEXT NOT NULL, name TEXT NOT NULL,
     version INTEGER NOT NULL, skipped TEXT NOT NULL, steps_tracked INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS decisions (
+    event_id TEXT PRIMARY KEY, ts REAL NOT NULL, session_id TEXT, user_id TEXT, agent TEXT, task TEXT,
+    goal TEXT NOT NULL, plan TEXT NOT NULL, chosen TEXT NOT NULL, rejected TEXT NOT NULL, outcome TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lessons_learned (
+    event_id TEXT PRIMARY KEY, scope TEXT NOT NULL, text TEXT NOT NULL, task TEXT,
+    sessions INTEGER NOT NULL, first_seen REAL NOT NULL, last_seen REAL NOT NULL, user_id TEXT
+);
 CREATE TABLE IF NOT EXISTS knowledge_meta (
     key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
-           "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs"]
+           "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs",
+           "decisions", "lessons_learned"]
 
 
 @dataclass(frozen=True)
@@ -241,6 +252,42 @@ class ProcedureOutcome:
     @property
     def approval(self) -> Optional[float]:
         return self.positive / self.rated if self.rated else None
+
+
+@dataclass(frozen=True)
+class DecisionRecord:
+    event_id: str
+    ts: float
+    session_id: Optional[str]
+    user_id: Optional[str]
+    agent: Optional[str]
+    task: Optional[str]
+    goal: str
+    plan: str
+    chosen: str
+    rejected: tuple[str, ...]
+    outcome: str
+
+    def line(self) -> str:
+        out = f"{self.goal}: chose {self.chosen}"
+        if self.rejected:
+            out += f" over {', '.join(self.rejected)}"
+        return out + (f"; {self.outcome}" if self.outcome else "")
+
+
+@dataclass(frozen=True)
+class LessonRecord:
+    event_id: str
+    scope: str
+    text: str
+    task: Optional[str]
+    sessions: int
+    """How many sessions taught it (merged repeats)."""
+    first_seen: float
+    last_seen: float
+
+    def line(self) -> str:
+        return self.text + (f" (seen in {self.sessions} sessions)" if self.sessions > 1 else "")
 
 
 @dataclass(frozen=True)
@@ -580,6 +627,26 @@ class Knowledge:
              json.dumps(list(e.skipped)), int(e.steps_tracked)),
         )
 
+    def _decision(self, e: DecisionRecorded) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (e.id, e.ts, e.session_id, e.user_id, e.agent, e.task, e.goal, e.plan, e.chosen,
+             json.dumps(list(e.rejected)), e.outcome),
+        )
+
+    def _lesson(self, e: LessonLearned) -> None:
+        if e.same_as is not None:
+            n = self._conn.execute(
+                "UPDATE lessons_learned SET sessions = sessions + 1, last_seen = ? WHERE event_id = ?",
+                (e.ts, e.same_as),
+            ).rowcount
+            if n:
+                return  # merged; a lesson whose original is gone (forgotten) starts over below
+        self._conn.execute(
+            "INSERT OR IGNORE INTO lessons_learned VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
+            (e.id, e.scope, e.text, e.task, e.ts, e.ts, e.user_id),
+        )
+
     def _feedback(self, e: Feedback) -> None:
         self._conn.execute(
             'INSERT OR IGNORE INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -853,6 +920,42 @@ class Knowledge:
                 o.corrections += f["kind"] == "correction"
         return sorted(out.values(), key=lambda o: (o.task, o.kind, o.name, o.version))
 
+    # -- learned at consolidation (#26, phase 2) --------------------------------
+
+    def decisions(self, *, user_id: Optional[str] = None, agent: Optional[str] = None,
+                  session_id: Optional[str] = None) -> list[DecisionRecord]:
+        """Decision records, newest first."""
+        where, params = [], []
+        for col, val in (("user_id", user_id), ("agent", agent), ("session_id", session_id)):
+            if val is not None:
+                where.append(f"{col} = ?")
+                params.append(val)
+        sql = "SELECT * FROM decisions" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY ts DESC"
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [DecisionRecord(r["event_id"], r["ts"], r["session_id"], r["user_id"], r["agent"], r["task"],
+                               r["goal"], r["plan"], r["chosen"], tuple(json.loads(r["rejected"])), r["outcome"])
+                for r in rows]
+
+    def learned_lessons(self, scopes: Sequence[str]) -> list[LessonRecord]:
+        """Lessons in `scopes`, the most often seen first, then the newest."""
+        if not scopes:
+            return []
+        marks = ",".join("?" * len(scopes))
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM lessons_learned WHERE scope IN ({marks}) ORDER BY sessions DESC, last_seen DESC",
+                tuple(scopes),
+            ).fetchall()
+        return [LessonRecord(r["event_id"], r["scope"], r["text"], r["task"], r["sessions"], r["first_seen"],
+                             r["last_seen"]) for r in rows]
+
+    def all_procedures(self) -> list[ProcedureRecord]:
+        """Every current entry, in every scope (for reverts)."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM procedures WHERE status = 'current'").fetchall()
+        return [_procedure_record(r) for r in rows]
+
     # -- feedback -----------------------------------------------------------
 
     def _feedback_rows(self, user_id: Optional[str], agent: Optional[str], limit: Optional[int]) -> list[FeedbackRecord]:
@@ -960,6 +1063,10 @@ class Knowledge:
                 "OR status IN ('proposed', 'disputed', 'rejected')))", (f"user:{user_id}", user_id),
             ).rowcount
             n += self._conn.execute("DELETE FROM procedure_runs WHERE user_id = ?", (user_id,)).rowcount
+            n += self._conn.execute("DELETE FROM decisions WHERE user_id = ?", (user_id,)).rowcount
+            n += self._conn.execute(
+                "DELETE FROM lessons_learned WHERE scope = ? OR user_id = ?", (f"user:{user_id}", user_id)
+            ).rowcount
             if session_ids:
                 marks = ",".join("?" * len(session_ids))
                 for table in ("checkpoints", "steps", "tool_last"):
@@ -1000,6 +1107,8 @@ _HANDLERS = {
     ProcedureRejected: Knowledge._procedure_rejected,
     ProcedureRetired: Knowledge._procedure_retired,
     ProcedureFollowed: Knowledge._procedure_followed,
+    DecisionRecorded: Knowledge._decision,
+    LessonLearned: Knowledge._lesson,
 }
 
 __all__ = [
@@ -1007,6 +1116,8 @@ __all__ = [
     "WorldRecord",
     "ProcedureRecord",
     "ProcedureOutcome",
+    "DecisionRecord",
+    "LessonRecord",
     "source_rank",
     "FreezeRecord",
     "FeedbackRecord",

@@ -33,6 +33,7 @@ from .events import (
 from .facts import FactKey
 from .ranking import EmbeddingRanker, KeywordRanker
 from .history import Diff, History, MemoryView
+from .learning import Learner, ModelLearner
 from .memory import Memory
 from .procedures import TaskProcedures
 from .reins import Alert, AlertPolicy, Budget, RevertResult
@@ -61,6 +62,8 @@ __all__ = [
     "ProcedureEntry",
     "ProcedureFollowed",
     "TaskProcedures",
+    "Learner",
+    "ModelLearner",
     "ResumePoint",
     "StepInDoubt",
     "StepInProgress",
