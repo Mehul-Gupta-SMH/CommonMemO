@@ -675,8 +675,9 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25) — seeing what memory did. **Shipped:** turn traces (`Memory.traces`,
   `Memory.why`), `commonmemo show` / `trace`, the read-only `commonmemo inspect`,
   and OpenTelemetry spans (`commonmemo.otel`). Still to come: provenance for
-  supersede history, the world-facts review screen (with #24), and the
-  evaluation dashboard
+  supersede history and the evaluation dashboard. **Review screen shipped**
+  ([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)): `commonmemo inspect --review` approves and rejects world facts and
+  procedure entries
 
 **Planned**
 

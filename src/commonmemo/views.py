@@ -8,6 +8,7 @@ reopen a closed one.
     user_view(mem, "ada")       # profile with provenance, recaps, constraints, tombstones, feedback
     session_view(mem, "s1")     # timeline, where a resume would start, turn traces
     overview(mem)               # recent sessions and users
+    review_queue(mem)           # world facts and procedure entries waiting for review (#45)
 """
 
 from __future__ import annotations
@@ -112,7 +113,29 @@ def overview(mem: "Memory", *, limit: int = 2000) -> dict[str, Any]:
             "world": [{"key": w.key, "value": w.value, "scope": w.scope, "source": w.source}
                       for w in mem.world_facts()],
             "pending": [{"key": w.key, "value": w.value, "scope": w.scope, "user_id": w.user_id}
-                        for w in mem.pending_world_facts()]}
+                        for w in mem.pending_world_facts()],
+            "pending_procedures": len(mem.pending_procedures())}
+
+
+def review_queue(mem: "Memory") -> dict[str, Any]:
+    """Everything waiting for review, oldest first, each with what it would
+    replace: proposed and disputed world facts, and procedure entries."""
+    world = []
+    for w in mem.pending_world_facts():
+        current = {c.key: c for c in mem.knowledge.world_facts([w.scope])}.get(w.key)
+        world.append({"id": w.event_id, "key": w.key, "value": w.value, "scope": w.scope, "source": w.source,
+                      "status": w.status, "proposed_by": w.user_id, "note": w.note, "since": _when(w.valid_from),
+                      "current": current.value if current else None})
+    procedures = []
+    for p in mem.pending_procedures():
+        current = next((c for c in mem.knowledge.procedure_entries([p.scope], p.task)
+                        if (c.kind, c.name, c.scope) == (p.kind, p.name, p.scope)), None)
+        procedures.append({"id": p.event_id, "task": p.task, "kind": p.kind, "name": p.name, "scope": p.scope,
+                           "source": p.source, "status": p.status, "proposed_by": p.user_id, "note": p.note,
+                           "use_when": p.use_when, "body": p.body, "since": _when(p.valid_from),
+                           "current": current.body if current else None,
+                           "current_version": current.version if current else None})
+    return {"world": world, "procedures": procedures}
 
 
 # -- text ----------------------------------------------------------------------

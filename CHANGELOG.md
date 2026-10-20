@@ -2,6 +2,20 @@
 
 ## 0.0.1 — unreleased
 
+Review screen in the inspector ([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)):
+
+- `/review` lists proposed and disputed world facts and procedure entries,
+  each with what it would replace (`views.review_queue`, `/api/review`).
+- `commonmemo inspect --review [--reviewer NAME]` adds Approve (a world
+  fact optionally corrected), Reject (with a reason) and, for an exemplar
+  candidate, Share with everyone ("personal data checked" required, known
+  profile values redacted). Without `--review` the inspector stays read-only.
+- Actions are plain form posts with a per-start token; a request whose Host
+  or Origin isn't the inspector's own, or marked cross-site, is refused.
+  Reads now refuse a foreign Host too (DNS rebinding).
+- Every action runs under `run_id="review:<reviewer>"`, so
+  `revert(run_id=...)` undoes a review session.
+
 Learning from runs, procedural memory phase 2 ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26), ADR 0003 section 6):
 
 - `Memory(learner=...)`, off by default. `ModelLearner(complete)` works with

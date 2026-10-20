@@ -238,6 +238,7 @@ removes a user's traces).
 commonmemo trace s2 --why refund_window   # why the agent got it: the events it came from
 commonmemo show user ada                  # profile, constraints, what was forgotten, past sessions
 commonmemo inspect --open                 # the same, in a local read-only web page
+commonmemo inspect --review               # also approve and reject proposed facts and procedures
 ```
 
 ```python

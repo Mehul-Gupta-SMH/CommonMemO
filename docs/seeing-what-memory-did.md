@@ -67,13 +67,31 @@ A local web page at `http://127.0.0.1:8765/`, from the standard library: no
 server to deploy, no account. It shows the overview (recent sessions, users,
 world facts and proposals waiting for review), each user's page, and each
 session's timeline with its turn traces; every pushed item has a **why** link.
-The same views are JSON under `/api/` (`/api/overview`, `/api/user/<id>`,
-`/api/session/<id>`, `/api/why?session=&key=`).
+The **Review** page lists what waits for review: proposed and disputed
+world facts, and procedure entries (agent proposals, learned ones,
+exemplar candidates), each with what it would replace. The same views are
+JSON under `/api/` (`/api/overview`, `/api/user/<id>`, `/api/session/<id>`,
+`/api/why?session=&key=`, `/api/review`).
 
-It is **read-only**: it answers GET only, and approving facts or forgetting
-comes later with the world-facts review screen. It binds to 127.0.0.1 only.
-Stored memory is untrusted text, so every value is escaped and the pages run
-no scripts (a strict Content-Security-Policy tells the browser so).
+It is **read-only by default**: it answers GET only. It binds to 127.0.0.1
+only. Stored memory is untrusted text, so every value is escaped and the
+pages run no scripts (a strict Content-Security-Policy tells the browser so).
+
+### Reviewing
+
+```bash
+commonmemo inspect --review --reviewer ada
+```
+
+adds Approve (a world fact optionally corrected), Reject (with a reason)
+and, for an exemplar candidate, Share with everyone, which needs "personal
+data checked" and redacts the user's known profile values
+([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)). The actions are plain form posts. Each must carry a token the
+server made at start, from a page with the inspector's own Host and Origin,
+so another site open in the browser can't post an approval (CSRF) or read
+pages through a rebound DNS name. Every action runs under
+`run_id="review:<reviewer>"`: it is in the Log, and
+`mem.revert(run_id="review:ada")` undoes a review session.
 
 ## Next to your LLM calls: OpenTelemetry
 
