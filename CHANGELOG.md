@@ -2,6 +2,19 @@
 
 ## 0.0.1 — unreleased
 
+LoCoMo live benchmark ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)):
+
+- **`scripts/locomo_benchmark.py`** runs a LoCoMo conversation with Claude Code
+  as the model in four conditions (no memory; memory as shipped; memory with
+  model-extracted facts; the whole conversation), judged by a model. The data
+  is downloaded at run time (CC BY-NC 4.0) and disguised against
+  contamination; answers are cached per question and a budget caps the spend.
+- **First result** (48 questions, one conversation; `docs/live-runs.md`): 14/48
+  with no memory, 23/48 with memory as shipped, 38/48 with extracted facts,
+  39/48 with the whole conversation at 3.6 times the cost per question. The
+  local engine's one-line recaps are why memory as shipped stays close to the
+  floor: [#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60) (model-backed extraction at session end).
+
 Environment facts ([#57](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/57)):
 
 - **`mem.detect_environment(path)`** records the Python version, OS and the
