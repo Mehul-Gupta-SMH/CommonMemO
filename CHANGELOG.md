@@ -2,6 +2,21 @@
 
 ## 0.0.1 — unreleased
 
+Two findings of the live run fixed ([#51](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/51)):
+
+- **Procedure matching scores the task's description, not the request.** A
+  request now matches a task when it contains enough of the task's name and
+  `use_when` words (half, by default: `min_procedure_score` 0.5). A long
+  request ("...We shipped the login page; the payments API is late...") no
+  longer dilutes the match, and a short one sharing two common words ("the
+  team meeting this week") no longer triggers it. With an embedding ranker
+  it is cosine similarity, as before.
+- **Recaps name the facts a session learned, without their values.** The
+  local engine's recap said "learned: key=value; ...", so a recap could carry
+  facts the push had just left out ("More in memory than shown here").
+  Values live in the UserProfile, where the push ranks and limits them; the
+  recap now says "learned about the user: key, key, ..." (ten names at most).
+
 Traces tell the truth (bugs found by the live run):
 
 - [#49](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/49): a push's trace lists only the items in the text it delivered.
@@ -107,7 +122,7 @@ Procedural memory, phase 1 ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/
   once, idempotent, a changed body is a new version.
 - `Memory.session(task=...)` / `context(task=...)` names the task; otherwise
   the request is matched against `use_when` lines by the memory's ranker
-  (`MemoryPolicy.min_procedure_score`, 0.3). The turn half gets rules and
+  (`MemoryPolicy.min_procedure_score`, 0.5 since #51). The turn half gets rules and
   templates (clipped at `max_procedure_chars`) and a procedure's step names.
 - Agent tools: `memory_get_procedure(task)` (only when tasks exist; its
   description lists them) and `memory_save_procedure` (the user's own way at

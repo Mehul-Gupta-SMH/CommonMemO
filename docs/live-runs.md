@@ -137,6 +137,10 @@ with mem.session("s", user_id="ada") as s:
 
 ### Findings (not bugs)
 
+Both of the first two are now fixed by [#51](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/51): matching scores how much of the
+task's description a request contains, and recaps name learned facts without
+their values.
+
 - **The procedure matcher missed a realistic request (scenario 3).** With
   the default keyword ranker, "Can you write up this week's status report?"
   matches `use_when: Writing the weekly status report for the team`.

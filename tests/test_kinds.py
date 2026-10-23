@@ -248,7 +248,7 @@ def test_memory_text_is_framed_as_data():
 def test_a_forgotten_fact_is_redacted_from_recaps_and_shows_again_once_restated():
     mem = Memory()
     with mem.session(user_id="ada") as s:
-        s.message("user", "ship to my home")
+        s.message("user", "ship to my home, 12 Baker Street")  # the recap quotes the message
         s.remember("home_address", "12 Baker Street")
     with mem.session(user_id="ada") as s:
         s.forget("home_address", pattern="Baker")

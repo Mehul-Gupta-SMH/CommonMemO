@@ -302,8 +302,9 @@ over project over global), and a user's own entry ("my reports skip the
 risks section") overrides the project's by name.
 
 A request finds its task in order: named by the app (`session(task=...)`),
-matched against `use_when` lines by the memory's ranker above
-`MemoryPolicy.min_procedure_score`, or asked for by the agent
+matched against `use_when` lines by the memory's ranker (the share of the
+task's description found in the request, so a long request isn't diluted)
+above `MemoryPolicy.min_procedure_score`, or asked for by the agent
 (`memory_get_procedure`, whose description lists the tasks). The push
 carries rules and templates in full (each clipped) and a procedure as its
 step names; exemplars are pull only. Each pushed or pulled entry is in the

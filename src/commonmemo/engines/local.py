@@ -106,7 +106,12 @@ def summarize(session: SessionRecord, events: Sequence[MemoryEvent]) -> str:
         kinds = sorted({e.kind for e in other})
         parts.append(f"events: {', '.join(kinds)}")
     if facts:
-        parts.append("learned: " + "; ".join(f"{f.key}={f.value}" for f in facts))
+        # Names only: the values are in the UserProfile, where the push ranks
+        # and limits them; quoting them here would carry facts the push left
+        # out ("More in memory than shown here") into every recap (#51).
+        keys = list(dict.fromkeys(f.key for f in facts))
+        more = f" and {len(keys) - 10} more" if len(keys) > 10 else ""
+        parts.append("learned about the user: " + ", ".join(keys[:10]) + more)
     if described:
         parts.append("noted: " + " ".join(described))
     if last_reply:
