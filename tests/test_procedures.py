@@ -98,13 +98,13 @@ def test_a_request_is_matched_by_description(mem):
     with mem.session(user_id="ada") as s:
         hit = run(s.context("Can you write this week's status report?"))
         miss = run(s.context("What's the refund window?"))
-    assert hit.procedure.how == "matched" and hit.procedure.score >= 0.3
+    assert hit.procedure.how == "matched" and hit.procedure.score >= 0.5
     assert miss.procedure is None
     strict = Memory(project="acme", policy=MemoryPolicy(min_procedure_score=0.9))
     strict.load_procedures([{"task": "weekly_report", "kind": "rule", "name": "r", "body": "b",
                              "use_when": "Writing the weekly status report for the team"}])
     with strict.session(user_id="ada") as s:
-        # Half the request's words match: enough by default, not at 0.9.
+        # 3 of the description's 5 words: enough by default (0.5), not at 0.9.
         assert run(s.context("Write the status report, then book flights to Paris")).procedure is None
 
 
@@ -259,3 +259,13 @@ def test_the_harness_hook_pushes_a_matched_procedure(mem, tmp_path):
     out = handle({"hook_event_name": "UserPromptSubmit", "session_id": "h1", "cwd": str(tmp_path),
                   "prompt": "Please write the weekly status report"}, mem, harness="claude-code", user="ada")
     assert "## How weekly_report is done" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_matching_counts_the_description_not_the_request(mem):
+    """#51: a long request still matches; a short one sharing two common words doesn't."""
+    with mem.session(user_id="ada") as s:
+        long = run(s.context("Can you write up this week's status report? We shipped the login page; the payments "
+                             "API is a week late; next we start on search. Keep it short."))
+        near = run(s.context("the team meeting this week"))
+    assert long.procedure is not None and long.procedure.task == "weekly_report"
+    assert near.procedure is None

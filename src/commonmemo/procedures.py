@@ -299,14 +299,20 @@ def task_text(task: str, entries: Sequence[ProcedureRecord]) -> str:
 async def match(ranker: "Ranker", query: Optional[str], entries: Sequence[ProcedureRecord],
                 threshold: float) -> Optional[tuple[str, float]]:
     """The task the request is about, and its score, if any scores at least
-    `threshold`. Only tasks with a `use_when` line can be matched."""
+    `threshold`: the share of the task's description (its name and `use_when`
+    lines) found in the request, or their cosine similarity with an embedding
+    ranker. Only tasks with a `use_when` line can be matched."""
     by_task: dict[str, list[ProcedureRecord]] = {}
     for e in entries:
         by_task.setdefault(e.task, []).append(e)
     tasks = [t for t, es in by_task.items() if any(e.use_when for e in es)]
     if not query or not tasks:
         return None
-    scores = await ranker.score(query, [task_text(t, by_task[t]) for t in tasks])
+    # How much of each task's description the request contains, not how much
+    # of the request the description contains: a long request ("...We shipped
+    # the login page; the payments API is late...") would dilute the latter,
+    # and a short one sharing two common words would pass it (#51).
+    scores = [(await ranker.score(task_text(t, by_task[t]), [query]))[0] for t in tasks]
     best = max(zip(scores, tasks), key=lambda p: p[0])
     return (best[1], best[0]) if best[0] >= threshold else None
 

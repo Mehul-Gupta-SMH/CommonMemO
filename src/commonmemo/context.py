@@ -74,11 +74,12 @@ class MemoryPolicy:
     min_recall_score: Optional[float] = None
     """How related a fact, world fact or lesson must be for `memory_recall`
     to return it; None uses the ranker's own threshold (`ranking.py`)."""
-    min_procedure_score: float = 0.3
+    min_procedure_score: float = 0.5
     """How well a request must match a task's `use_when` lines for its
     templates, rules and steps to be pushed when the app didn't name the task
-    (`procedures.py`): a share of the request's words, or a cosine similarity
-    with an embedding ranker. Below it, the agent can still pull them."""
+    (`procedures.py`): the share of the task description's words found in the
+    request (half, by default), or a cosine similarity with an embedding
+    ranker. Below it, the agent can still pull them."""
     lesson_merge_score: float = 0.8
     """A learned lesson this close to an earlier one (by the ranker) is
     merged with it: counted as seen again, not stored twice."""
