@@ -15,7 +15,7 @@ events into it. So one handler serves all three:
 
 | `hook_event_name` | Recorded | Pushed back (`additionalContext`) |
 |---|---|---|
-| `SessionStart` | opens or resumes the session | everything memory holds for the session: stable memory, and where a resumed session stands (its checkpoint and latest events) |
+| `SessionStart` | opens or resumes the session; the project's environment facts (Python, OS, package versions), when they changed (`environment.py`; `--no-environment` turns it off) | everything memory holds for the session: stable memory, and where a resumed session stands (its checkpoint and latest events) |
 | `UserPromptSubmit` | the prompt, as a user `Message` | memory for this turn: relevant recaps, state |
 | `PostToolUse` / `PostToolUseFailure` | a `ToolInvoked` (feeds tool memory) | recaps of earlier sessions the result brings up, if the turn's push missed them (`Session.refresh`, at most `MemoryPolicy.max_refreshes` per turn) |
 | `Stop` | the reply, as an assistant `Message` | |
@@ -102,10 +102,11 @@ def session_id_for(harness: str, payload: dict[str, Any], configured: Optional[s
 def handle(
     payload: dict[str, Any], memory: Memory, *, harness: str, user: Optional[str] = None,
     agent: Optional[str] = None, session: Optional[str] = None, read_only: bool = False,
-    recall_tool: bool = False,
+    recall_tool: bool = False, environment: bool = True,
 ) -> Optional[dict[str, Any]]:
     """Record one hook event; returns the JSON to print, or None.
-    `read_only` pushes memory but records nothing."""
+    `read_only` pushes memory but records nothing; `environment` detects the
+    project's environment facts at SessionStart."""
     event = payload.get("hook_event_name")
     if event not in _EVENTS["claude-code"]:
         return None  # before opening anything: an unrelated event never reopens a closed session
@@ -119,6 +120,12 @@ def handle(
         # whose conversation this one never saw: include its latest events.
         if read_only:
             return _push(event, run_sync(s.context("", recent=RESUME_EVENTS)).render())
+        if environment:
+            try:
+                # commonmemo's interpreter may not be the project's
+                memory.detect_environment(payload.get("cwd") or ".", this_interpreter=False)
+            except Exception as e:  # noqa: BLE001 -- the push matters more than the facts
+                print(f"commonmemo hook: environment not detected: {type(e).__name__}: {e}", file=sys.stderr)
         return _push(event, run_sync(s.push("", reason="start", part="all", recent=RESUME_EVENTS)).render())
     if event == "UserPromptSubmit":
         prompt = payload.get("prompt") or ""
@@ -168,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="commonmemo hook", description="Handle one harness hook event (JSON on stdin).")
     p.add_argument("--harness", choices=HARNESSES, required=True)
     _recall_option(p)
+    _environment_option(p)
     return memory_options(p, agent=None)
 
 
@@ -175,6 +183,11 @@ def _recall_option(p: argparse.ArgumentParser) -> None:
     p.add_argument("--recall-tool", action="store_true", default=env_flag("COMMONMEMO_RECALL_TOOL"),
                    help="the harness also has the memory MCP server, so the push may say "
                         "\"call memory_recall\" when it left things out")
+
+
+def _environment_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--no-environment", action="store_true", default=env_flag("COMMONMEMO_NO_ENVIRONMENT"),
+                   help="don't record the project's Python, OS and package versions at SessionStart")
 
 
 def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[str]) -> int:
@@ -186,7 +199,7 @@ def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[s
             raise ValueError("expected a hook payload with a session_id")
         memory = Memory(args.store, args.engine, project=args.project)
         out = handle(payload, memory, harness=args.harness, user=args.user, agent=args.agent,
-                     session=args.session, read_only=args.read_only, recall_tool=args.recall_tool)
+                     session=args.session, read_only=args.read_only, recall_tool=args.recall_tool, environment=not args.no_environment)
         if out is not None:
             stdout.write(json.dumps(out) + "\n")
     except Exception as e:  # noqa: BLE001 -- a memory failure must never block the harness
@@ -214,6 +227,8 @@ def _command(harness: str, args: argparse.Namespace) -> str:
         parts.append("--read-only")
     if args.recall_tool:
         parts.append("--recall-tool")
+    if args.no_environment:
+        parts.append("--no-environment")
     return " ".join(shlex.quote(p) for p in parts)
 
 
@@ -235,6 +250,7 @@ def setup_main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="commonmemo setup", description="Print the hook config for a harness.")
     p.add_argument("harness", choices=HARNESSES)
     _recall_option(p)
+    _environment_option(p)
     args = memory_options(p, agent=None).parse_args(argv)
     if args.harness == "opencode":
         sys.stdout.write(opencode_plugin())

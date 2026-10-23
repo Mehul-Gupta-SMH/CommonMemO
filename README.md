@@ -47,7 +47,7 @@ commonmemo inspect --store sqlite:///demo.db --project shop --review --open
 commonmemo trace support-ada-2 --store sqlite:///demo.db
 commonmemo trace support-ada-2 --why refund_reply/rule/timeline --store sqlite:///demo.db
 
-# Does memory change what an agent does? 16 scenarios, with and without it.
+# Does memory change what an agent does? 17 scenarios, with and without it.
 python -m evals
 
 # Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
@@ -216,6 +216,24 @@ The registry is optional ([#24](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - registered lifetimes make facts go stale by default;
 - pinned facts are always pushed; the rest only when the request is about
   them, so hundreds of facts don't crowd the prompt.
+
+**The environment, detected** ([#57](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/57)). Agents guess the Python version and
+library versions when nobody says. `mem.detect_environment(".")` records
+them as `env.*` world facts, and the harness hooks do it at every session
+start:
+
+```
+- env.python: 3.12.4 (requires >=3.11) (as of 2026-10-23, tool result, time-sensitive)
+- env.os: Linux 6.8.0 (x86_64) (as of 2026-10-23, tool result, time-sensitive)
+- env.python_packages: httpx 0.27.2, pydantic 1.10.13 (installed 1.10.9) (as of 2026-10-23, tool result, time-sensitive)
+```
+
+Versions come from `pyproject.toml` / `requirements*.txt`, at the version
+locked in `uv.lock` or `poetry.lock`, plus the installed one where it
+differs, and the same for `package.json`. They are direct dependencies only,
+pinned in the stable half, and trusted as tool results, so an agent's guess
+doesn't replace them. They refresh when they change or go stale. Environment
+variables are never read.
 
 ## How a task is done: procedural memory
 
@@ -460,7 +478,7 @@ export COMMONMEMO_USER=ada
 
 | Event | Recorded | Pushed |
 |---|---|---|
-| session start | opens or resumes the session | stable memory, and where a resumed session stands |
+| session start | opens or resumes the session; the project's environment facts, when they changed (`--no-environment` turns it off) | stable memory, and where a resumed session stands |
 | prompt | the prompt | memory for this turn (relevant recaps, the matched procedure, state) |
 | tool call | the call, its result or error (feeds tool memory) | recaps the result brings up that the turn missed |
 | reply | the reply (Claude Code, Codex) | |
@@ -503,8 +521,8 @@ that's what the suite measures.
 python -m evals                   # prints the report; docs/evals.md is the committed baseline
 ```
 
-All **16 of 16** pass with memory. In the **10** scenarios where a run
-without memory makes sense, memory turns a failure into a success in all 10.
+All **17 of 17** pass with memory. In the **11** scenarios where a run
+without memory makes sense, memory turns a failure into a success in all 11.
 The other 6 are safety checks with nothing to compare against:
 - a tool failure with a known fix is not repeated;
 - a user's "never" is respected, and the latest preference wins;
@@ -518,7 +536,8 @@ The other 6 are safety checks with nothing to compare against:
 - a fact past its lifetime isn't quoted, and an agent's write doesn't override an operator's;
 - a fact asked about in other words is recalled (4/4 by meaning, 1/4 by shared words);
 - a request for a known task gets the house template without naming it;
-- a correction in one session becomes a lesson for that user's next one, and no one else's.
+- a correction in one session becomes a lesson for that user's next one, and no one else's;
+- the agent uses the API of the library version the project pins (pydantic 1's `.dict()`).
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 

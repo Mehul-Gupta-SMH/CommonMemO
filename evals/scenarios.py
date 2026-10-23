@@ -412,6 +412,22 @@ def learning_from_runs(with_memory: bool) -> Outcome:
                    f"answered in {unit} after the correction; another user's answer changed: {leaked}", chars)
 
 
+# -- environment facts: the pinned library version decides the API (#57) ------------
+
+
+def pinned_library_version(with_memory: bool) -> Outcome:
+    project = Path(tempfile.mkdtemp())
+    (project / "requirements.txt").write_text("pydantic==1.10.13\n")
+    (project / ".python-version").write_text("3.11.9\n")
+    mem = Memory(project="billing")
+    mem.detect_environment(project, this_interpreter=False)  # as the harness hooks do
+    with mem.session(user_id="ada", agent="claude-code") as s:
+        agent, chars = agent_for(mem, s, "Return the invoice model as a dict from the API handler", {},
+                                 with_memory=with_memory)
+    method = agent.pydantic_dump()
+    return Outcome(method == ".dict()", f"called {method} on a pydantic 1.10 model", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -436,6 +452,8 @@ SCENARIOS = [
              procedure_by_description),
     Scenario("learning from runs", "a correction in one session becomes a lesson for that user's next one",
              learning_from_runs),
+    Scenario("pinned library version", "the agent uses the API of the library version the project pins",
+             pinned_library_version),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

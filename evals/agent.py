@@ -87,6 +87,11 @@ class ScriptedAgent:
         block = memory[start:].split("\n- ", 1)[0]
         return re.findall(r"(?m)^\s*## (.+)$", block)
 
+    def pydantic_dump(self) -> str:
+        """How it serializes a pydantic model: the v1 method when memory says
+        the project pins pydantic 1, else the v2 one models reach for today."""
+        return ".dict()" if re.search(r"\bpydantic 1\.", self.memory_text()) else ".model_dump()"
+
     def obeys(self, phrase: str) -> bool:
         """A naive model follows `phrase` if it appears as an instruction."""
         return phrase.lower() in self.instructions().lower()

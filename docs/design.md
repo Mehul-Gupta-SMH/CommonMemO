@@ -269,6 +269,19 @@ JSON/YAML file through `load_facts`. Without one, nothing changes. With one:
 - **Bulk import** is idempotent: a fact whose current value matches isn't
   written again (`source="import"`, an operator's rank).
 
+**Environment facts** ([#57](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/57), `environment.py`) are world facts the
+machine states: `env.python`, `env.os`, `env.python_packages`, `env.node`,
+`env.node_packages`. `detect_environment(path)` reads them from the project's
+virtualenv, `.python-version`, `pyproject.toml`, `requirements*.txt`,
+`uv.lock` / `poetry.lock`, `package.json` and `package-lock.json`. They
+cover direct dependencies at the locked version, with the installed version
+where it differs. The hooks run it at SessionStart, with
+`this_interpreter=False`, since commonmemo's own Python may not be the
+project's. They are written with `source="tool"`, last 7 days, and are
+rewritten only when they change or go stale; a key no longer detected is
+retracted. `env.*` keys are always pinned, registry or not. Environment
+variables are never read, and requirement lines with URLs are skipped.
+
 Conditional facts ("30 days in the EU") come later ([#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38)); until then,
 per-region differences use project scopes.
 
@@ -692,7 +705,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, sixteen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, seventeen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
