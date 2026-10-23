@@ -30,6 +30,7 @@ from .events import (
     WorldFact,
     event_from_dict,
 )
+from .environment import EnvironmentResult
 from .facts import FactKey
 from .ranking import EmbeddingRanker, KeywordRanker
 from .history import Diff, History, MemoryView
@@ -51,6 +52,7 @@ __all__ = [
     "current_session",
     "MemoryContext",
     "MemoryPolicy",
+    "EnvironmentResult",
     "FactKey",
     "EmbeddingRanker",
     "KeywordRanker",

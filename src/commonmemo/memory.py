@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, TypeVar, Un
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
 from .facts import FactKey, FactRegistry, ImportResult
+from .environment import EnvironmentResult, is_environment_key
 from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
 from .ranking import KeywordRanker, Ranker, rank
 from .events import (
@@ -430,8 +431,9 @@ class Memory:
             world, world_turn = pinned, matched[: policy.max_world]
             world_more = max(0, len(pinned) - policy.max_world) + len(unpinned) - len(world_turn)
         elif len(world) > policy.max_world:
-            related, rest = await rank(self.ranker, query, world, self._world_text)
-            world = related + rest  # the ones the request is about make the cut first
+            env = [w for w in world if is_environment_key(w.key)]  # always kept, as if pinned
+            related, rest = await rank(self.ranker, query, [w for w in world if w not in env], self._world_text)
+            world = env + related + rest  # the ones the request is about make the cut first
         negatives = self.knowledge.negatives(scopes)
         lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
         learned = self.knowledge.learned_lessons([f"user:{user_id}"]) if user_id is not None else []
@@ -565,6 +567,17 @@ class Memory:
         spec = FactKey(key, description, tuple(allowed) if allowed is not None else None, lifetime, pinned)
         self.fact_keys.register(spec)
         return spec
+
+    def detect_environment(self, path: Union[str, "Path"] = ".", *, scope: Optional[str] = None,
+                           lifetime: Union[float, str] = "7d", this_interpreter: bool = True) -> EnvironmentResult:
+        """Record the Python version, OS and the versions the project at
+        `path` pins as trusted, pinned `env.*` world facts, writing only what
+        changed or went stale (see `environment.py`). `this_interpreter`:
+        the running Python is the project's (False in the harness hooks,
+        which run it at SessionStart)."""
+        from .environment import record
+
+        return record(self, path, scope=scope, lifetime=lifetime, this_interpreter=this_interpreter)
 
     def load_facts(self, source: Union[str, "Path", dict[str, Any]]) -> ImportResult:
         """Register keys and write facts from a JSON or YAML file (or a dict),

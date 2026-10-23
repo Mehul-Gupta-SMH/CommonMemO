@@ -119,6 +119,8 @@ class FactRegistry:
             self.keys[k.key] = k
 
     def pinned(self, key: str) -> bool:
+        if key.startswith("env."):  # environment facts (environment.py), registered or not
+            return True
         spec = self.keys.get(key)
         return bool(spec and spec.pinned)
 

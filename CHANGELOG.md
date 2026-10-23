@@ -2,6 +2,24 @@
 
 ## 0.0.1 — unreleased
 
+Environment facts ([#57](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/57)):
+
+- **`mem.detect_environment(path)`** records the Python version, OS and the
+  versions the project pins as `env.*` world facts. The pins are read from
+  `pyproject.toml` and `requirements*.txt`, locked in `uv.lock` /
+  `poetry.lock`, with the installed version where it differs; `package.json`
+  and the Node version are read the same way.
+  - They are trusted (`source="tool"`), always pinned in the stable half, and
+    last 7 days.
+  - Only changes and stale values are written; a key that is gone is
+    retracted.
+  - Environment variables are never read.
+- **The hooks run it at SessionStart** (`--no-environment` or
+  `COMMONMEMO_NO_ENVIRONMENT` turns it off). They use only the project's
+  files and virtualenv, not commonmemo's own interpreter.
+- **Eval scenario "pinned library version":** with memory, the agent calls
+  pydantic 1's `.dict()`; without it, the v2 `.model_dump()`.
+
 Two findings of the live run fixed ([#51](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/51)):
 
 - **Procedure matching scores the task's description, not the request.** A
