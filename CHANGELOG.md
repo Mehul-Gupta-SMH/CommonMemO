@@ -2,6 +2,21 @@
 
 ## 0.0.1 — unreleased
 
+What was said ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)):
+
+- **`MemoryPolicy(messages=N, recall_messages=N)`** (off by default): memory
+  searches windows of the user's own past messages (6 consecutive messages of
+  one of their other sessions), pushes the best `N` with the turn and returns
+  `N` from `memory_recall`, ranked by the memory's ranker. Windows carry their
+  event ids (trace item `said`, found by `why`). Never the current session's,
+  never another user's; none for a session without a user; forgotten text is
+  redacted and `forget_user` removes the messages. `commonmemo hook`, `mcp`
+  and `setup` take `--messages` and `--recall-messages`.
+- **Result** (five LoCoMo conversations, 222 questions, Haiku; `docs/live-runs.md`):
+  18% with memory as shipped, 52% with extraction, 53% with naive retrieval,
+  **61%** with message windows, **64%** with both.
+- **Eval scenario "detail in what was said"** (19 of 19).
+
 LoCoMo on five conversations with Haiku, and a naive-retrieval baseline ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59)):
 
 - **`scripts/locomo_benchmark.py`** gains a `rag` condition (the transcript in

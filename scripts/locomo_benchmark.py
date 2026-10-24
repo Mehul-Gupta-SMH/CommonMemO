@@ -13,6 +13,8 @@ conditions, each question in its own headless `claude -p` session:
 |---|---|
 | `none` | nothing: the floor |
 | `rag` | the simple alternative: the transcript cut into windows of 6 turns, the 8 that share the most words with the question (the same keyword ranker memory uses) pasted into the prompt. No memory, no tools |
+| `said` | `memory` plus the user's past messages searched (#62): 8 windows pushed with each turn and 8 returned by `memory_recall`, the same windows `rag` pastes |
+| `both` | `extracted` plus the same message windows |
 | `memory` | CommonMemo as shipped: every turn recorded in a session per LoCoMo session, closed (the local engine's recaps), read through the hooks and the MCP tools, read-only |
 | `extracted` | the same, with `Memory(extractor=ModelExtractor(...))`: a model call as each session closes writes its facts into the user profile (#60) |
 | `full` | the whole conversation in the prompt: the ceiling |
@@ -67,7 +69,10 @@ DATA_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/loc
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "commonmemo"
 USER = "locomo"
 CATEGORIES = {1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop"}
-CONDITIONS = ("none", "rag", "memory", "extracted", "full")
+CONDITIONS = ("none", "rag", "memory", "extracted", "said", "both", "full")
+STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "both": "extracted"}
+"""Which ingested store each memory condition reads; `said` and `both` add the user's past messages (#62)."""
+SAID_FLAGS = ["--messages", "8", "--recall-messages", "8"]
 RAG_WINDOW, RAG_TOP = 6, 8
 """The simple alternative a developer would build: windows of 6 turns, the 8 best against the question."""
 CALL_BUDGET = "0.60"
@@ -216,11 +221,12 @@ def extractor(model: Optional[str]) -> ModelExtractor:
 
 def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor]) -> dict[str, int]:
     """Record the conversation, one closed memory session per LoCoMo session; with an
-    extractor, closing a session also extracts its facts (the product feature)."""
-    db.unlink(missing_ok=True)
+    extractor, closing a session also extracts its facts (the product feature). A store
+    already in the working directory is reused, so a resumed or extended run asks about the same facts."""
     # A bulk ingestion looks like a write spike to the default alerts; that is not what is measured here.
+    built = db.exists()
     mem = Memory(f"sqlite:///{db}", project="locomo", extractor=extract, alerts=AlertPolicy(enabled=False))
-    for n, date, turns in sessions_of(conv):
+    for n, date, turns in [] if built else sessions_of(conv):
         with mem.session(f"locomo-session-{n}", user_id=USER, agent="locomo") as s:
             for i, t in enumerate(turns):
                 role = "user" if t["speaker"] == conv["conversation"]["speaker_a"] else "assistant"
@@ -231,20 +237,20 @@ def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor]) ->
     return stats
 
 
-def project(root: Path, db: Path) -> Path:
+def project(root: Path, name: str, db: Path, flags: list[str]) -> Path:
     """A scratch project wired to CommonMemo as a user would, but read-only: asking a question must not change memory."""
-    d = root / f"project-{db.stem}"
+    d = root / f"project-{name}"
     (d / ".claude").mkdir(parents=True, exist_ok=True)
     store = f"sqlite:///{db}"
     out = subprocess.run([str(SHIM_DIR / "commonmemo"), "setup", "claude-code", "--user", USER,
-                          "--project", "locomo", "--recall-tool", "--read-only", "--no-environment", "--store", store],
+                          "--project", "locomo", "--recall-tool", "--read-only", "--no-environment", "--store", store, *flags],
                          capture_output=True, text=True, check=True)
     settings = json.loads(out.stdout)
     settings["enableAllProjectMcpServers"] = True
     (d / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2))
     (d / ".mcp.json").write_text(json.dumps({"mcpServers": {"memory": {
         "command": "commonmemo", "args": ["mcp", "--user", USER, "--agent", "claude-code", "--project", "locomo",
-                                          "--read-only"],
+                                          "--read-only", *flags],
         "env": {"COMMONMEMO_STORE": store},
     }}}, indent=2))
     return d
@@ -277,7 +283,7 @@ def question_prompt(conv: dict[str, Any], q: str, condition: str, windows: Optio
     if condition == "rag":
         return (f"You have no tools. Here are excerpts from their conversations that may be relevant.\n\n"
                 f"{rag_context(windows or [], q)}\n\n{ask_line}")
-    if condition in ("memory", "extracted"):
+    if condition in STORE_OF:
         return f"You have memory of their conversations. Use it.\n\n{ask_line}"
     return f"You have no tools and have not seen their conversations.\n\n{ask_line}"
 
@@ -318,10 +324,11 @@ def main() -> int:
 
     dbs: dict[str, Path] = {}
     ingest_stats: dict[str, Any] = {}
-    if "memory" in conditions or args.ingest_only:
+    wanted = {STORE_OF[c] for c in conditions if c in STORE_OF} | ({"memory", "extracted"} if args.ingest_only else set())
+    if "memory" in wanted:
         dbs["memory"] = work / "memory.db"
         ingest_stats["memory"] = ingest(conv, dbs["memory"], None)
-    if "extracted" in conditions or args.ingest_only:
+    if "extracted" in wanted:
         dbs["extracted"] = work / "extracted.db"
         ingest_stats["extracted"] = ingest(conv, dbs["extracted"], None if args.ingest_only else extractor(args.model))
     print(f"ingested: {json.dumps(ingest_stats)}", file=sys.stderr)
@@ -335,7 +342,8 @@ def main() -> int:
         for line in cache_file.read_text().splitlines():
             r = json.loads(line)
             cached[f"{r['condition']}|{r['id']}"] = r
-    projects = {c: project(work, dbs[c]) for c in dbs}
+    projects = {c: project(work, c, dbs[STORE_OF[c]], SAID_FLAGS if c in ("said", "both") else [])
+                for c in conditions if c in STORE_OF}
     windows = rag_windows(conv)
     bare = work / "bare"
     bare.mkdir(exist_ok=True)
@@ -347,7 +355,7 @@ def main() -> int:
             return cached[key]
         if SPENT["usd"] >= args.budget:
             return None
-        memory = condition in ("memory", "extracted")
+        memory = condition in STORE_OF
         r = ask(projects[condition] if memory else bare, question_prompt(conv, q["question"], condition, windows),
                 model=args.model, max_turns=8 if memory else 1, tools=memory)
         ok, judge_cost = judge(q["question"], q["gold"], r["reply"], args.judge_model) if not r["error"] else (None, 0.0)

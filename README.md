@@ -47,7 +47,7 @@ commonmemo inspect --store sqlite:///demo.db --project shop --review --open
 commonmemo trace support-ada-2 --store sqlite:///demo.db
 commonmemo trace support-ada-2 --why refund_reply/rule/timeline --store sqlite:///demo.db
 
-# Does memory change what an agent does? 18 scenarios, with and without it.
+# Does memory change what an agent does? 19 scenarios, with and without it.
 python -m evals
 
 # Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
@@ -312,6 +312,28 @@ and a failing model never fails the close. On a LoCoMo conversation it is the
 difference between 23 and 38 correct answers out of 48
 ([docs/live-runs.md](docs/live-runs.md)).
 
+### What was said
+
+Recaps and facts are what memory made of earlier sessions. Memory can also
+search the messages themselves ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62); off by default, since it puts the user's
+own earlier words into the prompt):
+
+```python
+mem = Memory(policy=MemoryPolicy(messages=8, recall_messages=8))
+# the turn's push gets the 8 windows of past messages the request is about, and
+# memory_recall returns 8 more: "[said] [session s1, 2026-10-24]  user: The guest room key is under the blue pot..."
+```
+
+Windows are 6 consecutive messages of one of the user's other sessions, ranked
+by the same ranker as everything else (shared words, or meaning with an
+embedder), and carry the ids of their events, so traces, `why` and the
+inspector show where they came from. Only that user's messages, never the
+current session's, never another user's; a session without a user has none;
+forgotten text is redacted and `forget_user` removes the messages. The hook
+and MCP commands take `--messages N` and `--recall-messages N`
+(`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`). The latest 4,000
+messages are windowed on each call: an index is the next step.
+
 ## Resume a stopped process
 
 ```python
@@ -546,8 +568,8 @@ that's what the suite measures.
 python -m evals                   # prints the report; docs/evals.md is the committed baseline
 ```
 
-All **18 of 18** pass with memory. In the **12** scenarios where a run
-without memory makes sense, memory turns a failure into a success in all 12.
+All **19 of 19** pass with memory. In the **13** scenarios where a run
+without memory makes sense, memory turns a failure into a success in all 13.
 The other 6 are safety checks with nothing to compare against:
 - a tool failure with a known fix is not repeated;
 - a user's "never" is respected, and the latest preference wins;
@@ -563,33 +585,34 @@ The other 6 are safety checks with nothing to compare against:
 - a request for a known task gets the house template without naming it;
 - a correction in one session becomes a lesson for that user's next one, and no one else's;
 - the agent uses the API of the library version the project pins (pydantic 1's `.dict()`);
-- a fact stated once in a session is recalled in the next one, once extracted.
+- a fact stated once in a session is recalled in the next one, once extracted;
+- a detail a recap drops (the middle of a session) is found in the user's past messages.
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
-**On long conversations, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), `scripts/locomo_benchmark.py`,
+**On long conversations, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62), `scripts/locomo_benchmark.py`,
 [docs/live-runs.md](docs/live-runs.md)): five [LoCoMo](https://github.com/snap-research/locomo)
 conversations, 222 questions, the smallest model (`claude-haiku-5-5`) for
-everything, about $4 in all.
+everything, about $5 in all.
 
 | | Correct | $ / question |
 |---|---|---|
 | no memory (guessing alone) | 13/222 (6%) | 0.0008 |
-| **naive retrieval** over the raw transcript (8 excerpts by shared words) | **118/222 (53%)** | 0.0018 |
-| memory as shipped (local engine) | 39/222 (18%) | 0.0015 |
+| memory as shipped by default (recaps and facts) | 39/222 (18%) | 0.0015 |
+| naive retrieval over the raw transcript (8 excerpts by shared words) | 118/222 (53%) | 0.0018 |
 | memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 (52%) | 0.0028 |
+| memory that searches what was said (`messages=8, recall_messages=8`) | 136/222 (61%) | 0.0020 |
+| both of those | **143/222 (64%)** | 0.0030 |
 | the whole conversation in the prompt | 113/222 (51%) | 0.0100 |
 
-The honest reading: extracted memory clearly beats no memory and beats memory
-as shipped, but **it only ties naive retrieval over the transcript** (38
-questions only it got right, 40 only retrieval did). Without an extractor the
-local engine keeps a one-line digest per session and falls well below
-retrieval, because recall doesn't search what was said
-([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)). The two approaches find different things (facts win
-questions that pull facts together; excerpts win specific details; either one
-gets 70% right), which is the case for doing both. Haiku only, five of ten
-conversations, a model judge, and a disguise against the model having seen the
-public data: a baseline, not a rate.
+The honest reading: by default memory keeps a one-line digest per session and
+recall doesn't search what was said, so it sits far below simple retrieval.
+Extraction alone only ties retrieval. Searching past messages through memory
+(windows of the user's own earlier words, pushed and recalled) beats retrieval
+over the same text (42 questions against 24, p = 0.04), and adding extraction is
+better again, mostly on questions that pull facts together across sessions.
+Haiku only, five of ten conversations, keyword ranking, a model judge, and a
+disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status
 

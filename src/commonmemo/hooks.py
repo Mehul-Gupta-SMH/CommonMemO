@@ -46,7 +46,7 @@ from importlib import resources
 from typing import IO, Any, Optional
 
 from .agent_tools import run_sync
-from .cli import DEFAULT_STORE, env_flag, memory_options
+from .cli import DEFAULT_STORE, env_flag, memory_options, policy_from
 from .events import ToolInvoked
 from .memory import Memory
 
@@ -197,7 +197,7 @@ def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[s
         payload = json.load(stdin)
         if not isinstance(payload, dict) or "session_id" not in payload:
             raise ValueError("expected a hook payload with a session_id")
-        memory = Memory(args.store, args.engine, project=args.project)
+        memory = Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
         out = handle(payload, memory, harness=args.harness, user=args.user, agent=args.agent,
                      session=args.session, read_only=args.read_only, recall_tool=args.recall_tool, environment=not args.no_environment)
         if out is not None:
@@ -225,6 +225,9 @@ def _command(harness: str, args: argparse.Namespace) -> str:
             parts += [f"--{flag}", value]
     if args.read_only:
         parts.append("--read-only")
+    for flag in ("messages", "recall_messages"):
+        if getattr(args, flag):
+            parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if args.recall_tool:
         parts.append("--recall-tool")
     if args.no_environment:

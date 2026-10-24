@@ -19,6 +19,7 @@ import sys
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
+    from .context import MemoryPolicy
     from .memory import Memory
 
 DEFAULT_STORE = "sqlite:///.commonmemo/memory.db"
@@ -38,7 +39,18 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
     p.add_argument("--agent", default=env("COMMONMEMO_AGENT", agent))
     p.add_argument("--session", default=env("COMMONMEMO_SESSION"))
     p.add_argument("--read-only", action="store_true", default=env_flag("COMMONMEMO_READ_ONLY"))
+    p.add_argument("--messages", type=int, default=int(env("COMMONMEMO_MESSAGES", "0")),
+                   help="windows of the user's past messages to push with each turn (default 0: none)")
+    p.add_argument("--recall-messages", type=int, default=int(env("COMMONMEMO_RECALL_MESSAGES", "0")),
+                   help="windows of past messages memory_recall returns (default 0: none)")
     return p
+
+
+def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
+    """The memory policy the command line asks for."""
+    from .context import MemoryPolicy
+
+    return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -69,7 +81,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 def _open(args: argparse.Namespace) -> "Memory":
     from .memory import Memory
 
-    return Memory(args.store, args.engine, project=args.project)
+    return Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
 
 
 def show_main(argv: Optional[list[str]] = None) -> int:

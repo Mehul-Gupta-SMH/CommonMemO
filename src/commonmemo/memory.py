@@ -75,6 +75,7 @@ from .reins import (
 )
 from .history import Diff, History, MemoryView, Point, as_of, diff
 from .resume import make_step
+from .said import search as search_said
 from .runs import Run, current_run
 from .session import Session, current_session
 from .tool_memory import ToolProfile
@@ -145,6 +146,7 @@ class Memory:
         self.policy_for_recall = MemoryPolicy(
             max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
             recaps_across_agents=self.policy.recaps_across_agents,
+            messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -401,11 +403,13 @@ class Memory:
         all_facts: bool = False,
         task: Optional[str] = None,
         procedures: bool = True,
+        said: bool = True,
     ) -> MemoryContext:
         """`all_facts` leaves the profile uncut, for a caller that adds facts
         to it and cuts it itself (`Session.context`). `task` names the task,
         else the request is matched against the known ones; `procedures=False`
-        skips that (a mid-run refresh has no use for it)."""
+        skips that (a mid-run refresh has no use for it), and so does `said=False`
+        for the user's past messages."""
         engine = getattr(self.engine, "index", self.engine) if local_only else self.engine
         # A user's recaps are theirs whichever agent (harness) they worked
         # in; without a user, an agent's recaps stay its own.
@@ -443,8 +447,13 @@ class Memory:
         lessons = self.knowledge.lessons(user_id=user_id, agent=agent, limit=10**6)
         learned = self.knowledge.learned_lessons([f"user:{user_id}"]) if user_id is not None else []
         procedure = await self._procedure_for(query, task, user_id, policy) if procedures else None
+        heard, heard_more = await search_said(
+            self, query, user_id=user_id, agent=agent, exclude_session=exclude_session,
+            limit=policy.messages if said else 0, across_agents=policy.recaps_across_agents,
+            threshold=policy.min_message_score)
         return MemoryContext(
             procedure=procedure,
+            said=heard,
             negatives=negatives[: policy.max_negatives],
             facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
             world=world[: policy.max_world],
@@ -461,6 +470,7 @@ class Memory:
                 "world": world_more,
                 "negatives": len(negatives) - policy.max_negatives,
                 "lessons": max(0, len(lessons) - policy.max_lessons) + max(0, len(learned) - policy.max_lessons),
+                "messages": heard_more,
             },
         )
 
