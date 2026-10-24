@@ -451,6 +451,7 @@ class Session:
         found = await self.memory._long_term(
             query, user_id=self.user_id, agent=self.agent, scopes=self.scopes, local_only=True,
             policy=replace(policy, recaps=max(5, policy.recaps), min_recap_score=0.0), procedures=False,
+            said=False,
         )
         words = content_words(query)
         new = [r for r in found.recaps

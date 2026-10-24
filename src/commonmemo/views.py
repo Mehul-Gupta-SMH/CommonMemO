@@ -23,6 +23,7 @@ from .events import (
     ContextPushed,
     DecisionRecorded,
     LessonLearned,
+    Message,
     ProcedureConfirmed,
     ProcedureEntry,
     ProcedureFollowed,
@@ -129,8 +130,9 @@ def session_view(mem: "Memory", session_id: str) -> Optional[dict[str, Any]]:
 def _labels(mem: "Memory", traces: list[TurnTrace]) -> dict[str, str]:
     """Readable text for items a trace names only by id (negatives, lessons),
     looked up now from their source events. Traces themselves keep no text."""
-    ids = {i["id"] for t in traces for i in t.items if i["kind"] in ("negative", "lesson") and i.get("id")}
-    return {e.id: e.text if isinstance(e, LessonLearned) else describe(e) or e.kind
+    ids = {i["id"] for t in traces for i in t.items if i["kind"] in ("negative", "lesson", "said") and i.get("id")}
+    return {e.id: e.text if isinstance(e, LessonLearned)
+            else f"{e.role}: {e.content[:70]}" if isinstance(e, Message) else describe(e) or e.kind
             for e in mem.store.get_events(ids)}
 
 

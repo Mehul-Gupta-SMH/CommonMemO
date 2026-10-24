@@ -456,6 +456,27 @@ def said_once_recalled_later(with_memory: bool) -> Outcome:
                    chars)
 
 
+# -- the detail a summary drops: found in what was said (#62) ----------------------------------
+
+
+def detail_in_what_was_said(with_memory: bool) -> Outcome:
+    def key_place(policy: MemoryPolicy) -> tuple[str, int]:
+        mem = Memory(project="home", policy=policy)
+        with mem.session("s1", user_id="ada", agent="chat") as s:
+            s.message("user", "My sister Lena arrives on Friday, so I need the guest room ready.")
+            s.message("assistant", "Noted. Anything else I can help with?")
+            s.message("user", "The guest room key is under the blue pot by the door.")
+            s.message("assistant", "Got it.")
+        with mem.session("s2", user_id="ada", agent="chat") as s:
+            agent, chars = agent_for(mem, s, "Where is the guest room key?", {}, with_memory=with_memory)
+        return ("under the blue pot" if "blue pot" in agent.memory_text() else "unknown"), chars
+
+    answer, chars = key_place(MemoryPolicy(messages=2))
+    plain, _ = key_place(MemoryPolicy())  # recaps keep the first request and the last reply, not the middle
+    return Outcome(answer == "under the blue pot",
+                   f"answered {answer!r} with message windows; {plain!r} without them", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -484,6 +505,8 @@ SCENARIOS = [
              pinned_library_version),
     Scenario("said once, recalled later", "a fact stated in one session is recalled in the next, once extracted",
              said_once_recalled_later),
+    Scenario("detail in what was said", "a detail a recap drops is found in the user's past messages",
+             detail_in_what_was_said),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

@@ -53,8 +53,9 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
     session.recall_tool = True
 
     def memory_recall(query: str) -> str:
-        """Search long-term memory: past sessions, facts about the user,
-        known world facts, past feedback, lessons and decisions. Use it when the request may
+        """Search long-term memory: past sessions, what was said in them,
+        facts about the user, known world facts, past feedback, lessons and
+        decisions. Use it when the request may
         depend on something from an earlier conversation that is not in
         front of you. Returns matching entries, best first, or a note that
         nothing matched.
@@ -77,7 +78,7 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
             world=related([*ctx.world, *ctx.world_turn], memory._world_text),
             lessons=related(ctx.lessons, lambda item: item.line()),
             learned=related(ctx.learned, lambda x: x.text),
-            recaps=ctx.recaps, policy=memory.policy, agent=session.agent,
+            recaps=ctx.recaps, said=ctx.said, policy=memory.policy, agent=session.agent,
         )
         decisions = (related(memory.decisions(user_id=session.user_id)[:50],
                              lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5] if session.user_id is not None else [])
@@ -88,6 +89,7 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         lines += [f"[lesson] {x.line()}" for x in found.learned]
         lines += [f"[decision] {d.line()}" for d in decisions]
         lines += [f"[past session] {ctx.recap_line(e)}" for e in found.recaps]
+        lines += [f"[said] {w.line()}" for w in found.said]
         text = "\n".join(lines) if lines else "Nothing in memory matches that."
         if writes and not session.closed:  # what the agent pulled, as a trace (#50); read-only tools record nothing
             session._trace("recall", found, text, extra=tuple(

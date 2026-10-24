@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from .knowledge import FeedbackRecord, LessonRecord, NegativeRecord, WorldRecord
     from .procedures import TaskProcedures
     from .resume import ResumePoint
+    from .said import Said
 
 STABLE_HEADER = (
     "# Memory\n"
@@ -80,6 +81,15 @@ class MemoryPolicy:
     (`procedures.py`): the share of the task description's words found in the
     request (half, by default), or a cosine similarity with an embedding
     ranker. Below it, the agent can still pull them."""
+    messages: int = 0
+    """Windows of the user's past messages pushed with the turn, the best
+    against the request (`said.py`, #62). 0 (the default): none, because
+    this puts the user's earlier words, not a summary, into the prompt."""
+    recall_messages: int = 0
+    """Windows `memory_recall` returns the same way."""
+    min_message_score: Optional[float] = None
+    """How related a window must be to be pushed or recalled; None uses the
+    ranker's own threshold."""
     lesson_merge_score: float = 0.8
     """A learned lesson this close to an earlier one (by the ranker) is
     merged with it: counted as seen again, not stored twice."""
@@ -131,6 +141,7 @@ _KINDS = {
     "recaps": ("past session", "past sessions"),
     "facts": ("fact about the user", "facts about the user"),
     "world": ("known fact", "known facts"),
+    "messages": ("earlier exchange", "earlier exchanges"),
     "negatives": ("standing constraint", "standing constraints"),
     "lessons": ("feedback note or lesson", "feedback notes and lessons"),
     "entries": ("entry cut for length", "entries cut for length"),
@@ -161,6 +172,8 @@ class MemoryContext:
     state: dict[str, Any] = field(default_factory=dict)
     recent: list[MemoryEvent] = field(default_factory=list)
     resume: Optional["ResumePoint"] = None
+    said: list["Said"] = field(default_factory=list)
+    """Windows of the user's past messages the request is about (`said.py`), in the turn half."""
     procedure: Optional["TaskProcedures"] = None
     """How the task this turn is about is done (ADR 0003): named by the app,
     or matched by the request. In the turn half."""
@@ -245,6 +258,9 @@ class MemoryContext:
             sections.append("## Facts for this request\n" + "\n".join(f"- {world_line(w)}" for w in self.world_turn))
         if self.recaps:
             sections.append("## Relevant past sessions\n" + "\n".join(f"- {self.recap_line(e)}" for e in self.recaps))
+        if self.said:
+            sections.append("## What was said in earlier conversations\n"
+                            + "\n\n".join(w.line() for w in self.said))
         if self.state:
             sections.append("## Session state\n" + "\n".join(f"- {k}: {v}" for k, v in self.state.items()))
         if self.recent:

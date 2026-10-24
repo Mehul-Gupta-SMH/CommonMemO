@@ -377,6 +377,23 @@ covered by `revert`, and a correction is `forget` or stating the fact again.
 A bulk first ingestion can trip the default velocity alert (`UserFact` is
 watched); that is a warning in the log, not a block.
 
+**What was said** (`said.py`, [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)). Recaps, facts and lessons are
+what memory made of earlier sessions; this searches the messages themselves.
+`MemoryPolicy.messages` windows are pushed with the turn (the request is the
+query) and `recall_messages` are returned by `memory_recall`, both 0 by
+default: it puts the user's own earlier words into the prompt. A window is up
+to 6 consecutive messages of one of the user's other sessions (lines clipped
+to 400 characters), ranked by the memory's ranker against the query; those
+past the limit are counted ("left out: earlier exchanges") and pointed at
+recall. Scope: the user's own messages from their other sessions, never the
+current one or another user's; a session without a user has none (anonymous
+sessions share nothing); `recaps_across_agents=False` limits it to this
+agent's sessions. Windows carry their event ids (trace item `said`, found by
+`why`), forgotten text is redacted, and `forget_user` removes the messages.
+The latest 4,000 messages are windowed per call; an index is the next step. On
+five LoCoMo conversations this took memory from 18% to 61% correct and, with
+extraction, 64%, against 53% for naive retrieval (`docs/live-runs.md`).
+
 `revert` covers procedures too: an entry changed since the target point is
 restored as its next version, one added since is retired, and proposals
 that exist only because of what is reverted are rejected.
@@ -726,7 +743,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, eighteen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, nineteen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are

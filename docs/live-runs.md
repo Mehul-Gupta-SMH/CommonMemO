@@ -5,6 +5,62 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-10-24: memory that searches what was said, same five conversations ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62))
+
+The run above showed naive retrieval over the transcript tying extraction.
+#62 made that retrieval part of memory: `MemoryPolicy(messages=N,
+recall_messages=N)` pushes windows of the user's past messages with each turn
+and returns them from `memory_recall` (`said.py`). Two conditions were added
+to the benchmark and run on the same five conversations, the same 222 questions,
+the same stores (so the same extracted facts), Haiku for everything, Claude Code
+`2.1.310`, in the same way: through the hooks and the MCP server, read-only.
+`said` is memory as shipped plus 8 windows pushed and 8 recalled, the same
+windows `rag` pastes (6 turns, ranked by shared words); `both` adds them to
+extraction. The settings were fixed to match `rag` beforehand, not tuned. The
+run cost about $1.
+
+| Condition | Correct | 95% interval | multi-hop (59) | temporal (60) | open-domain (43) | single-hop (60) | $ / question | `memory_recall` / question |
+|---|---|---|---|---|---|---|---|---|
+| none | 13/222 (6%) | 3-10% | 3 | 0 | 6 | 4 | 0.0008 | 0 |
+| rag | 118/222 (53%) | 47-60% | 18 | 37 | 11 | 52 | 0.0018 | 0 |
+| memory (as shipped) | 39/222 (18%) | 13-23% | 7 | 9 | 10 | 13 | 0.0015 | 2.4 |
+| extracted | 116/222 (52%) | 46-59% | 27 | 38 | 14 | 37 | 0.0028 | 1.3 |
+| **said** | **136/222 (61%)** | 55-67% | 28 | 42 | 16 | 50 | 0.0020 | 0.9 |
+| **both** | **143/222 (64%)** | 58-70% | **34** | 42 | 17 | 50 | 0.0030 | 0.7 |
+| full | 113/222 (51%) | 44-57% | 30 | 26 | 9 | 48 | 0.0100 | 0 |
+
+Paired by question (A right and B wrong / B right and A wrong; two-sided sign test):
+- said vs memory as shipped: 102 / 5;
+- **said vs rag: 42 / 24 (p = 0.04)**; said vs extracted: 47 / 27 (p = 0.03);
+- **both vs rag: 45 / 20 (p = 0.003)**; both vs extracted: 46 / 19 (p = 0.001);
+- both vs said: 30 / 23 (p = 0.4); both vs the whole conversation: 55 / 25 (p = 0.001).
+
+Per conversation, `both` is ahead of `rag` in four of five (35 against 30, 32
+against 21, 24 against 23 and 29 against 19; conversation 1 has 23 against 25
+of 35 questions).
+
+What it says:
+- **Searching what was said fixes the gap.** Memory goes from 18% to 61% with
+  the message windows, and is now ahead of naive retrieval over the same text
+  (61% against 53%) and of extraction alone (52%). Part of that is the
+  agent: through `memory_recall` it can search again with its own words (0.9 calls
+  a question), which pasting the excerpts once cannot.
+- **Adding extraction helps a little more** (64%), mostly on multi-hop
+  questions (34 against 28), where facts pulled together across sessions help;
+  the gain over `said` alone (30 against 23 questions) is within noise.
+- **It costs little**: $0.002 to $0.003 a question with Haiku, a fifth to a third of
+  putting the whole conversation in the prompt, which this small model also does
+  worse with (51%).
+- **It is off by default.** It puts the user's own earlier words into the prompt,
+  which recaps and facts do not. `messages=8, recall_messages=8` is what was
+  measured here.
+
+Limits: as before (Haiku only, five of ten conversations, a model judge,
+disguised names and years but not the story, keyword ranking only), and one more:
+the windows come from LoCoMo's own session structure, with every message
+a user-or-assistant turn between two people. Messages in a real harness
+include long tool-driven sessions, which windows of 6 handle less well.
+
 ## 2026-10-24: LoCoMo on five conversations, Haiku only, with a naive-retrieval baseline ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62))
 
 Same script, the smallest model: `--model haiku --judge-model haiku`, so every
