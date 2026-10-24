@@ -34,6 +34,7 @@ from .environment import EnvironmentResult
 from .facts import FactKey
 from .ranking import EmbeddingRanker, KeywordRanker
 from .history import Diff, History, MemoryView
+from .extraction import ExtractedFact, Extractor, ModelExtractor
 from .learning import Learner, ModelLearner
 from .memory import Memory
 from .procedures import TaskProcedures
@@ -64,7 +65,10 @@ __all__ = [
     "ProcedureEntry",
     "ProcedureFollowed",
     "TaskProcedures",
+    "ExtractedFact",
+    "Extractor",
     "Learner",
+    "ModelExtractor",
     "ModelLearner",
     "ResumePoint",
     "StepInDoubt",

@@ -2,6 +2,33 @@
 
 ## 0.0.1 — unreleased
 
+LoCoMo on five conversations with Haiku, and a naive-retrieval baseline ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59)):
+
+- **`scripts/locomo_benchmark.py`** gains a `rag` condition (the transcript in
+  windows of 6 turns, the 8 best by shared words, pasted in) and runs on the
+  smallest model with `--model haiku`: about $1 a conversation.
+- **Result** (222 questions, `docs/live-runs.md`): no memory 13, memory as
+  shipped 39, memory with `ModelExtractor` 116, naive retrieval 118, the whole
+  conversation 113. Extraction only ties naive retrieval; the two find
+  different questions (either gets 156 right). Filed as
+  [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62): recall should search what was said.
+
+Facts from what was said ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)):
+
+- **`Memory(extractor=ModelExtractor(complete))`** (off by default): when a
+  session closes, a model lists its durable facts and they are written to the
+  user's profile as `UserFact(source="extracted")`, before the engine ingests
+  the session. They are pushed and recalled like any profile fact and removed
+  by `forget_user`. Forgotten text is redacted from the model's input and
+  facts quoting it are dropped; long sessions go in chunks; once per session
+  (`mem.extract(session_id)` to run it yourself); a failing model never fails
+  the close.
+- **Eval scenario "said once, recalled later"** (18 of 18).
+- **LoCoMo:** the benchmark's `extracted` condition now uses this feature:
+  38/48 with the first prompt and 35/48 with the shipped one (the same within
+  noise; 14/48 with no memory, 23/48 with memory as shipped), at about 0.03
+  dollars a question against 0.11 for the whole conversation.
+
 LoCoMo live benchmark ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)):
 
 - **`scripts/locomo_benchmark.py`** runs a LoCoMo conversation with Claude Code

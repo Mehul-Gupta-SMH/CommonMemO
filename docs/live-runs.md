@@ -5,6 +5,64 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-10-24: LoCoMo on five conversations, Haiku only, with a naive-retrieval baseline ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62))
+
+Same script, the smallest model: `--model haiku --judge-model haiku`, so every
+call (answering, extraction, judging) used `claude-haiku-5-5`; Claude Code CLI
+`2.1.310`. Conversations 0 to 4 (19 to 32 sessions), 12 questions from each
+category 1 to 4 where the conversation has that many (222 questions in all),
+seed 7, speakers renamed as before. A fifth condition was added, `rag`: the
+transcript cut into windows of 6 turns, the 8 that share the most words with
+the question (the keyword ranker memory itself uses) pasted into the prompt.
+No memory, no tools: what a developer would build in an afternoon. The whole
+run cost about $4.04 (extraction $0.29 of it).
+
+| Condition | Correct | 95% interval | multi-hop (59) | temporal (60) | open-domain (43) | single-hop (60) | $ / question | s / question | `memory_recall` / question |
+|---|---|---|---|---|---|---|---|---|---|
+| none | 13/222 (6%) | 3-10% | 3 | 0 | 6 | 4 | 0.0008 | 4.8 | 0 |
+| **rag** (naive retrieval) | **118/222 (53%)** | 47-60% | 18 | 37 | 11 | **52** | 0.0018 | 5.0 | 0 |
+| memory (as shipped) | 39/222 (18%) | 13-23% | 7 | 9 | 10 | 13 | 0.0015 | 8.8 | 2.4 |
+| extracted (`ModelExtractor`) | 116/222 (52%) | 46-59% | **27** | **38** | **14** | 37 | 0.0028 | 7.7 | 1.3 |
+| full (whole conversation) | 113/222 (51%) | 44-57% | 30 | 26 | 9 | 48 | 0.0100 | 5.2 | 0 |
+
+(Cost includes the judge. Facts extracted per conversation: 142, 122, 189,
+234 and 215.)
+
+Paired by question (A right and B wrong, B right and A wrong; two-sided sign test):
+- extracted vs none: 110 / 7; memory vs none: 34 / 8 (p = 0.0001);
+- extracted vs memory: 89 / 12;
+- **extracted vs rag: 38 / 40 (p = 0.91)**; memory vs rag: 11 / 90;
+- full vs extracted: 43 / 46; full vs rag: 33 / 38.
+
+What it says:
+- **Memory with extraction clearly beats no memory, and beats memory as
+  shipped** (52% against 6% and 18%).
+- **It does not beat naive retrieval over the raw transcript** (52% against
+  53%, a tie). On this benchmark, with this model, a developer who pastes the
+  best few excerpts gets what extraction gets, at two thirds of the cost per
+  question and a simpler system.
+- **Memory as shipped is worse than that baseline by a wide margin** (18% against
+  53%): for 162 of its 222 answers (by a keyword check) the model said it
+  couldn't find the answer. Recall doesn't search what was said
+  ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)).
+- **The two approaches find different things.** Extracted facts win questions
+  that pull facts together across sessions (multi-hop 27 against 18) and
+  open-domain ones; raw excerpts win the specific detail a fact dropped
+  (single-hop 52 against 37). Either one gets 156 of 222 right (70%); both,
+  78. That is the case for searching messages as well as facts.
+- **The whole conversation is no better than either** for this small model (51%):
+  long prompts are hard for Haiku, and it costs five times as much.
+- **The conversations differ.** Retrieval is ahead on conversations 0 and 1 (30
+  against 28 and 25 against 18 of 48 and 35) and extraction on 2, 3 and 4 (24 against 21,
+  26 against 23, 20 against 19): the tie is an average of differences that are
+  within sampling noise on 35 to 48 questions each.
+
+Limits, beyond those of the first run: Haiku only (a larger model may use
+long prompts and memory tools better, and the earlier Sonnet run on one
+conversation put the whole conversation at 81%); the retrieval baseline is the
+keyword ranker, and embeddings would likely do better; five of ten
+conversations; a model judge; names and years disguised, the story not.
+
 ## 2026-10-23: LoCoMo, memory vs no memory vs the whole conversation ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18))
 
 [LoCoMo](https://github.com/snap-research/locomo) (Maharana et al., 2024) is 10 long
@@ -70,13 +128,42 @@ What it says:
   that have a plausible default answer. Any claim about memory should be read
   against that row.
 
+### Extraction as a product feature ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60))
+
+The `extracted` row above used the script's own extraction call. #60 made
+extraction a feature (`Memory(extractor=ModelExtractor(complete))`, run as each
+session closes) and the benchmark's `extracted` condition now uses it. Same
+conversation, same 48 questions, same models, 2026-10-24, Claude Code `2.1.310`:
+
+| Extraction | Facts kept | Correct | multi-hop | temporal | open-domain | single-hop | $ / question |
+|---|---|---|---|---|---|---|---|
+| the script's own prompt (above) | 323 | 38/48 | 8/12 | 10/12 | 9/12 | 11/12 | 0.029 |
+| `ModelExtractor`, first prompt | 143 | 38/48 | 4/12 | 12/12 | 10/12 | 12/12 | 0.031 |
+| `ModelExtractor`, prompt as shipped (asks for specifics, and to keep what is still true when a key is updated) | 170 | 35/48 | 6/12 | 11/12 | 9/12 | 9/12 | 0.035 |
+
+Extraction itself cost $0.49 to $0.54 for the 19 sessions. Against the
+other rows: 35 to 38 correct, versus 14 with no memory and 23 with memory as
+shipped (the shipped prompt beats memory as shipped on 16 questions and loses
+4; beats no memory on 25 and loses 4).
+
+What it says:
+- **The three variants are the same within noise** (the shipped prompt wins 5
+  questions and loses 8 against the first). I changed the prompt once, after the
+  first run, for a reason I could see in its misses: reusing a key replaces the
+  old value, which lost earlier items from lists ("what has Dana painted").
+  That is a change made with the test questions in view, so don't read the
+  3-question drop as a finding about the prompt either way.
+- **Fewer facts than the script's prompt** (143 to 170 against 323), because the
+  model also chooses keys and reuses them. The number kept depends on the
+  prompt more than the score does, at this sample size.
+- **A bulk first ingestion trips the default velocity alert** (115 writes in an
+  hour from `extracted`): a warning in the log. The benchmark turns alerts off.
+
 ### Limits
 
 48 questions from one conversation: a difference of a few questions is
 noise (the paired counts above are the better guide). The judge is a model.
-The `extracted` row's extraction is the script's own model call, not a product
-feature yet ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)), and only the local engine
-was run (Graphiti and Mem0 need [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). The disguise may not remove
+Only the local engine was run (Graphiti and Mem0 need [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). The disguise may not remove
 all recognition. Not yet run: the other nine conversations, other models, a
 larger sample.
 
@@ -86,6 +173,7 @@ larger sample.
 pip install -e ".[dev]"            # needs a logged-in Claude Code CLI
 python scripts/locomo_benchmark.py --conversation 0 --per-category 12 --budget 12 --out locomo-results.json
 python scripts/locomo_benchmark.py --conditions none,full --per-category 2    # a cheap check
+python scripts/locomo_benchmark.py --conversation 2 --model haiku --judge-model haiku   # the smallest model: about $1 a conversation
 python scripts/locomo_benchmark.py --ingest-only                               # offline: build the stores, no model calls
 ```
 
