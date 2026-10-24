@@ -567,22 +567,29 @@ The other 6 are safety checks with nothing to compare against:
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
-**On a long conversation, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), `scripts/locomo_benchmark.py`,
-[docs/live-runs.md](docs/live-runs.md)): one [LoCoMo](https://github.com/snap-research/locomo)
-conversation (19 sessions), 48 questions, Claude Code as the model.
+**On long conversations, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), `scripts/locomo_benchmark.py`,
+[docs/live-runs.md](docs/live-runs.md)): five [LoCoMo](https://github.com/snap-research/locomo)
+conversations, 222 questions, the smallest model (`claude-haiku-5-5`) for
+everything, about $4 in all.
 
 | | Correct | $ / question |
 |---|---|---|
-| no memory (guessing alone) | 14/48 | 0.005 |
-| memory as shipped (local engine) | 23/48 | 0.014 |
-| memory with `ModelExtractor` (facts extracted as sessions close) | 35 to 38/48 | 0.03 |
-| the whole conversation in the prompt | 39/48 | 0.106 |
+| no memory (guessing alone) | 13/222 (6%) | 0.0008 |
+| **naive retrieval** over the raw transcript (8 excerpts by shared words) | **118/222 (53%)** | 0.0018 |
+| memory as shipped (local engine) | 39/222 (18%) | 0.0015 |
+| memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 (52%) | 0.0028 |
+| the whole conversation in the prompt | 113/222 (51%) | 0.0100 |
 
-With facts extracted, memory comes within a few questions of the whole
-conversation at about a third of the cost. Without an extractor, the local
-engine keeps a one-line digest per session and stays near the floor
-([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60), shipped as `ModelExtractor`; 35 and 38 are two prompts). One conversation, a model judge and a disguise against the
-model having seen the public data: a first baseline, not a rate.
+The honest reading: extracted memory clearly beats no memory and beats memory
+as shipped, but **it only ties naive retrieval over the transcript** (38
+questions only it got right, 40 only retrieval did). Without an extractor the
+local engine keeps a one-line digest per session and falls well below
+retrieval, because recall doesn't search what was said
+([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)). The two approaches find different things (facts win
+questions that pull facts together; excerpts win specific details; either one
+gets 70% right), which is the case for doing both. Haiku only, five of ten
+conversations, a model judge, and a disguise against the model having seen the
+public data: a baseline, not a rate.
 
 ## Status
 

@@ -2,6 +2,17 @@
 
 ## 0.0.1 — unreleased
 
+LoCoMo on five conversations with Haiku, and a naive-retrieval baseline ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59)):
+
+- **`scripts/locomo_benchmark.py`** gains a `rag` condition (the transcript in
+  windows of 6 turns, the 8 best by shared words, pasted in) and runs on the
+  smallest model with `--model haiku`: about $1 a conversation.
+- **Result** (222 questions, `docs/live-runs.md`): no memory 13, memory as
+  shipped 39, memory with `ModelExtractor` 116, naive retrieval 118, the whole
+  conversation 113. Extraction only ties naive retrieval; the two find
+  different questions (either gets 156 right). Filed as
+  [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62): recall should search what was said.
+
 Facts from what was said ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)):
 
 - **`Memory(extractor=ModelExtractor(complete))`** (off by default): when a
