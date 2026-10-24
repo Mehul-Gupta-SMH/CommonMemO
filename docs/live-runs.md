@@ -1,7 +1,96 @@
 # Live runs
 
 Runs of CommonMemo against a real model. The eval suite (`python -m evals`)
-uses a scripted agent. These runs use a real one.
+uses a scripted agent. These runs use a real one: the latest is a LoCoMo
+benchmark of memory against no memory and the whole conversation, the earlier
+one a set of scenarios through the hooks and MCP.
+
+## 2026-10-23: LoCoMo, memory vs no memory vs the whole conversation ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18))
+
+[LoCoMo](https://github.com/snap-research/locomo) (Maharana et al., 2024) is 10 long
+conversations with question-answer pairs. `scripts/locomo_benchmark.py` runs
+one of them in four conditions, each question in its own headless `claude -p`
+session:
+
+| Condition | What the model has |
+|---|---|
+| `none` | nothing. This is the floor, and it includes plain guessing |
+| `memory` | CommonMemo as shipped: every turn recorded, one closed memory session per LoCoMo session (the local engine's recaps), read through the hooks and the MCP tools, read-only |
+| `extracted` | the same, plus one model call per session that writes dated facts into the user profile at ingestion |
+| `full` | the whole conversation in the prompt. This is the ceiling |
+
+- **Run:** conversation 0 (19 sessions, 419 turns), 12 questions from each of
+  categories 1 to 4 (multi-hop, temporal, open-domain, single-hop), 48 in all,
+  seed 7. Category 5 (adversarial) is left out, as in the benchmark's own papers.
+- **Models:** Claude Code CLI `2.1.309`. Answers and extraction use the CLI's
+  default model (`claude-sonnet-5-5`; the CLI also uses `claude-haiku-5-5` for
+  side work). A model call with `--model haiku` judges each answer correct or
+  wrong against the gold answer.
+- **Same instructions everywhere:** answer in one short sentence, and *make
+  your best guess* if you can't tell, so the `none` row measures how far
+  guessing alone gets.
+- **Contamination guard:** LoCoMo is public and, in a first attempt, the model
+  said it was answering "from what I recall of these conversations". So the
+  data is disguised: the speakers get other names and nicknames, and 2022,
+  2023 and 2024 become 2033, 2034 and 2052 (same weekdays), in the dialogue,
+  questions and gold answers. This defeats lookup by name and date, not
+  recognition of the story, so read the numbers as an upper bound on what
+  memory adds. (LoCoMo is CC BY-NC 4.0: the script downloads it and nothing
+  of it, disguised or not, is committed here.)
+- **Cost:** $6.85 for the run (352 calls), plus $0.40 for the 19 extraction
+  calls and $1.24 for two smoke runs.
+
+### Results
+
+| Condition | Correct | multi-hop | temporal | open-domain | single-hop | $ / question | s / question | `memory_recall` calls / question |
+|---|---|---|---|---|---|---|---|---|
+| none | 14/48 (29%) | 1/12 | 0/12 | 6/12 | 7/12 | 0.005 | 4.9 | 0 |
+| memory | 23/48 (48%) | 2/12 | 7/12 | 6/12 | 8/12 | 0.014 | 11.9 | 2.1 |
+| extracted | **38/48 (79%)** | 8/12 | 10/12 | 9/12 | 11/12 | 0.029 | 7.0 | 0.9 |
+| full | 39/48 (81%) | 11/12 | 9/12 | 7/12 | 12/12 | 0.106 | 5.3 | 0 |
+
+Paired by question (right in A and wrong in B / wrong in A and right in B):
+extracted vs none 26/2; extracted vs memory 18/3; full vs extracted 6/5.
+
+What it says:
+- **Memory as shipped is a small step above guessing.** 23 vs 14. Most of
+  the gain is in temporal questions (7 vs 0), because each session's first
+  message carries its date and the recap digests keep it. By a keyword check,
+  28 of its 48 answers say the model couldn't find the answer and guessed. The
+  local engine keeps a one-line digest per session, and `memory_recall`
+  doesn't search the Log's messages, so what was said is out of reach unless
+  someone wrote it down as a fact ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)).
+- **With facts extracted at ingestion, memory matches the whole conversation**
+  (38 vs 39), at 28% of the cost per question, and the model finds them
+  through the push and about one `memory_recall` call per question.
+- **The whole conversation is the most expensive way to the same score**,
+  $0.106 a question, 3.6 times `extracted`. It also grows with the conversation;
+  memory doesn't. It was the fastest, since it needs no tool turns.
+- **Guessing alone gets 29%**, mostly open-domain and single-hop questions
+  that have a plausible default answer. Any claim about memory should be read
+  against that row.
+
+### Limits
+
+48 questions from one conversation: a difference of a few questions is
+noise (the paired counts above are the better guide). The judge is a model.
+The `extracted` row's extraction is the script's own model call, not a product
+feature yet ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)), and only the local engine
+was run (Graphiti and Mem0 need [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). The disguise may not remove
+all recognition. Not yet run: the other nine conversations, other models, a
+larger sample.
+
+### Rerun
+
+```bash
+pip install -e ".[dev]"            # needs a logged-in Claude Code CLI
+python scripts/locomo_benchmark.py --conversation 0 --per-category 12 --budget 12 --out locomo-results.json
+python scripts/locomo_benchmark.py --conditions none,full --per-category 2    # a cheap check
+python scripts/locomo_benchmark.py --ingest-only                               # offline: build the stores, no model calls
+```
+
+Answers are cached per question in the working directory (`--work`), so a
+stopped run resumes where it was. `--budget` stops new calls past a spend.
 
 ## 2026-10-20: Claude Code as the model ([#48](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/48))
 

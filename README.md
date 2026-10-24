@@ -541,6 +541,23 @@ The other 6 are safety checks with nothing to compare against:
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
+**On a long conversation, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), `scripts/locomo_benchmark.py`,
+[docs/live-runs.md](docs/live-runs.md)): one [LoCoMo](https://github.com/snap-research/locomo)
+conversation (19 sessions), 48 questions, Claude Code as the model.
+
+| | Correct | $ / question |
+|---|---|---|
+| no memory (guessing alone) | 14/48 | 0.005 |
+| memory as shipped (local engine) | 23/48 | 0.014 |
+| memory with facts extracted at ingestion | 38/48 | 0.029 |
+| the whole conversation in the prompt | 39/48 | 0.106 |
+
+With facts extracted, memory matches the whole conversation at about a quarter
+of the cost. As shipped, the local engine keeps a one-line digest per session,
+so it stays near the floor: model-backed extraction is the next step
+([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)). One conversation, a model judge and a disguise against the
+model having seen the public data: a first baseline, not a rate.
+
 ## Status
 
 v0.0.1, not on PyPI yet ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). In:
@@ -578,8 +595,8 @@ and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-S
   thing in front of it. It doesn't prove a real model uses it well; the one
   live run above is a first, small check of that. The
   meaning-based recall result uses a small offline concept embedder, not a
-  real one. A live mode with a real model and public long-memory benchmarks
-  comes after #3 ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
+  real one. The LoCoMo run above is the first public-benchmark check; more
+  conversations and the other engines are still to come ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18), [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)).
 - **Framing isn't a guarantee.** Pushed memory is labelled reference data,
   and stored text never lands where instructions go (an eval checks this).
   But it is text a model reads, and some of it came from users and tools. An
