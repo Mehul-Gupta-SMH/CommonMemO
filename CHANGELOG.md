@@ -2,6 +2,17 @@
 
 ## 0.0.1 — unreleased
 
+AI-enriched window metadata, tried and not built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)):
+
+- **`scripts/locomo_enrich.py`**: a Haiku call per window writes keywords, the
+  questions it answers and absolute dates; the windows are searched with and
+  without them.
+- **Result** (`docs/live-runs.md`): all the evidence in the top 8 windows for 75%
+  of 759 labelled questions, against 71% for the plain window (p = 0.0002; random
+  padding gets 67%); end to end a tie (120 against 118 of 222). Under the 5-point
+  bar set beforehand, so nothing is built; the metadata alone is as findable as
+  the window, which matters for the index in [#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65).
+
 What was said ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)):
 
 - **`MemoryPolicy(messages=N, recall_messages=N)`** (off by default): memory
