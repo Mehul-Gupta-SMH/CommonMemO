@@ -92,6 +92,7 @@ def _clip(value: Any, max_chars: int) -> str:
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from .extraction import ExtractedFact, Extractor
     from .learning import Learned, Learner
     from .traces import TurnTrace, Why
 
@@ -121,6 +122,7 @@ class Memory:
         fact_keys: Optional[Iterable[FactKey]] = None,
         ranker: Optional[Ranker] = None,
         learner: Optional["Learner"] = None,
+        extractor: Optional["Extractor"] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -153,6 +155,9 @@ class Memory:
         self.learner = learner
         """Distills finished sessions into decision records, lessons and
         proposed procedures (`learning.py`). None (the default): no learning."""
+        self.extractor = extractor
+        """Extracts facts from finished sessions into the user's profile
+        (`extraction.py`). None (the default): none are extracted."""
         self.fact_keys = FactRegistry()
         """The optional world-fact key registry (see `facts.py`): what keys
         exist, their allowed values and lifetimes, and which are pinned."""
@@ -739,6 +744,16 @@ class Memory:
         return self._append_outside_session(ProcedureRetired(
             task=task, entry_kind=check_kind(kind), name=name, scope=scope or self.project_scope, reason=reason,
         ))
+
+    async def extract(self, session_id: str, *, extractor: Optional["Extractor"] = None,
+                      force: bool = False) -> "list[ExtractedFact]":
+        """Extract the durable facts from a finished session into its user's
+        profile (see `extraction.py`). Runs at close by itself when the
+        memory has an extractor; call it to extract later or in a batch.
+        Once per session unless `force`."""
+        from .extraction import extract
+
+        return await extract(self, session_id, extractor=extractor, force=force)
 
     async def distill(self, session_id: str, *, learner: Optional["Learner"] = None,
                       force: bool = False) -> "Learned":

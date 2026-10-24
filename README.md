@@ -47,7 +47,7 @@ commonmemo inspect --store sqlite:///demo.db --project shop --review --open
 commonmemo trace support-ada-2 --store sqlite:///demo.db
 commonmemo trace support-ada-2 --why refund_reply/rule/timeline --store sqlite:///demo.db
 
-# Does memory change what an agent does? 17 scenarios, with and without it.
+# Does memory change what an agent does? 18 scenarios, with and without it.
 python -m evals
 
 # Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
@@ -287,6 +287,31 @@ mem.revert(run_id=f"learn:{session_id}")   # undo what one session taught
 The learner sees messages, tool calls, feedback and step results, with
 forgotten text redacted. It never sees raw reasoning.
 
+### Facts from what was said
+
+The local engine keeps a one-line digest of each session, and recall doesn't
+search the Log's messages, so what a user said once is out of reach unless
+someone wrote it down. Give memory a model and it extracts the durable facts
+as each session closes ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60); off by default, any prompt-to-text function):
+
+```python
+from commonmemo import ModelExtractor
+
+mem = Memory(extractor=ModelExtractor(lambda prompt: my_model(prompt)))
+with mem.session("s1", user_id="ada") as s:
+    s.message("user", "My sister Lena arrives on Friday 14 November.")
+# next session: "sister_arrival: Lena arrives on Friday 14 November" is in ada's pushed facts
+await mem.extract(session_id)              # or run it later, in a batch
+```
+
+They are `UserFact`s with `source="extracted"` in that user's profile, so
+they are ranked by the request, found by `memory_recall`, and removed by
+`forget_user`. Text the user asked to forget is redacted before the model
+sees it, and a fact quoting it is dropped. Extraction runs once per session,
+and a failing model never fails the close. On a LoCoMo conversation it is the
+difference between 23 and 38 correct answers out of 48
+([docs/live-runs.md](docs/live-runs.md)).
+
 ## Resume a stopped process
 
 ```python
@@ -521,8 +546,8 @@ that's what the suite measures.
 python -m evals                   # prints the report; docs/evals.md is the committed baseline
 ```
 
-All **17 of 17** pass with memory. In the **11** scenarios where a run
-without memory makes sense, memory turns a failure into a success in all 11.
+All **18 of 18** pass with memory. In the **12** scenarios where a run
+without memory makes sense, memory turns a failure into a success in all 12.
 The other 6 are safety checks with nothing to compare against:
 - a tool failure with a known fix is not repeated;
 - a user's "never" is respected, and the latest preference wins;
@@ -537,7 +562,8 @@ The other 6 are safety checks with nothing to compare against:
 - a fact asked about in other words is recalled (4/4 by meaning, 1/4 by shared words);
 - a request for a known task gets the house template without naming it;
 - a correction in one session becomes a lesson for that user's next one, and no one else's;
-- the agent uses the API of the library version the project pins (pydantic 1's `.dict()`).
+- the agent uses the API of the library version the project pins (pydantic 1's `.dict()`);
+- a fact stated once in a session is recalled in the next one, once extracted.
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
@@ -549,13 +575,13 @@ conversation (19 sessions), 48 questions, Claude Code as the model.
 |---|---|---|
 | no memory (guessing alone) | 14/48 | 0.005 |
 | memory as shipped (local engine) | 23/48 | 0.014 |
-| memory with facts extracted at ingestion | 38/48 | 0.029 |
+| memory with `ModelExtractor` (facts extracted as sessions close) | 35 to 38/48 | 0.03 |
 | the whole conversation in the prompt | 39/48 | 0.106 |
 
-With facts extracted, memory matches the whole conversation at about a quarter
-of the cost. As shipped, the local engine keeps a one-line digest per session,
-so it stays near the floor: model-backed extraction is the next step
-([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)). One conversation, a model judge and a disguise against the
+With facts extracted, memory comes within a few questions of the whole
+conversation at about a third of the cost. Without an extractor, the local
+engine keeps a one-line digest per session and stays near the floor
+([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60), shipped as `ModelExtractor`; 35 and 38 are two prompts). One conversation, a model judge and a disguise against the
 model having seen the public data: a first baseline, not a rate.
 
 ## Status

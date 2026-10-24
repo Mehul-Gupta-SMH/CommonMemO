@@ -480,6 +480,11 @@ class Session:
         self.memory.store.close_session(self.session_id, closed_at)
         self._record.closed_at = closed_at
         if consolidate:
+            if self.memory.extractor is not None:  # before ingest: the engine's profile and recap include the facts
+                try:
+                    await self.memory.extract(self.session_id)
+                except Exception:  # noqa: BLE001 -- extraction is optional; closing must not fail
+                    logging.getLogger("commonmemo").exception("commonmemo: extracting from %s failed", self.session_id)
             self.recaps = await self.memory.engine.ingest(self._record, self.events())
             if self.memory.learner is not None:
                 try:

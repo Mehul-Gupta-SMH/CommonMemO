@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from commonmemo import AlertPolicy, Memory, MemoryPolicy
+from commonmemo import AlertPolicy, Memory, MemoryPolicy, ModelExtractor
 from commonmemo.agent_tools import build_agent_tools
 from commonmemo.facts import FactKey
 from commonmemo.ranking import EmbeddingRanker
@@ -428,6 +428,34 @@ def pinned_library_version(with_memory: bool) -> Outcome:
     return Outcome(method == ".dict()", f"called {method} on a pydantic 1.10 model", chars)
 
 
+# -- extraction: said once, recalled in a later session (#60) -------------------------------
+
+
+def _scripted_extractor_model(prompt: str) -> str:
+    """A stand-in for a model: lists each "My <relative> <name> arrives on <day>" in the session."""
+    session = prompt.split("\nSession", 1)[-1]
+    found = re.findall(r"My (\w+) (\w+) arrives on ([A-Za-z]+ \d+ [A-Za-z]+)", session)
+    return json.dumps({"facts": [{"key": f"{rel}_arrival", "value": f"{name} arrives on {day}"}
+                                 for rel, name, day in found]})
+
+
+def said_once_recalled_later(with_memory: bool) -> Outcome:
+    def arrival(extractor) -> tuple[str, int]:
+        mem = Memory(project="home", extractor=extractor)
+        with mem.session("s1", user_id="ada", agent="chat") as s:
+            s.message("user", "My sister Lena arrives on Friday 14 November, so I need the guest room ready.")
+            s.message("assistant", "Noted. Anything else I can help with?")
+        with mem.session("s2", user_id="ada", agent="chat") as s:
+            agent, chars = agent_for(mem, s, "When does my sister arrive?", {}, with_memory=with_memory)
+        return agent.fact("sister_arrival") or "unknown", chars
+
+    answer, chars = arrival(ModelExtractor(_scripted_extractor_model))
+    plain, _ = arrival(None)  # the same two sessions without an extractor: only a one-line digest is kept
+    return Outcome(answer.endswith("14 November"),
+                   f"answered {answer!r} with extraction; {plain!r} without it (the recap digest doesn't hold it)",
+                   chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -454,6 +482,8 @@ SCENARIOS = [
              learning_from_runs),
     Scenario("pinned library version", "the agent uses the API of the library version the project pins",
              pinned_library_version),
+    Scenario("said once, recalled later", "a fact stated in one session is recalled in the next, once extracted",
+             said_once_recalled_later),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]

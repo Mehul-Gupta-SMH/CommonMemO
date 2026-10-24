@@ -13,7 +13,7 @@ conditions, each question in its own headless `claude -p` session:
 |---|---|
 | `none` | nothing: the floor |
 | `memory` | CommonMemo as shipped: every turn recorded in a session per LoCoMo session, closed (the local engine's recaps), read through the hooks and the MCP tools, read-only |
-| `extracted` | the same, plus a model call per session that writes dated facts into the user profile at ingestion |
+| `extracted` | the same, with `Memory(extractor=ModelExtractor(...))`: a model call as each session closes writes its facts into the user profile (#60) |
 | `full` | the whole conversation in the prompt: the ceiling |
 
 **Contamination.** LoCoMo is public, and the model may have seen it: in a first
@@ -59,7 +59,7 @@ from typing import Any, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_claude_code as live  # noqa: E402  (reuses its child environment and redaction)
 
-from commonmemo import Memory  # noqa: E402
+from commonmemo import AlertPolicy, Memory, ModelExtractor  # noqa: E402
 
 DATA_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "commonmemo"
@@ -201,54 +201,28 @@ def judge(question: str, gold: str, answer: str, model: Optional[str]) -> tuple[
 # -- ingestion --------------------------------------------------------------------
 
 
-def extract_facts(conv: dict[str, Any], work: Path, model: Optional[str], workers: int) -> dict[int, list[dict[str, str]]]:
-    """Per session, a model call that lists the facts worth remembering (cached)."""
-    a, b = conv["conversation"]["speaker_a"], conv["conversation"]["speaker_b"]
-    cache = work / "extracted.json"
-    done: dict[str, list[dict[str, str]]] = json.loads(cache.read_text()) if cache.exists() else {}
-
-    def one(item: tuple[int, str, list[dict[str, Any]]]) -> None:
-        n, date, turns = item
-        if str(n) in done:
-            return
-        prompt = (
-            f"Below is one session of a long conversation between {a} and {b}, held on {date}. List the facts "
-            "worth remembering about the two people and what happened: events, plans, preferences, relationships, "
-            "places, names, numbers. Resolve relative dates ('yesterday', 'last week') to absolute dates using "
-            "the session date. Reply with only JSON: "
-            '{"facts": [{"key": "snake_case_name", "value": "one sentence: who, what, and when"}]}. '
-            "At most 25 facts.\n\n" + "\n".join(turn_text(t) for t in turns))
+def extractor(model: Optional[str]) -> ModelExtractor:
+    """CommonMemo's own extractor (#60), with Claude Code as the model."""
+    def complete(prompt: str) -> str:
         with tempfile.TemporaryDirectory(prefix="locomo-extract-") as d:
-            r = ask(Path(d), prompt, model=model)
-        m = re.search(r"\{.*\}", r["reply"], re.S)
-        try:
-            facts = json.loads(m.group(0))["facts"] if m else []
-        except (json.JSONDecodeError, KeyError, TypeError):
-            facts = []
-        with _lock:
-            done[str(n)] = [f for f in facts if isinstance(f, dict) and f.get("key") and f.get("value")]
-            cache.write_text(json.dumps(done))
+            return ask(Path(d), prompt, model=model)["reply"]
 
-    with ThreadPoolExecutor(workers) as pool:
-        list(pool.map(one, sessions_of(conv)))
-    return {int(k): v for k, v in done.items()}
+    return ModelExtractor(complete)
 
 
-def ingest(conv: dict[str, Any], db: Path, facts: Optional[dict[int, list[dict[str, str]]]]) -> dict[str, int]:
-    """Record the conversation, one closed memory session per LoCoMo session."""
+def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor]) -> dict[str, int]:
+    """Record the conversation, one closed memory session per LoCoMo session; with an
+    extractor, closing a session also extracts its facts (the product feature)."""
     db.unlink(missing_ok=True)
-    mem = Memory(f"sqlite:///{db}", project="locomo")
-    written = 0
+    # A bulk ingestion looks like a write spike to the default alerts; that is not what is measured here.
+    mem = Memory(f"sqlite:///{db}", project="locomo", extractor=extract, alerts=AlertPolicy(enabled=False))
     for n, date, turns in sessions_of(conv):
         with mem.session(f"locomo-session-{n}", user_id=USER, agent="locomo") as s:
             for i, t in enumerate(turns):
                 role = "user" if t["speaker"] == conv["conversation"]["speaker_a"] else "assistant"
                 s.message(role, (f"On {date}. " if i == 0 else "") + turn_text(t))
-            for f in (facts or {}).get(n, []):
-                key = re.sub(r"[^a-z0-9_]+", "_", f["key"].lower()).strip("_")[:60] or "fact"
-                s.remember(f"{key}_s{n}", f["value"])
-                written += 1
-    stats = {"sessions": len(sessions_of(conv)), "facts": written, "events": len(mem.store.events())}
+    stats = {"sessions": len(sessions_of(conv)), "facts": len(mem.store.events(kinds=["user_fact"])),
+             "events": len(mem.store.events())}
     asyncio.run(mem.aclose())
     return stats
 
@@ -326,9 +300,8 @@ def main() -> int:
         dbs["memory"] = work / "memory.db"
         ingest_stats["memory"] = ingest(conv, dbs["memory"], None)
     if "extracted" in conditions or args.ingest_only:
-        facts = {} if args.ingest_only else extract_facts(conv, work, args.model, args.workers)
         dbs["extracted"] = work / "extracted.db"
-        ingest_stats["extracted"] = ingest(conv, dbs["extracted"], facts)
+        ingest_stats["extracted"] = ingest(conv, dbs["extracted"], None if args.ingest_only else extractor(args.model))
     print(f"ingested: {json.dumps(ingest_stats)}", file=sys.stderr)
     if args.ingest_only:
         return 0

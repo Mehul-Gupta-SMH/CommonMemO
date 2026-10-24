@@ -70,13 +70,42 @@ What it says:
   that have a plausible default answer. Any claim about memory should be read
   against that row.
 
+### Extraction as a product feature ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60))
+
+The `extracted` row above used the script's own extraction call. #60 made
+extraction a feature (`Memory(extractor=ModelExtractor(complete))`, run as each
+session closes) and the benchmark's `extracted` condition now uses it. Same
+conversation, same 48 questions, same models, 2026-10-24, Claude Code `2.1.310`:
+
+| Extraction | Facts kept | Correct | multi-hop | temporal | open-domain | single-hop | $ / question |
+|---|---|---|---|---|---|---|---|
+| the script's own prompt (above) | 323 | 38/48 | 8/12 | 10/12 | 9/12 | 11/12 | 0.029 |
+| `ModelExtractor`, first prompt | 143 | 38/48 | 4/12 | 12/12 | 10/12 | 12/12 | 0.031 |
+| `ModelExtractor`, prompt as shipped (asks for specifics, and to keep what is still true when a key is updated) | 170 | 35/48 | 6/12 | 11/12 | 9/12 | 9/12 | 0.035 |
+
+Extraction itself cost $0.49 to $0.54 for the 19 sessions. Against the
+other rows: 35 to 38 correct, versus 14 with no memory and 23 with memory as
+shipped (the shipped prompt beats memory as shipped on 16 questions and loses
+4; beats no memory on 25 and loses 4).
+
+What it says:
+- **The three variants are the same within noise** (the shipped prompt wins 5
+  questions and loses 8 against the first). I changed the prompt once, after the
+  first run, for a reason I could see in its misses: reusing a key replaces the
+  old value, which lost earlier items from lists ("what has Dana painted").
+  That is a change made with the test questions in view, so don't read the
+  3-question drop as a finding about the prompt either way.
+- **Fewer facts than the script's prompt** (143 to 170 against 323), because the
+  model also chooses keys and reuses them. The number kept depends on the
+  prompt more than the score does, at this sample size.
+- **A bulk first ingestion trips the default velocity alert** (115 writes in an
+  hour from `extracted`): a warning in the log. The benchmark turns alerts off.
+
 ### Limits
 
 48 questions from one conversation: a difference of a few questions is
 noise (the paired counts above are the better guide). The judge is a model.
-The `extracted` row's extraction is the script's own model call, not a product
-feature yet ([#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)), and only the local engine
-was run (Graphiti and Mem0 need [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). The disguise may not remove
+Only the local engine was run (Graphiti and Mem0 need [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3)). The disguise may not remove
 all recognition. Not yet run: the other nine conversations, other models, a
 larger sample.
 

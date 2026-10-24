@@ -356,6 +356,27 @@ malformed items dropped). Learning runs once per session, tagged
 `run_id="learn:<session>"`, so `revert(run_id=...)` undoes what one session
 taught; a failing learner is logged and never fails the close.
 
+**Facts from what was said** (`extraction.py`, [#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)). The local engine's recap is a
+one-line digest and `memory_recall` doesn't search the Log's messages, so
+what a user said in a session was out of reach unless written down. Off by
+default: `Memory(extractor=...)` takes any `Extractor`, and
+`ModelExtractor(complete)` wraps a prompt-to-text function. At close (before
+the engine ingests the session, so its profile and recap include the facts;
+or `Memory.extract(session_id)`), the session's messages and tool calls, with
+forgotten text redacted, go to the extractor in chunks. It returns keyed
+facts, written as `UserFact(source="extracted")` in the session's user's
+profile, never as world facts (one user's session can't tell others
+anything). The model names the keys: stable for what changes (a newer value
+supersedes), its own for an event; the user's current keys are shown so it
+reuses one only to update that fact, and keeps what is still true. A value
+that matches isn't rewritten; a fact quoting forgotten text is dropped.
+Once per session (`run_id="extract:<session>"`), at most 25 facts; a
+failing extractor is logged and never fails the close. A claim by a model
+about what a user said, written at once to that user's own profile: it is not
+covered by `revert`, and a correction is `forget` or stating the fact again.
+A bulk first ingestion can trip the default velocity alert (`UserFact` is
+watched); that is a warning in the log, not a block.
+
 `revert` covers procedures too: an entry changed since the target point is
 restored as its next version, one added since is retired, and proposals
 that exist only because of what is reverted are rejected.
@@ -705,7 +726,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, seventeen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, eighteen
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
