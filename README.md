@@ -614,7 +614,8 @@ better again, mostly on questions that pull facts together across sessions.
 Having a model write search metadata for each window (keywords, questions it
 answers, absolute dates) found the evidence for 4 points more questions but
 changed no answers at this sample, so it isn't built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)); embeddings
-weren't tried. Haiku only, five of ten conversations, keyword ranking, a model judge, and a
+weren't tried. A normalised topic tree searched coarse to fine did worse than
+plain search, not better ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)). Haiku only, five of ten conversations, keyword ranking, a model judge, and a
 disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status

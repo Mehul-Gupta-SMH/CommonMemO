@@ -2,6 +2,17 @@
 
 ## 0.0.1 — unreleased
 
+A topic tree over message windows, tried and not built ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)):
+
+- **`scripts/locomo_topics.py`**: a Haiku call per window assigns it to a
+  normalised topic path (built incrementally, as memory would); a call per
+  question routes to nodes; windows under them are ranked and returned.
+- **Result** (`docs/live-runs.md`): all the evidence in the 8 returned windows for
+  59% of 759 labelled questions, against 71% for plain search; multi-hop 20%
+  against 28%; end to end 105 against 118 correct of 222. The tree came out coarse
+  (10 to 21 paths a conversation) and routing missed the evidence in 24% of
+  questions. Not built; the hedged variant is a wash.
+
 AI-enriched window metadata, tried and not built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)):
 
 - **`scripts/locomo_enrich.py`**: a Haiku call per window writes keywords, the
