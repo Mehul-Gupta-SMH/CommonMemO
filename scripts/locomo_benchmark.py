@@ -15,7 +15,7 @@ conditions, each question in its own headless `claude -p` session:
 | `rag` | the simple alternative: the transcript cut into windows of 6 turns, the 8 that share the most words with the question (the same keyword ranker memory uses) pasted into the prompt. No memory, no tools |
 | `said` | `memory` plus the user's past messages searched (#62): 8 windows pushed with each turn and 8 returned by `memory_recall`, the same windows `rag` pastes |
 | `both` | `extracted` plus the same message windows |
-| `memory` | CommonMemo as shipped: every turn recorded in a session per LoCoMo session, closed (the local engine's recaps), read through the hooks and the MCP tools, read-only |
+| `memory` | CommonMemo before windows were on by default (#70), `--messages 0`: every turn recorded in a session per LoCoMo session, closed (the local engine's recaps), read through the hooks and the MCP tools, read-only |
 | `extracted` | the same, with `Memory(extractor=ModelExtractor(...))`: a model call as each session closes writes its facts into the user profile (#60) |
 | `full` | the whole conversation in the prompt: the ceiling |
 | `dated-off`, `dated-stamp`, `dated-resolve` | message windows over a store whose messages are recorded at their session's date, with no date written into the text (#71); windows that say the day only, that stamp each message, that also resolve relative dates. Run on their own |
@@ -79,7 +79,9 @@ STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "bot
             **{c: "dated" for c in DATED}}
 """Which ingested store each memory condition reads; `said` and `both` add the user's past messages (#62)."""
 SAID_FLAGS = ["--messages", "8", "--recall-messages", "8"]
-FLAGS_OF = {"said": SAID_FLAGS, "both": SAID_FLAGS, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
+NO_WINDOWS = ["--messages", "0", "--recall-messages", "0"]
+"""Windows are on by default since #70; `memory` and `extracted` are the conditions without them."""
+FLAGS_OF = {"memory": NO_WINDOWS, "extracted": NO_WINDOWS, "said": SAID_FLAGS, "both": SAID_FLAGS, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
 RAG_WINDOW, RAG_TOP = 6, 8
 """The simple alternative a developer would build: windows of 6 turns, the 8 best against the question."""
 CALL_BUDGET = "0.60"

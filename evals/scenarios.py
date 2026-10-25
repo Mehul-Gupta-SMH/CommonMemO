@@ -472,7 +472,7 @@ def detail_in_what_was_said(with_memory: bool) -> Outcome:
         return ("under the blue pot" if "blue pot" in agent.memory_text() else "unknown"), chars
 
     answer, chars = key_place(MemoryPolicy(messages=2))
-    plain, _ = key_place(MemoryPolicy())  # recaps keep the first request and the last reply, not the middle
+    plain, _ = key_place(MemoryPolicy(messages=0))  # recaps keep the first request and the last reply, not the middle
     return Outcome(answer == "under the blue pot",
                    f"answered {answer!r} with message windows; {plain!r} without them", chars)
 

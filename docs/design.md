@@ -380,8 +380,8 @@ watched); that is a warning in the log, not a block.
 **What was said** (`said.py`, [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)). Recaps, facts and lessons are
 what memory made of earlier sessions; this searches the messages themselves.
 `MemoryPolicy.messages` windows are pushed with the turn (the request is the
-query) and `recall_messages` are returned by `memory_recall`, both 0 by
-default: it puts the user's own earlier words into the prompt. A window is up
+query) and `recall_messages` are returned by `memory_recall`, both 8 by
+default ([#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70); 0 turns them off): it puts the user's own earlier words into the prompt. A window is up
 to 6 consecutive messages of one of the user's other sessions (lines clipped
 to 400 characters), ranked by the memory's ranker against the query; those
 past the limit are counted ("left out: earlier exchanges") and pointed at

@@ -34,12 +34,29 @@ def turn(mem, query, user="ada", sid="s2", **kw):
         return run(s.context(query)), s
 
 
-def test_off_by_default():
-    mem = Memory()
-    talk(mem, "s1", [("user", "Hello."), ("user", "The guest room key is under the blue pot."),
-                     ("assistant", "Noted.")])  # past the first message, so the recap digest doesn't hold it
-    ctx, _ = turn(mem, "where is the guest room key?")
+def test_on_by_default_and_off_with_zero():
+    lines = [("user", "Hello."), ("user", "The guest room key is under the blue pot."),
+             ("assistant", "Noted.")]  # past the first message, so the recap digest doesn't hold it
+    on = Memory()
+    talk(on, "s1", lines)
+    ctx, _ = turn(on, "where is the guest room key?")
+    assert len(ctx.said) == 1 and "blue pot" in ctx.turn_text()
+    with on.session("s3", user_id="ada", agent="chat") as s:
+        out = {t.__name__: t for t in build_agent_tools(s)}["memory_recall"]("where is the guest room key")
+    assert "[said] [session s1," in out and "blue pot" in out
+    off = Memory(policy=MemoryPolicy(messages=0, recall_messages=0))
+    talk(off, "s1", lines)
+    ctx, _ = turn(off, "where is the guest room key?")
     assert ctx.said == [] and "blue pot" not in ctx.turn_text()
+
+
+def test_the_command_line_and_the_default_policy_agree():
+    from commonmemo.cli import WINDOWS, memory_options
+
+    assert str(MemoryPolicy().messages) == WINDOWS == str(MemoryPolicy().recall_messages)
+    args = memory_options(argparse.ArgumentParser(), agent=None).parse_args([])
+    assert (args.messages, args.recall_messages) == (MemoryPolicy().messages, MemoryPolicy().recall_messages)
+    assert memory_options(argparse.ArgumentParser(), agent=None).parse_args(["--messages", "0"]).messages == 0
 
 
 def test_the_turn_gets_the_windows_the_request_is_about():
@@ -151,6 +168,10 @@ def test_the_hooks_push_them_and_the_setup_carries_the_flags():
                               messages=4, recall_messages=6)
     command = hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "--messages 4" in command and "--recall-messages 6" in command
+    # the default needs no flag; turning them off does
+    args.messages, args.recall_messages = 8, 0
+    command = hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert "--messages" not in command and "--recall-messages 0" in command
 
 
 # -- the index (#65) ------------------------------------------------------------------------

@@ -2,6 +2,22 @@
 
 ## 0.0.1 — unreleased
 
+Message windows on by default ([#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70)):
+
+- **`MemoryPolicy(messages=8, recall_messages=8)` are the defaults** (they were 0),
+  so a turn's push and `memory_recall` search the user's own past messages. On five
+  LoCoMo conversations (Haiku) that took memory from 39 to 136 of 222 correct, the
+  index keeps a search at 0.3 to 0.6 ms from 10,000 to 500,000 messages, and it needs
+  no model. It puts the user's own earlier words, not a summary, into the prompt, so
+  `MemoryPolicy(messages=0, recall_messages=0)`, `--messages 0 --recall-messages 0`
+  or `COMMONMEMO_MESSAGES=0 COMMONMEMO_RECALL_MESSAGES=0` turns it off. A session
+  without a user has none; the user's other agents' messages follow
+  `recaps_across_agents`.
+- **Extraction stays off** (`Memory(extractor=...)`): it sends every closing session to a model.
+- `commonmemo setup` writes `--messages` / `--recall-messages` only when they differ from 8.
+- The LoCoMo benchmark's `memory` and `extracted` conditions pass `--messages 0` so they stay
+  what they measured.
+
 Dates in message windows, and resolving relative dates, pronouns and places, measured ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)):
 
 - **`MemoryPolicy.message_dates`** (`--message-dates`, `COMMONMEMO_MESSAGE_DATES`): `off`
