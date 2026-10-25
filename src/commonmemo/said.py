@@ -1,4 +1,4 @@
-"""What was said before: windows of a user's past messages (#62).
+"""What was said before: windows of a user's past messages (#62, #65).
 
 Recaps, facts and lessons are what memory made of earlier sessions. On five
 LoCoMo conversations (`docs/live-runs.md`), pasting the few excerpts of the
@@ -27,18 +27,28 @@ session without a user has none (anonymous sessions share nothing).
 Text the user asked to forget is redacted, and `forget_user` removes the
 messages.
 
-**Cost.** The latest `MAX_SCAN` messages are windowed and ranked on each
-call: fine for thousands, not for a long history; an index is the next step.
+**The index (#65).** Windows are a projection of the Log (`Knowledge`): as
+each message is logged it joins its session's open window, and the window's
+stemmed terms go into an inverted index. A window stores the ids of its
+events, not their text, so the text stays in the Log where `prune`,
+`forget_user` and redaction reach it, and `prune` drops the windows and
+terms of what it removed. A search asks the index for the windows that share
+the most terms with the query (`CANDIDATES` of them), reads only those from
+the Log and ranks them, so its cost follows the candidates, not the history.
+With the keyword ranker the index returns the same windows a scan would. An
+embedding ranker scores meaning, not shared words, so it ranks the user's
+`SCAN_WINDOWS` newest windows instead (a vector index is the next step).
 """
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
-from .events import Message
+from .ranking import KeywordRanker, terms
 
 if TYPE_CHECKING:
     from .memory import Memory
@@ -49,8 +59,13 @@ WINDOW = 6
 LINE_CHARS = 400
 """Each message is cut to this in a window."""
 
-MAX_SCAN = 4000
-"""The most recent messages considered per call."""
+CANDIDATES = 300
+"""Windows the index hands to the ranker."""
+
+SCAN_WINDOWS = 400
+"""Newest windows ranked when the ranker doesn't work on shared words."""
+
+MAX_QUERY_TERMS = 40
 
 
 @dataclass(frozen=True)
@@ -83,27 +98,27 @@ def _clip(text: str, n: int = LINE_CHARS) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def windows(memory: "Memory", *, user_id: str, agent: Optional[str], exclude_session: Optional[str],
-            across_agents: bool) -> list[Said]:
-    """The user's past messages in windows, oldest first."""
-    events = memory.store.events(user_id=user_id, kinds=[Message.kind], limit=MAX_SCAN)
+def window_line(role: str, content: str) -> str:
+    """One message as a window shows it (and as its terms are indexed)."""
+    return f"{role}: {_clip(content)}"
+
+
+def _windows(memory: "Memory", rows: list, *, user_id: str) -> list[Said]:
+    """The windows `rows` name, read from the Log: redacted, oldest first. A window whose
+    messages `prune` removed has none left and is skipped."""
+    ids = [i for r in rows for i in json.loads(r["event_ids"])]
+    events = {e.id: e for e in memory.store.get_events(ids)}
     forgotten = memory._forgotten_values(user_id)
     pattern = re.compile("|".join(re.escape(v) for v in forgotten), re.IGNORECASE) if forgotten else None
-    by_session: dict[str, list[Message]] = {}
-    for e in events:
-        if e.session_id is None or e.session_id == exclude_session:
-            continue
-        if not across_agents and agent is not None and e.agent != agent:
-            continue
-        by_session.setdefault(e.session_id, []).append(e)  # type: ignore[arg-type]
     out = []
-    for sid, messages in by_session.items():
-        for i in range(0, len(messages), WINDOW):
-            chunk = messages[i: i + WINDOW]
-            lines = [f"{m.role}: {_clip(m.content)}" for m in chunk]
-            if pattern:
-                lines = [pattern.sub("[forgotten]", line) for line in lines]
-            out.append(Said(sid, chunk[0].ts, chunk[0].agent, tuple(lines), tuple(m.id for m in chunk)))
+    for r in rows:
+        messages = [events[i] for i in json.loads(r["event_ids"]) if i in events]
+        if not messages:
+            continue
+        lines = [window_line(m.role, m.content) for m in messages]  # type: ignore[attr-defined]
+        if pattern:
+            lines = [pattern.sub("[forgotten]", line) for line in lines]
+        out.append(Said(r["session_id"], r["first_ts"], r["agent"], tuple(lines), tuple(m.id for m in messages)))
     return sorted(out, key=lambda w: w.ts)
 
 
@@ -114,8 +129,15 @@ async def search(memory: "Memory", query: Optional[str], *, user_id: Optional[st
     without a user, a query, or a positive limit."""
     if not query or user_id is None or limit <= 0:
         return [], 0
-    found = windows(memory, user_id=user_id, agent=agent, exclude_session=exclude_session,
-                    across_agents=across_agents)
+    only_agent = None if across_agents else agent
+    if isinstance(memory.ranker, KeywordRanker):
+        wanted = sorted(terms(query))[:MAX_QUERY_TERMS]
+        rows = memory.knowledge.window_candidates(user_id, wanted, exclude_session=exclude_session,
+                                                  agent=only_agent, limit=CANDIDATES)
+    else:
+        rows = memory.knowledge.recent_windows(user_id, exclude_session=exclude_session, agent=only_agent,
+                                               limit=SCAN_WINDOWS)
+    found = _windows(memory, rows, user_id=user_id)
     if not found:
         return [], 0
     scores = await memory.ranker.score(query, [w.text() for w in found])
@@ -125,4 +147,4 @@ async def search(memory: "Memory", query: Optional[str], *, user_id: Optional[st
     return [replace(w, score=round(s, 3)) for s, _, w in ranked[:limit]], max(0, len(ranked) - limit)
 
 
-__all__ = ["LINE_CHARS", "MAX_SCAN", "Said", "WINDOW", "search", "windows"]
+__all__ = ["CANDIDATES", "LINE_CHARS", "SCAN_WINDOWS", "Said", "WINDOW", "search", "window_line"]

@@ -905,7 +905,9 @@ class Memory:
         """Drop events older than `older_than_days` and expired sessions.
         Recaps and facts derived from them are kept (they carry their own
         provenance ids)."""
-        return self.store.prune(older_than=time.time() - older_than_days * 86400)
+        n = self.store.prune(older_than=time.time() - older_than_days * 86400)
+        self.knowledge.prune_windows(self.store)  # windows index terms: they go with the messages
+        return n
 
     async def aclose(self) -> None:
         await self.engine.aclose()

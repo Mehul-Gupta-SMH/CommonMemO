@@ -2,6 +2,20 @@
 
 ## 0.0.1 — unreleased
 
+An index for message windows ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)):
+
+- **Windows are a projection of the Log.** Each message joins its session's
+  open window as it is logged and the window's stemmed terms go into an
+  inverted index; a window holds event ids, not text, so `prune`, `forget_user`
+  and redaction still reach the text, and a rebuild gives the same index.
+  `SCHEMA_VERSION` is 6: projections rebuild once.
+- **A search reads only its candidates**: about 0.3 to 0.6 ms from 10,000 to
+  500,000 messages, against 69 to 93 ms for the scan, which also reached only
+  the latest 4,000 messages (`scripts/bench_said.py`). It returns the windows a
+  scan would. An embedding ranker ranks the user's 400 newest windows.
+- **Cost**: about 0.1 ms more to write a message and about 0.5 KB a message in
+  the database (it more than doubled a synthetic 100,000-message file).
+
 A topic tree over message windows, tried and not built ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)):
 
 - **`scripts/locomo_topics.py`**: a Haiku call per window assigns it to a

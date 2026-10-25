@@ -331,8 +331,18 @@ inspector show where they came from. Only that user's messages, never the
 current session's, never another user's; a session without a user has none;
 forgotten text is redacted and `forget_user` removes the messages. The hook
 and MCP commands take `--messages N` and `--recall-messages N`
-(`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`). The latest 4,000
-messages are windowed on each call: an index is the next step.
+(`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`).
+
+Windows are indexed as messages are logged ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)): a projection keeps each
+window's event ids and an inverted index of its stemmed terms, not its text, so
+the text stays in the Log where `prune`, `forget_user` and redaction reach it. A
+search asks the index for the windows sharing the most terms with the request
+and reads only those: about half a millisecond at 10,000, 100,000 and 500,000
+messages, where scanning took 69 to 93 ms and only reached the latest 4,000. The
+index costs about 0.5 KB a message in the database (it more than doubled a
+synthetic 100,000-message file) and about a tenth of a millisecond to write. An
+embedding ranker, which scores meaning rather than shared words, ranks the
+user's 400 newest windows instead; a vector index is the next step.
 
 ## Resume a stopped process
 
