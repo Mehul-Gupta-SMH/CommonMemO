@@ -5,6 +5,97 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-10-25: dates in message windows, and resolving relative dates, pronouns and places ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71))
+
+A window said `[session s1, 2033-05-08]` and nothing else, so "see you Friday" in
+it meant nothing without knowing which week. Would saying when each message was
+said, and what its relative dates mean, help? Would a model that resolves "she" and
+"there" help more? Haiku only (`claude-haiku-5-5`, Claude Code `2.1.310`), the
+five conversations and 222 questions of the runs above, $6.5 in all. The bar was
+set before running: 11 questions (5%) more than the variant before.
+
+**What was built (all opt-in, `MemoryPolicy.message_dates`).**
+`off` is today's window. `stamp` gives the window's header the weekday, date and
+minute of its first message (`[session s1, Sun 2033-05-08 13:56]`) and any message
+recorded at another time its own stamp. `resolve` adds what each relative date
+means, computed against that message's timestamp with the calendar (`dates.py`: no
+model, no dependency): `Lena arrives Friday [= Fri 2033-05-13]`. It handles
+yesterday, tomorrow, last/next/this weekday and weekend, last/next week, month and
+year, "N days/weeks/months/years ago" and "in N ...". A bare weekday is the past one
+when the sentence has a past-tense cue (was, went, saw ...), else the next one;
+"Fridays" and "every Friday" are left alone. The annotation is derived when a window
+is read, never stored, so the Log keeps what was said. `Session.message(..., ts=)`
+records a message at the time it was said (an import of earlier conversations).
+
+**The benchmark had to change to test it.** It recorded every message at ingestion
+time and wrote the session date into the first message's text. For these runs
+(`dated-off`, `dated-stamp`, `dated-resolve`) each message is recorded at its
+session's date and nothing is written into the text, as a real agent's would be.
+
+**Part 1, through the product (hooks and MCP), 222 questions:**
+
+| Windows | Correct | multi-hop | temporal | open-domain | single-hop |
+|---|---|---|---|---|---|
+| day of the first message only (`off`) | 137 | 29/59 | 39/60 | 18/43 | 51/60 |
+| stamped | 139 | 29/59 | 41/60 | 20/43 | 49/60 |
+| stamped, relative dates resolved | 138 | 29/59 | 40/60 | 19/43 | 50/60 |
+
+A tie: stamped only 23 against off only 21 (p = 0.88); resolved 28 against 27
+(p = 1.0). Nothing near the bar. The `off` window already says the day, since the
+messages now carry their real date, and LoCoMo's sessions each happen at one time,
+so the stamp adds a weekday and a minute. A session that is continued over days
+(which these never are) is the case stamps are for, and this cannot test it.
+
+**A flaw the first run found.** The first build ranked windows on the text it showed,
+stamps and annotations included, and scored 137, 128 and 133. Ranking all 759
+questions that LoCoMo labels with evidence, the plain text had all the evidence in
+the 8 best windows for 74% (561); with the dates resolved 72% (544): 1 question
+gained and 18 lost (p = 0.0001). The dates are for the reader, so the ranker now
+scores the messages as said (`Said.said`) and the reader sees the annotated text;
+the table above is that build. As a consequence, a date in a request matches
+nothing ("what did I say on Tuesday?" is not answered by date).
+
+**Part 2, a model resolving pronouns and places (`scripts/locomo_resolve.py`).**
+A Haiku call per window and resolver (512 windows in all) lists phrases that point at a
+person, place or thing without naming it and what each means; the meaning is put
+after the phrase (`she [= Dana]`). `window` sees the window and its session date;
+`context` also sees the profile facts extracted from the sessions before it and the
+window before it. It annotated 485 and 489 of the 512 windows, mostly several
+phrases each, some of them not useful ("your kind words [= Dana's message]") and a
+few invented. Then the 8 best windows by shared words are pasted into a prompt with
+no tools, ranked on the plain text, answered and judged:
+
+| Windows pasted | Correct | multi-hop | temporal | open-domain | single-hop |
+|---|---|---|---|---|---|
+| stamped, relative dates resolved | 121 | 19/59 | 36/60 | 13/43 | 53/60 |
+| plus the window-only annotations | 111 | 18/59 | 36/60 | 9/43 | 48/60 |
+| plus the annotations with context | 120 | 21/59 | 38/60 | 10/43 | 51/60 |
+
+Window-only against dates: 12 questions gained and 22 lost (p = 0.12). With context
+against window-only: 22 and 13 (p = 0.18). Context against dates: 20 and 21
+(p = 1.0). The plain pasted windows of the earlier runs got 118. Resolving from the
+window alone did not help and may hurt (an invented "means" is read as fact);
+giving the resolver the profile and the window before recovers that but adds
+nothing over the dates alone. The first paste run, ranked on the annotated text, got 105,
+106 and 111.
+
+**What to take from it.** At this sample neither part meets the bar, so neither is
+made a default. Dates in the window are a small, deterministic, opt-in setting that
+costs no model call and cannot be wrong about the calendar; what it is worth for
+sessions that run over days is not measured here. A model-resolved annotation is
+not built: it costs a call per window, can be wrong and persist, and gained nothing.
+Two runs of nearly the same condition (`off` against the earlier runs' `said`:
+same windows, a different date header and no date in the text) differ by 22
+questions each way, so the noise at this sample is about that, and the 11-question
+bar is the least that could be seen through it. Caveats as above: Haiku only, five
+of ten conversations, keyword ranking, a model judge, LoCoMo's one-time sessions,
+and the disguise (names and years) leaves the dates intact but not the story.
+
+```
+python scripts/locomo_benchmark.py --conversation 0 --conditions dated-off,dated-stamp,dated-resolve --per-category 12 --model haiku --judge-model haiku
+python scripts/locomo_resolve.py --work DIR --extracted DIR_WITH_THE_EXTRACTED_STORES --rank-on-said   # DIR holds c0..c4
+```
+
 ## 2026-10-24: a topic tree over message windows, searched coarse to fine ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67))
 
 Keyword metadata (above) left multi-hop questions where they were, since their

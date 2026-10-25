@@ -160,9 +160,11 @@ class Session:
         return event.bind(session_id=self.session_id, user_id=self.user_id, agent=self.agent,
                           run_id=self.run_id or current_run())
 
-    def message(self, role: str, content: str) -> MemoryEvent:
-        """Shorthand for recording a `Message`."""
-        return self.record(Message(role=role, content=content))
+    def message(self, role: str, content: str, *, ts: Optional[float] = None) -> MemoryEvent:
+        """Shorthand for recording a `Message`. `ts` is when it was said, for an import of
+        earlier conversations (default: now)."""
+        return self.record(Message(role=role, content=content) if ts is None
+                           else Message(role=role, content=content, ts=ts))
 
     def remember(self, key: str, value: str) -> MemoryEvent:
         """Record an explicit user fact (see `UserFact`)."""

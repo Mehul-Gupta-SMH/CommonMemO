@@ -228,6 +228,8 @@ def _command(harness: str, args: argparse.Namespace) -> str:
     for flag in ("messages", "recall_messages"):
         if getattr(args, flag):
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
+    if getattr(args, "message_dates", "off") != "off":
+        parts += ["--message-dates", args.message_dates]
     if args.recall_tool:
         parts.append("--recall-tool")
     if args.no_environment:

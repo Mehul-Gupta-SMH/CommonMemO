@@ -147,6 +147,7 @@ class Memory:
             max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
             recaps_across_agents=self.policy.recaps_across_agents,
             messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
+            message_dates=self.policy.message_dates,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -450,7 +451,7 @@ class Memory:
         heard, heard_more = await search_said(
             self, query, user_id=user_id, agent=agent, exclude_session=exclude_session,
             limit=policy.messages if said else 0, across_agents=policy.recaps_across_agents,
-            threshold=policy.min_message_score)
+            threshold=policy.min_message_score, dates=policy.message_dates)
         return MemoryContext(
             procedure=procedure,
             said=heard,

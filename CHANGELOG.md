@@ -2,6 +2,22 @@
 
 ## 0.0.1 — unreleased
 
+Dates in message windows, and resolving relative dates, pronouns and places, measured ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)):
+
+- **`MemoryPolicy.message_dates`** (`--message-dates`, `COMMONMEMO_MESSAGE_DATES`): `off`
+  (default), `stamp` (the window's weekday, date and minute; any message recorded
+  at another time gets its own stamp) or `resolve` (also each relative date in a message,
+  resolved against that message's timestamp with the calendar, `Friday [= Fri 2033-05-13]`;
+  `dates.py`, no model). Derived when a window is read, never stored.
+- **`Session.message(role, content, ts=)`** records a message at the time it was said.
+- **The ranker scores what was said**, not the stamps and annotations: on LoCoMo,
+  ranking on the annotated text lost the evidence for 18 questions it found for 1
+  (p = 0.0001). A date in a request therefore matches nothing by itself.
+- **Result** (`docs/live-runs.md`): 137 off, 139 stamped, 138 resolved of 222, a tie,
+  under the 11-question bar set beforehand, so it stays opt-in. A model that
+  resolves pronouns and places (`scripts/locomo_resolve.py`) scored 111 and 120
+  against 121 for the dates alone: not built.
+
 An index for message windows ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)):
 
 - **Windows are a projection of the Log.** Each message joins its session's
