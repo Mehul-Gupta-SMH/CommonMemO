@@ -2,6 +2,16 @@
 
 ## 0.0.1 — unreleased
 
+LoCoMo, the other five conversations ([#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74)):
+
+- **Run with nothing changed** (conversations 5 to 9, 228 questions, Haiku, all seven
+  conditions, $5.6): the claims hold. Windows beat retrieval (140 against 109, p < 0.001), memory
+  without them stays far below (32), and extraction, which only tied retrieval on the first five
+  (116 against 118), beat it (149 against 109). Over all ten conversations (450 questions): no memory 25,
+  recaps and facts only 71, retrieval 227, extraction 265, windows 276, both 294, the whole
+  conversation 228. Adding extraction to windows is 18 questions better (p = 0.1), not
+  distinguishable from noise. README and `docs/live-runs.md` carry the ten-conversation table.
+
 Message windows on by default ([#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70)):
 
 - **`MemoryPolicy(messages=8, recall_messages=8)` are the defaults** (they were 0),

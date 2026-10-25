@@ -610,34 +610,41 @@ The other 6 are safety checks with nothing to compare against:
 
 It runs in CI on every PR ([#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18)).
 
-**On long conversations, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62), `scripts/locomo_benchmark.py`,
-[docs/live-runs.md](docs/live-runs.md)): five [LoCoMo](https://github.com/snap-research/locomo)
-conversations, 222 questions, the smallest model (`claude-haiku-5-5`) for
-everything, about $5 in all.
+**On long conversations, with a real model** ([#59](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/59), [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62), [#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74), `scripts/locomo_benchmark.py`,
+[docs/live-runs.md](docs/live-runs.md)): all ten [LoCoMo](https://github.com/snap-research/locomo)
+conversations, 450 sampled questions (the first five were used while building; the other five
+were run afterwards with nothing changed), the smallest model (`claude-haiku-5-5`) for
+everything, about $10.5 in all.
 
-| | Correct | $ / question |
-|---|---|---|
-| no memory (guessing alone) | 13/222 (6%) | 0.0008 |
-| memory with recaps and facts only (`messages=0`, how it shipped before #70) | 39/222 (18%) | 0.0015 |
-| naive retrieval over the raw transcript (8 excerpts by shared words) | 118/222 (53%) | 0.0018 |
-| memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 (52%) | 0.0028 |
-| memory that searches what was said (`messages=8, recall_messages=8`, now the default) | 136/222 (61%) | 0.0020 |
-| both of those | **143/222 (64%)** | 0.0030 |
-| the whole conversation in the prompt | 113/222 (51%) | 0.0100 |
+| | First five | Held-out five | All ten | $ / question |
+|---|---|---|---|---|
+| no memory (guessing alone) | 13/222 | 12/228 | 25/450 (6%) | 0.0008 |
+| memory with recaps and facts only (`messages=0`, how it shipped before #70) | 39/222 | 32/228 | 71/450 (16%) | 0.0015 |
+| naive retrieval over the raw transcript (8 excerpts by shared words) | 118/222 | 109/228 | 227/450 (50%) | 0.0018 |
+| memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 | 149/228 | 265/450 (59%) | 0.0029 |
+| memory that searches what was said (`messages=8, recall_messages=8`, now the default) | 136/222 | 140/228 | 276/450 (61%) | 0.0020 |
+| both of those | **143/222** | **151/228** | **294/450 (65%)** | 0.0031 |
+| the whole conversation in the prompt | 113/222 | 115/228 | 228/450 (51%) | 0.0103 |
 
-The honest reading: by default memory keeps a one-line digest per session and
-recall doesn't search what was said, so it sits far below simple retrieval.
-Extraction alone only ties retrieval. Searching past messages through memory
-(windows of the user's own earlier words, pushed and recalled) beats retrieval
-over the same text (42 questions against 24, p = 0.04), and adding extraction is
-better again, mostly on questions that pull facts together across sessions.
+The honest reading: memory with only recaps and facts sits far below simple
+retrieval, because its digest is one line per session and recall didn't search
+what was said. Searching past messages through memory (windows of the user's own
+earlier words, pushed and recalled) beats retrieval over the same text in both
+halves (94 questions against 45 over all ten, p < 0.001) and is the cheap part: no
+model call. Extraction only tied retrieval on the first five, where its prompt was
+adjusted once after looking at misses, and beat it on the five that were not (149
+against 109), so over all ten it is ahead of retrieval (105 against 67, p = 0.005), at
+about 1.5 times the cost of windows and a model call per session. Adding it to
+windows is 18 questions better over ten (64 against 46, p = 0.1): a gain, but one
+this sample cannot separate from noise. The whole conversation in the prompt is no
+better than retrieval at about six times the cost.
 Having a model write search metadata for each window (keywords, questions it
 answers, absolute dates) found the evidence for 4 points more questions but
-changed no answers at this sample, so it isn't built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)); embeddings
+changed no answers, so it isn't built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)); embeddings
 weren't tried. Stamping each window with when it was said and resolving its relative
 dates ("Friday" to a date), and having a model resolve pronouns and places, changed no answers
 either ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)). A normalised topic tree searched coarse to fine did worse than
-plain search, not better ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)). Haiku only, five of ten conversations, keyword ranking, a model judge, and a
+plain search, not better ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)). Haiku only, keyword ranking, a model judge, and a
 disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status
