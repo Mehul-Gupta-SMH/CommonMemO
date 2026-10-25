@@ -43,6 +43,8 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
                    help="windows of the user's past messages to push with each turn (default 0: none)")
     p.add_argument("--recall-messages", type=int, default=int(env("COMMONMEMO_RECALL_MESSAGES", "0")),
                    help="windows of past messages memory_recall returns (default 0: none)")
+    p.add_argument("--message-dates", choices=("off", "stamp", "resolve"), default=env("COMMONMEMO_MESSAGE_DATES", "off"),
+                   help="what windows say about when: off, stamp (dated messages), resolve (also relative dates)")
     return p
 
 
@@ -50,7 +52,7 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
     """The memory policy the command line asks for."""
     from .context import MemoryPolicy
 
-    return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages)
+    return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages, message_dates=args.message_dates)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

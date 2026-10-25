@@ -90,6 +90,11 @@ class MemoryPolicy:
     min_message_score: Optional[float] = None
     """How related a window must be to be pushed or recalled; None uses the
     ranker's own threshold."""
+    message_dates: str = "off"
+    """What a window says about when (`dates.py`, #71): `off` (the day of its first message),
+    `stamp` (the weekday, date and time of the first message, and a stamp on any message
+    recorded at another time), or `resolve` (stamps, plus each relative date in a message,
+    "Friday", "last week", "two days ago", followed by `[= what it means]`)."""
     lesson_merge_score: float = 0.8
     """A learned lesson this close to an earlier one (by the ranker) is
     merged with it: counted as seen again, not stored twice."""

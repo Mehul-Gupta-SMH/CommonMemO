@@ -333,6 +333,14 @@ forgotten text is redacted and `forget_user` removes the messages. The hook
 and MCP commands take `--messages N` and `--recall-messages N`
 (`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`).
 
+A window says the day of its first message. `MemoryPolicy(message_dates="stamp")`
+([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)) gives it the weekday and time, and any message recorded at another time its
+own stamp; `"resolve"` also follows each relative date with what it means at the time
+it was said (`Lena arrives Friday [= Fri 2033-05-13]`), computed from the calendar
+with no model. It is derived when a window is read, never stored, and the ranker
+scores the messages as said. Off by default: it made no difference on LoCoMo (below).
+`Session.message(role, content, ts=...)` records a message at the time it was said.
+
 Windows are indexed as messages are logged ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)): a projection keeps each
 window's event ids and an inverted index of its stemmed terms, not its text, so
 the text stays in the Log where `prune`, `forget_user` and redaction reach it. A
@@ -624,7 +632,9 @@ better again, mostly on questions that pull facts together across sessions.
 Having a model write search metadata for each window (keywords, questions it
 answers, absolute dates) found the evidence for 4 points more questions but
 changed no answers at this sample, so it isn't built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)); embeddings
-weren't tried. A normalised topic tree searched coarse to fine did worse than
+weren't tried. Stamping each window with when it was said and resolving its relative
+dates ("Friday" to a date), and having a model resolve pronouns and places, changed no answers
+either ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)). A normalised topic tree searched coarse to fine did worse than
 plain search, not better ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)). Haiku only, five of ten conversations, keyword ranking, a model judge, and a
 disguise against the model having seen the public data: a baseline, not a rate.
 

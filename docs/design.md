@@ -390,6 +390,10 @@ current one or another user's; a session without a user has none (anonymous
 sessions share nothing); `recaps_across_agents=False` limits it to this
 agent's sessions. Windows carry their event ids (trace item `said`, found by
 `why`), forgotten text is redacted, and `forget_user` removes the messages.
+`message_dates` ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)) makes a window say when it was said (`stamp`) and what
+its relative dates mean (`resolve`, `dates.py`): derived from the Log's text and
+timestamps when a window is read, never stored; the ranker scores the messages as
+said, since ranking on the annotated text lost evidence. Off by default (no gain on LoCoMo).
 **The index** ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)): windows are a projection of the Log. Each message joins
 its session's open window as it is logged, and the window's stemmed terms go
 into an inverted index (`message_windows`, `window_terms` in `Knowledge`). A

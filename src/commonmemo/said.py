@@ -14,6 +14,10 @@ the other missed. So memory can also search the messages themselves:
 Both default to 0: this puts a user's past words into the prompt, which
 recaps and facts do not. The benchmark decides whether that should change.
 
+`MemoryPolicy.message_dates` says when a window was said: `stamp` gives it the
+weekday, date and time, `resolve` also what each relative date means (`dates.py`,
+#71). The ranker scores the messages as said; the dates are for the reader.
+
 **Windows.** The messages of one session, `WINDOW` consecutive ones, each
 line clipped to `LINE_CHARS`. They are ranked against the query by the
 memory's ranker (shared words by default, meaning with an embedder) and the
@@ -48,6 +52,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
+from .dates import annotate, stamp
 from .ranking import KeywordRanker, terms
 
 if TYPE_CHECKING:
@@ -79,6 +84,11 @@ class Said:
     lines: tuple[str, ...]
     event_ids: tuple[str, ...]
     score: float = 0.0
+    when: str = ""
+    """When its first message was recorded, with weekday and time, if the policy asks for dates (#71)."""
+    said: str = ""
+    """The messages as said, without stamps or annotations: what the ranker scores, because the dates
+    are for the reader (on LoCoMo, ranking on the annotated text lost evidence the plain text found, #71)."""
 
     @property
     def id(self) -> str:
@@ -89,7 +99,7 @@ class Said:
 
     def line(self) -> str:
         """The window as one block of text, saying when and in which session."""
-        when = time.strftime("%Y-%m-%d", time.localtime(self.ts))
+        when = self.when or time.strftime("%Y-%m-%d", time.localtime(self.ts))
         return f"[session {self.session_id}, {when}]\n" + self.text()
 
 
@@ -98,14 +108,15 @@ def _clip(text: str, n: int = LINE_CHARS) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def window_line(role: str, content: str) -> str:
-    """One message as a window shows it (and as its terms are indexed)."""
-    return f"{role}: {_clip(content)}"
+def window_line(role: str, content: str, when: Optional[str] = None) -> str:
+    """One message as a window shows it; `when` is a stamp for a message recorded at another time than the window's first."""
+    return f"{role} ({when}): {_clip(content)}" if when else f"{role}: {_clip(content)}"
 
 
-def _windows(memory: "Memory", rows: list, *, user_id: str) -> list[Said]:
+def _windows(memory: "Memory", rows: list, *, user_id: str, dates: str = "off") -> list[Said]:
     """The windows `rows` name, read from the Log: redacted, oldest first. A window whose
-    messages `prune` removed has none left and is skipped."""
+    messages `prune` removed has none left and is skipped. With `dates` of `stamp` or `resolve`
+    the window says when it was said, and with `resolve` what its relative dates mean (#71)."""
     ids = [i for r in rows for i in json.loads(r["event_ids"])]
     events = {e.id: e for e in memory.store.get_events(ids)}
     forgotten = memory._forgotten_values(user_id)
@@ -115,16 +126,25 @@ def _windows(memory: "Memory", rows: list, *, user_id: str) -> list[Said]:
         messages = [events[i] for i in json.loads(r["event_ids"]) if i in events]
         if not messages:
             continue
-        lines = [window_line(m.role, m.content) for m in messages]  # type: ignore[attr-defined]
+        first = stamp(messages[0].ts)
+        lines = []
+        bare = []
+        for m in messages:
+            bare.append(window_line(m.role, m.content))  # type: ignore[attr-defined]
+            when = stamp(m.ts)
+            line = window_line(m.role, m.content, when if dates != "off" and when != first else None)  # type: ignore[attr-defined]
+            lines.append(annotate(line, m.ts) if dates == "resolve" else line)
         if pattern:
             lines = [pattern.sub("[forgotten]", line) for line in lines]
-        out.append(Said(r["session_id"], r["first_ts"], r["agent"], tuple(lines), tuple(m.id for m in messages)))
+            bare = [pattern.sub("[forgotten]", line) for line in bare]
+        out.append(Said(r["session_id"], r["first_ts"], r["agent"], tuple(lines), tuple(m.id for m in messages),
+                        when=first if dates != "off" else "", said="\n".join(bare)))
     return sorted(out, key=lambda w: w.ts)
 
 
 async def search(memory: "Memory", query: Optional[str], *, user_id: Optional[str], agent: Optional[str],
                  exclude_session: Optional[str], limit: int, across_agents: bool = True,
-                 threshold: Optional[float] = None) -> tuple[list[Said], int]:
+                 threshold: Optional[float] = None, dates: str = "off") -> tuple[list[Said], int]:
     """`(the best `limit` windows, how many more matched)`, best first. Nothing
     without a user, a query, or a positive limit."""
     if not query or user_id is None or limit <= 0:
@@ -137,10 +157,10 @@ async def search(memory: "Memory", query: Optional[str], *, user_id: Optional[st
     else:
         rows = memory.knowledge.recent_windows(user_id, exclude_session=exclude_session, agent=only_agent,
                                                limit=SCAN_WINDOWS)
-    found = _windows(memory, rows, user_id=user_id)
+    found = _windows(memory, rows, user_id=user_id, dates=dates)
     if not found:
         return [], 0
-    scores = await memory.ranker.score(query, [w.text() for w in found])
+    scores = await memory.ranker.score(query, [w.said or w.text() for w in found])
     bar = memory.ranker.threshold if threshold is None else threshold
     ranked = sorted(((s, n, w) for n, (s, w) in enumerate(zip(scores, found)) if s >= bar),
                     key=lambda t: (-t[0], -t[2].ts, t[1]))

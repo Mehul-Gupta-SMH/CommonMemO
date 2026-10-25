@@ -18,6 +18,7 @@ conditions, each question in its own headless `claude -p` session:
 | `memory` | CommonMemo as shipped: every turn recorded in a session per LoCoMo session, closed (the local engine's recaps), read through the hooks and the MCP tools, read-only |
 | `extracted` | the same, with `Memory(extractor=ModelExtractor(...))`: a model call as each session closes writes its facts into the user profile (#60) |
 | `full` | the whole conversation in the prompt: the ceiling |
+| `dated-off`, `dated-stamp`, `dated-resolve` | message windows over a store whose messages are recorded at their session's date, with no date written into the text (#71); windows that say the day only, that stamp each message, that also resolve relative dates. Run on their own |
 
 **Contamination.** LoCoMo is public, and the model may have seen it: in a first
 run it said it was answering "from what I recall of these conversations"
@@ -44,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import calendar
 import json
 import os
 import random
@@ -70,9 +72,14 @@ CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "common
 USER = "locomo"
 CATEGORIES = {1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop"}
 CONDITIONS = ("none", "rag", "memory", "extracted", "said", "both", "full")
-STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "both": "extracted"}
+DATED = ("dated-off", "dated-stamp", "dated-resolve")
+"""Message windows over a store whose messages carry the session's own date, with no date written into the
+text (#71): windows that say the day only, that stamp each message, that also resolve relative dates."""
+STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "both": "extracted",
+            **{c: "dated" for c in DATED}}
 """Which ingested store each memory condition reads; `said` and `both` add the user's past messages (#62)."""
 SAID_FLAGS = ["--messages", "8", "--recall-messages", "8"]
+FLAGS_OF = {"said": SAID_FLAGS, "both": SAID_FLAGS, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
 RAG_WINDOW, RAG_TOP = 6, 8
 """The simple alternative a developer would build: windows of 6 turns, the 8 best against the question."""
 CALL_BUDGET = "0.60"
@@ -219,10 +226,25 @@ def extractor(model: Optional[str]) -> ModelExtractor:
     return ModelExtractor(complete)
 
 
-def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor]) -> dict[str, int]:
+SESSION_DATE = re.compile(r"(\d{1,2}):(\d{2}) (am|pm) on (\d{1,2}) (\w+),? (\d{4})", re.IGNORECASE)
+
+
+def session_ts(date: str) -> float:
+    """When a LoCoMo session happened, from "1:56 pm on 8 May, 2033"."""
+    m = SESSION_DATE.search(date)
+    if not m:
+        raise ValueError(f"cannot read a session date from {date!r}")
+    hour, minute, half, day, month, year = m.groups()
+    month_no = [x.lower() for x in calendar.month_name].index(month.lower())
+    return time.mktime((int(year), month_no, int(day), int(hour) % 12 + (12 if half.lower() == "pm" else 0), int(minute), 0, 0, 0, -1))
+
+
+def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor], dated: bool = False) -> dict[str, int]:
     """Record the conversation, one closed memory session per LoCoMo session; with an
     extractor, closing a session also extracts its facts (the product feature). A store
-    already in the working directory is reused, so a resumed or extended run asks about the same facts."""
+    already in the working directory is reused, so a resumed or extended run asks about the same facts.
+    `dated`: each message is recorded at its session's date and the date is not written into the text,
+    as when a real agent's messages are logged as they happen."""
     # A bulk ingestion looks like a write spike to the default alerts; that is not what is measured here.
     built = db.exists()
     mem = Memory(f"sqlite:///{db}", project="locomo", extractor=extract, alerts=AlertPolicy(enabled=False))
@@ -230,7 +252,10 @@ def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor]) ->
         with mem.session(f"locomo-session-{n}", user_id=USER, agent="locomo") as s:
             for i, t in enumerate(turns):
                 role = "user" if t["speaker"] == conv["conversation"]["speaker_a"] else "assistant"
-                s.message(role, (f"On {date}. " if i == 0 else "") + turn_text(t))
+                if dated:
+                    s.message(role, turn_text(t), ts=session_ts(date))
+                else:
+                    s.message(role, (f"On {date}. " if i == 0 else "") + turn_text(t))
     stats = {"sessions": len(sessions_of(conv)), "facts": len(mem.store.events(kinds=["user_fact"])),
              "events": len(mem.store.events())}
     asyncio.run(mem.aclose())
@@ -294,7 +319,8 @@ def main() -> int:
     p.add_argument("--per-category", type=int, default=8, help="questions per category (1 to 4)")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--no-disguise", action="store_true", help="use the data as published (the model may have seen it)")
-    p.add_argument("--conditions", default=",".join(CONDITIONS))
+    p.add_argument("--conditions", default=",".join(CONDITIONS),
+                   help=f"also {', '.join(DATED)} (#71: dated windows, run on their own)")
     p.add_argument("--model", default=None, help="answering/extraction model for claude --model (default: the CLI's); "
                                                  "e.g. haiku for the smallest")
     p.add_argument("--judge-model", default="haiku", help="model that grades the answers")
@@ -307,7 +333,7 @@ def main() -> int:
     args = p.parse_args()
 
     conditions = [c for c in args.conditions.split(",") if c]
-    bad = set(conditions) - set(CONDITIONS)
+    bad = set(conditions) - set(CONDITIONS) - set(DATED)
     if bad:
         p.error(f"unknown conditions {sorted(bad)}")
     data = load_data(args.data)
@@ -328,6 +354,9 @@ def main() -> int:
     if "memory" in wanted:
         dbs["memory"] = work / "memory.db"
         ingest_stats["memory"] = ingest(conv, dbs["memory"], None)
+    if "dated" in wanted:
+        dbs["dated"] = work / "dated.db"
+        ingest_stats["dated"] = ingest(conv, dbs["dated"], None, dated=True)
     if "extracted" in wanted:
         dbs["extracted"] = work / "extracted.db"
         ingest_stats["extracted"] = ingest(conv, dbs["extracted"], None if args.ingest_only else extractor(args.model))
@@ -342,7 +371,7 @@ def main() -> int:
         for line in cache_file.read_text().splitlines():
             r = json.loads(line)
             cached[f"{r['condition']}|{r['id']}"] = r
-    projects = {c: project(work, c, dbs[STORE_OF[c]], SAID_FLAGS if c in ("said", "both") else [])
+    projects = {c: project(work, c, dbs[STORE_OF[c]], FLAGS_OF.get(c, []))
                 for c in conditions if c in STORE_OF}
     windows = rag_windows(conv)
     bare = work / "bare"
