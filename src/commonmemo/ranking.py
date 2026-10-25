@@ -89,7 +89,8 @@ class EmbeddingRanker:
         self._cache: OrderedDict[str, list[float]] = OrderedDict()
         self._cache_size = cache_size
 
-    async def _vectors(self, texts: Sequence[str]) -> list[list[float]]:
+    async def vectors(self, texts: Sequence[str]) -> list[list[float]]:
+        """The embedding of each text (embedded together, the ones not seen lately)."""
         missing = list(dict.fromkeys(t for t in texts if t not in self._cache))
         if missing:
             out = self.embed(missing)
@@ -105,11 +106,11 @@ class EmbeddingRanker:
     async def score(self, query: str, texts: Sequence[str]) -> list[float]:
         if not texts:
             return []
-        q, *rest = await self._vectors([query, *texts])
-        return [max(0.0, _cosine(q, v)) for v in rest]
+        q, *rest = await self.vectors([query, *texts])
+        return [max(0.0, cosine(q, v)) for v in rest]
 
 
-def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
     return dot / norm if norm else 0.0
