@@ -46,7 +46,7 @@ from importlib import resources
 from typing import IO, Any, Optional
 
 from .agent_tools import run_sync
-from .cli import DEFAULT_STORE, env_flag, memory_options, policy_from
+from .cli import DEFAULT_STORE, WINDOWS, env_flag, memory_options, policy_from
 from .events import ToolInvoked
 from .memory import Memory
 
@@ -226,7 +226,7 @@ def _command(harness: str, args: argparse.Namespace) -> str:
     if args.read_only:
         parts.append("--read-only")
     for flag in ("messages", "recall_messages"):
-        if getattr(args, flag):
+        if str(getattr(args, flag)) != WINDOWS:  # the default needs no flag; 0 turns it off
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if getattr(args, "message_dates", "off") != "off":
         parts += ["--message-dates", args.message_dates]

@@ -29,6 +29,10 @@ def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+WINDOWS = "8"
+"""`MemoryPolicy.messages` and `recall_messages`, as the option default (a test keeps them equal)."""
+
+
 def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argparse.ArgumentParser:
     """Add the options that pick the memory, user, agent and session."""
     env = os.environ.get
@@ -39,10 +43,11 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
     p.add_argument("--agent", default=env("COMMONMEMO_AGENT", agent))
     p.add_argument("--session", default=env("COMMONMEMO_SESSION"))
     p.add_argument("--read-only", action="store_true", default=env_flag("COMMONMEMO_READ_ONLY"))
-    p.add_argument("--messages", type=int, default=int(env("COMMONMEMO_MESSAGES", "0")),
-                   help="windows of the user's past messages to push with each turn (default 0: none)")
-    p.add_argument("--recall-messages", type=int, default=int(env("COMMONMEMO_RECALL_MESSAGES", "0")),
-                   help="windows of past messages memory_recall returns (default 0: none)")
+    p.add_argument("--messages", type=int, default=int(env("COMMONMEMO_MESSAGES", WINDOWS)),
+                   help="windows of the user's past messages to push with each turn (default 8; 0: none)")
+    p.add_argument("--recall-messages", type=int,
+                   default=int(env("COMMONMEMO_RECALL_MESSAGES", WINDOWS)),
+                   help="windows of past messages memory_recall returns (default 8; 0: none)")
     p.add_argument("--message-dates", choices=("off", "stamp", "resolve"), default=env("COMMONMEMO_MESSAGE_DATES", "off"),
                    help="what windows say about when: off, stamp (dated messages), resolve (also relative dates)")
     return p

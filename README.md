@@ -315,13 +315,15 @@ difference between 23 and 38 correct answers out of 48
 ### What was said
 
 Recaps and facts are what memory made of earlier sessions. Memory can also
-search the messages themselves ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62); off by default, since it puts the user's
-own earlier words into the prompt):
+search the messages themselves ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62); on by default since [#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70):
+it took memory from 18% to 61% correct on LoCoMo, below). It puts the user's own earlier
+words, not a summary, into the prompt, so it is the one default you may want to turn off:
 
 ```python
-mem = Memory(policy=MemoryPolicy(messages=8, recall_messages=8))
+mem = Memory()  # messages=8, recall_messages=8
 # the turn's push gets the 8 windows of past messages the request is about, and
 # memory_recall returns 8 more: "[said] [session s1, 2026-10-24]  user: The guest room key is under the blue pot..."
+mem = Memory(policy=MemoryPolicy(messages=0, recall_messages=0))  # neither pushed nor recalled
 ```
 
 Windows are 6 consecutive messages of one of the user's other sessions, ranked
@@ -331,7 +333,7 @@ inspector show where they came from. Only that user's messages, never the
 current session's, never another user's; a session without a user has none;
 forgotten text is redacted and `forget_user` removes the messages. The hook
 and MCP commands take `--messages N` and `--recall-messages N`
-(`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`).
+(`COMMONMEMO_MESSAGES`, `COMMONMEMO_RECALL_MESSAGES`; default 8, `0` turns it off).
 
 A window says the day of its first message. `MemoryPolicy(message_dates="stamp")`
 ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71)) gives it the weekday and time, and any message recorded at another time its
@@ -616,10 +618,10 @@ everything, about $5 in all.
 | | Correct | $ / question |
 |---|---|---|
 | no memory (guessing alone) | 13/222 (6%) | 0.0008 |
-| memory as shipped by default (recaps and facts) | 39/222 (18%) | 0.0015 |
+| memory with recaps and facts only (`messages=0`, how it shipped before #70) | 39/222 (18%) | 0.0015 |
 | naive retrieval over the raw transcript (8 excerpts by shared words) | 118/222 (53%) | 0.0018 |
 | memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 (52%) | 0.0028 |
-| memory that searches what was said (`messages=8, recall_messages=8`) | 136/222 (61%) | 0.0020 |
+| memory that searches what was said (`messages=8, recall_messages=8`, now the default) | 136/222 (61%) | 0.0020 |
 | both of those | **143/222 (64%)** | 0.0030 |
 | the whole conversation in the prompt | 113/222 (51%) | 0.0100 |
 
@@ -662,6 +664,10 @@ fact), [ADR 0003](docs/adr/0003-procedural-memory.md) (procedural memory) and
 and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14).
 
 ## Honest caveats
+
+- **Message windows are on by default** ([#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70)): a user's own earlier words, not a summary,
+  can appear in a later prompt, and the database grows about 0.5 KB a message for the index. Only that user's other
+  sessions; `MemoryPolicy(messages=0, recall_messages=0)` turns it off. Extraction (a model call per closing session) is off.
 
 - **One live run so far, with Claude Code as the model.** It covered the
   hooks, the MCP tools, procedures, learning and injection, all through real

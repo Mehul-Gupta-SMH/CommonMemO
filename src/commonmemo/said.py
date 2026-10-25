@@ -6,13 +6,15 @@ raw transcript that share the most words with a question was as good as
 extracted facts, and much better than the recaps alone; each found questions
 the other missed. So memory can also search the messages themselves:
 
-    mem = Memory(policy=MemoryPolicy(messages=4, recall_messages=6))
+    mem = Memory(policy=MemoryPolicy(messages=4, recall_messages=6))  # the defaults are 8 and 8
 
 - `messages`: windows pushed with the turn (the request is the query);
 - `recall_messages`: windows `memory_recall` returns.
 
-Both default to 0: this puts a user's past words into the prompt, which
-recaps and facts do not. The benchmark decides whether that should change.
+Both default to 8 (#70): the benchmark says they are worth having, and a
+search no longer slows with history. This puts a user's own past words into
+the prompt, which recaps and facts do not: `MemoryPolicy(messages=0,
+recall_messages=0)` (`--messages 0 --recall-messages 0`) turns it off.
 
 `MemoryPolicy.message_dates` says when a window was said: `stamp` gives it the
 weekday, date and time, `resolve` also what each relative date means (`dates.py`,

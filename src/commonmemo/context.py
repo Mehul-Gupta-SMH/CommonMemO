@@ -81,12 +81,13 @@ class MemoryPolicy:
     (`procedures.py`): the share of the task description's words found in the
     request (half, by default), or a cosine similarity with an embedding
     ranker. Below it, the agent can still pull them."""
-    messages: int = 0
+    messages: int = 8
     """Windows of the user's past messages pushed with the turn, the best
-    against the request (`said.py`, #62). 0 (the default): none, because
-    this puts the user's earlier words, not a summary, into the prompt."""
-    recall_messages: int = 0
-    """Windows `memory_recall` returns the same way."""
+    against the request (`said.py`, #62). On by default (#70): on five LoCoMo
+    conversations they took memory from 18% to 61% correct. This puts the
+    user's own earlier words, not a summary, into the prompt; 0 turns it off."""
+    recall_messages: int = 8
+    """Windows `memory_recall` returns the same way; 0 turns it off."""
     min_message_score: Optional[float] = None
     """How related a window must be to be pushed or recalled; None uses the
     ranker's own threshold."""

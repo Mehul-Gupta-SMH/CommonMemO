@@ -6,25 +6,25 @@ commonmemo 0.0.1 · Python 3.13.16 · 2026-10-25
 
 | Scenario | Checks | With memory | Without | Memory added (chars) | Time (ms) |
 |---|---|---|---|---:|---:|
-| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 7 |
-| negatives | a user's "never" is respected in a later session | pass | fail | 288 | 4 |
-| latest preference | the newest value of a changed preference is used | pass | fail | 222 | 4 |
-| resume after crash | a rerun skips finished steps and never repeats a side effect | pass | fail | 0 | 70 |
-| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 61 |
-| forgetting | a forgotten fact never comes back, in the push or through recall | pass | n/a | 205 | 11 |
+| known tool failure | a tool failure that has a known fix is not repeated | pass | fail | 607 | 11 |
+| negatives | a user's "never" is respected in a later session | pass | fail | 288 | 7 |
+| latest preference | the newest value of a changed preference is used | pass | fail | 222 | 6 |
+| resume after crash | a rerun skips finished steps and never repeats a side effect | pass | fail | 0 | 116 |
+| cross-harness | a session started in one harness continues in another | pass | fail | 188 | 87 |
+| forgetting | a forgotten fact never comes back, in the push or through recall | pass | n/a | 336 | 11 |
 | injection | stored text is never placed where instructions go | pass | n/a | 498 | 4 |
 | world-fact isolation | one user's claim doesn't change what another user is told | pass | n/a | 245 | 4 |
-| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 9 |
+| mid-run refresh | a tool result that brings up an older session gets its recap pushed mid-run | pass | fail | 248 | 10 |
 | more available | when the push leaves things out, the agent is told and recalls them | pass | fail | 841 | 14 |
-| staleness | a fact past its lifetime isn't quoted as current | pass | n/a | 0 | 104 |
-| precedence | an agent's write doesn't override an operator's fact | pass | n/a | 245 | 4 |
-| recall by meaning | a fact asked about in other words is recalled | pass | fail | 0 | 19 |
-| procedure by description | a request for a known task gets the house template, unnamed | pass | fail | 301 | 10 |
-| learning from runs | a correction in one session becomes a lesson for that user's next one | pass | fail | 545 | 5 |
-| pinned library version | the agent uses the API of the library version the project pins | pass | fail | 437 | 11 |
-| said once, recalled later | a fact stated in one session is recalled in the next, once extracted | pass | fail | 547 | 9 |
-| detail in what was said | a detail a recap drops is found in the user's past messages | pass | fail | 483 | 9 |
-| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 48 |
+| staleness | a fact past its lifetime isn't quoted as current | pass | n/a | 0 | 105 |
+| precedence | an agent's write doesn't override an operator's fact | pass | n/a | 245 | 5 |
+| recall by meaning | a fact asked about in other words is recalled | pass | fail | 0 | 24 |
+| procedure by description | a request for a known task gets the house template, unnamed | pass | fail | 301 | 12 |
+| learning from runs | a correction in one session becomes a lesson for that user's next one | pass | fail | 545 | 6 |
+| pinned library version | the agent uses the API of the library version the project pins | pass | fail | 437 | 15 |
+| said once, recalled later | a fact stated in one session is recalled in the next, once extracted | pass | fail | 748 | 12 |
+| detail in what was said | a detail a recap drops is found in the user's past messages | pass | fail | 483 | 8 |
+| detect, freeze, revert | a burst of bad writes is detected, frozen and undone | pass | n/a | 0 | 58 |
 
 19 of 19 pass with memory; memory turned a failure into a success in 13 of the 13 scenarios that have a without-memory baseline.
 
