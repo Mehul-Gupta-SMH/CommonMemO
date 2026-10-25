@@ -58,6 +58,24 @@ An index for message windows ([#65](https://github.com/Mehul-Gupta-SMH/CommonMem
 - **Cost**: about 0.1 ms more to write a message and about 0.5 KB a message in
   the database (it more than doubled a synthetic 100,000-message file).
 
+Persistent window vectors for embedding rankers ([#77](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/77)):
+
+- **An embedding ranker no longer ranks only the 400 newest windows, nor embeds them again in
+  every process.** It scores the windows sharing the most terms with the request and the 2,000 newest
+  by cosine over vectors stored in `window_vectors` (`SCHEMA_VERSION` 8). A window is embedded once,
+  from its redacted text, in the first search that needs it (at most 500 a search, newest first); a
+  later search in a new process embeds the request and a fixed probe text only.
+- **A changed embedder is noticed** (its vector for the probe text differs from the stored one: all
+  vectors are dropped and made again); **a forgotten value never reaches the embedder or a stored
+  vector** (the redacted text is embedded; a vector made under another set of forgotten values is
+  made again); `forget_user` and `prune` delete vectors.
+- **Measured** (`scripts/bench_vectors.py`, a fake 384-dimension embedder, so index and arithmetic only):
+  the first search embeds the request, the probe and up to 500 windows, later ones the request and
+  the probe; a search over 2,300 candidate windows takes 50 ms with numpy and 118 to 151 ms in plain
+  Python (the 100 ms target was met with numpy only); scoring every window by brute force would take
+  0.5 s (numpy) to 1.2 s (plain) at 100,000 messages, so a real vector index remains a dependency
+  decision. Quality against keyword ranking is not measured here (the model hosts are unreachable).
+
 A smaller message-window index ([#76](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/76)):
 
 - **Index rows are integers.** A term row carries a user number, the term and a window

@@ -351,8 +351,14 @@ and reads only those: about half a millisecond at 10,000, 100,000 and 500,000
 messages, where scanning took 69 to 93 ms and only reached the latest 4,000. The
 index costs about 0.2 KB a message in the database (0.57 KB before [#76](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/76) made its rows
 small integers) and under a tenth of a millisecond to write. An
-embedding ranker, which scores meaning rather than shared words, ranks the
-user's 400 newest windows instead; a vector index is the next step.
+embedding ranker, which scores meaning rather than shared words, scores those
+windows and the user's 2,000 newest by cosine over stored vectors ([#77](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/77)): a window is embedded once, from
+its redacted text, and a later search, in any process, embeds only the request. About 1.5 KB a window at 384
+dimensions, only when an embedding ranker is used; a search takes about 50 ms with numpy installed and
+120 to 150 ms without (`scripts/bench_vectors.py`, synthetic vectors: the quality against keyword ranking
+is not measured, since the model hosts are unreachable from the build environment). Searching *every*
+window by brute force would take about half a second to a second at 100,000 messages; beyond that a real
+vector index (pgvector, sqlite-vec) is a dependency decision.
 
 ## Resume a stopped process
 

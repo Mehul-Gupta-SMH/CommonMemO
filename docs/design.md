@@ -404,8 +404,12 @@ Log gives the same index. A search asks the index for the 300 windows sharing
 the most terms with the query (exactly the keyword ranker's score, so it returns
 what a scan would), reads only those events and ranks them. The scratch copies
 that `as_of` and reverts replay into keep no windows. An embedding ranker scores
-meaning, not shared words, so it ranks the user's 400 newest windows instead (a
-vector index is the next step). Measured with `scripts/bench_said.py` on one
+meaning, not shared words, so it scores those windows and the user's 2,000 newest by cosine
+over stored vectors ([#77](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/77)): `window_vectors` holds a float32 vector per window, made once from the
+redacted text (at most 500 a search, newest first); a probe text embedded with every request detects
+another embedder (its vector for the probe changes, and the stored vectors are dropped); a vector made
+before a value was forgotten is made again, one per set of forgotten values; `forget_user` and `prune` delete
+them. A cache the Log can always rebuild, so it needs no migration. Measured with `scripts/bench_said.py` on one
 user: a search takes about 0.3 to 0.6 ms from 10,000 to 500,000 messages (the
 old scan: 69 to 93 ms, and only the latest 4,000 messages); writing a message
 costs about 0.1 ms more, and the index adds about 0.2 KB a message to the

@@ -102,10 +102,11 @@ _INTEGER = re.compile(r"\bINTEGER\b")
 
 
 _WITHOUT_ROWID = re.compile(r"\s*\bWITHOUT ROWID\b")
+_BLOB = re.compile(r"\bBLOB\b")
 
 
 def _pg_ddl(ddl: str) -> str:
-    return _INTEGER.sub("BIGINT", _REAL.sub("DOUBLE PRECISION", _WITHOUT_ROWID.sub("", ddl)))
+    return _BLOB.sub("BYTEA", _INTEGER.sub("BIGINT", _REAL.sub("DOUBLE PRECISION", _WITHOUT_ROWID.sub("", ddl))))
 
 
 def _pg_sql(sql: str) -> str:

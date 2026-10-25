@@ -298,3 +298,159 @@ def test_an_index_in_the_old_shape_is_rebuilt_from_the_log(tmp_path):
     mem = Memory(f"sqlite:///{db}", policy=MemoryPolicy(messages=2))
     ctx, _ = turn(mem, "where is the guest room key?")
     assert [w.session_id for w in ctx.said] == ["s1"] and "uid" in {c for c in mem.knowledge._conn.columns("window_terms")}
+
+
+# -- stored vectors (#77) -------------------------------------------------------------------
+
+
+class Embedder:
+    """A toy concept embedder that records every text it is asked to embed."""
+
+    CONCEPTS = (("sister", "brother", "sibling"), ("dentist", "doctor"), ("key", "pot"), ("flight", "plane", "lisbon"))
+
+    def __init__(self):
+        self.seen, self.calls = [], 0
+
+    def __call__(self, texts):
+        self.calls += 1
+        self.seen += list(texts)
+        return [[float(any(w in t.lower() for w in group)) + 0.01 for group in self.CONCEPTS] for t in texts]
+
+
+def vec_mem(embed, path=None, **policy):
+    from commonmemo.ranking import EmbeddingRanker
+
+    options = dict(policy=MemoryPolicy(messages=3, **policy), ranker=EmbeddingRanker(embed, threshold=0.5))
+    return Memory(f"sqlite:///{path}", **options) if path else Memory(**options)
+
+
+def vec_talk(mem):
+    talk(mem, "s1", [("user", "My sister arrives on Friday."), ("assistant", "Noted.")])
+    talk(mem, "s2", [("user", "The dentist is on Tuesday."), ("assistant", "Noted.")])
+    talk(mem, "s3", [("user", "I booked a flight to Lisbon."), ("assistant", "Great.")])
+
+
+def test_vectors_match_ranking_the_windows_with_the_ranker():
+    from commonmemo.ranking import EmbeddingRanker
+    from commonmemo.said import _windows
+
+    embed = Embedder()
+    mem = vec_mem(embed)
+    vec_talk(mem)
+    query = "When does my sibling get here?"
+    ctx, _ = turn(mem, query)
+    rows = mem.knowledge.recent_windows("ada", exclude_session="now")
+    windows = _windows(mem, rows, user_id="ada")
+    direct = run(EmbeddingRanker(Embedder(), threshold=0.5).score(query, [w.said for w in windows]))
+    expected = sorted(((round(s, 3), w.session_id) for s, w in zip(direct, windows) if s >= 0.5), reverse=True)
+    assert [(w.score, w.session_id) for w in ctx.said] == expected and expected[0][1] == "s1"
+
+
+def test_a_second_process_embeds_only_the_request(tmp_path):
+    db = tmp_path / "memory.db"
+    first = Embedder()
+    mem = vec_mem(first, db)
+    vec_talk(mem)
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert len(first.seen) > 3  # the windows were embedded once
+    run(mem.aclose())
+    second = Embedder()  # a new process: a new ranker with an empty cache, the same file
+    mem = vec_mem(second, db)
+    ctx, _ = turn(mem, "When does my sibling get here?", sid="now")
+    assert [w.session_id for w in ctx.said] == ["s1"]
+    assert sorted(second.seen) == sorted(["When does my sibling get here?", "The quick brown fox jumps over the lazy dog."])
+
+
+def test_a_windows_older_than_the_newest_are_found_by_their_words(monkeypatch):
+    import commonmemo.said as said
+
+    monkeypatch.setattr(said, "VECTOR_SCAN", 1)
+    mem = vec_mem(Embedder())
+    vec_talk(mem)  # three windows; only the newest is scanned, the sister window is found through its words
+    ctx, _ = turn(mem, "When does my sister arrive?", sid="now")
+    assert [w.session_id for w in ctx.said] == ["s1"]
+
+
+def test_another_embedder_drops_the_stored_vectors(tmp_path):
+    db = tmp_path / "memory.db"
+    mem = vec_mem(Embedder(), db)
+    vec_talk(mem)
+    turn(mem, "When does my sibling get here?", sid="now")
+    stored = len(rows(mem, "window_vectors"))
+    run(mem.aclose())
+    other = Embedder()  # the same dimensions, a different model: other directions for the same text
+    other.__class__ = type("Other", (Embedder,), {"__call__": lambda self, texts: (
+        setattr(self, "seen", self.seen + list(texts)) or [[float(len(t) % 7), 1.0, 0.0, 2.0] for t in texts])})
+    mem = vec_mem(other, db)
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert stored == 3 and len(other.seen) > 3  # all of it embedded again
+
+
+def test_a_forgotten_value_never_reaches_the_embedder_or_a_stored_vector():
+    embed = Embedder()
+    mem = vec_mem(embed)
+    with mem.session("s1", user_id="ada") as s:
+        s.remember("code", "4471")
+        s.message("user", "My sister's gate code is 4471.")
+        s.forget("code")
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert embed.seen and not any("4471" in t for t in embed.seen)
+    # a value forgotten after its vector was stored makes the vector stale: it is made again, redacted
+    mem = vec_mem(embed)
+    with mem.session("s1", user_id="ada") as s:
+        s.message("user", "My sister's gate code is 9912.")
+    turn(mem, "When does my sibling get here?", sid="now")
+    before = len(embed.seen)
+    with mem.session("s5", user_id="ada") as s:
+        s.remember("code2", "9912")
+        s.forget("code2")
+    turn(mem, "When does my sibling get here?", sid="s6")
+    assert len(embed.seen) > before and not any("9912" in t for t in embed.seen[before:])
+
+
+def test_prune_and_forget_user_take_the_vectors_with_them():
+    mem = vec_mem(Embedder())
+    vec_talk(mem)
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert rows(mem, "window_vectors")
+    mem.prune(older_than_days=-1)
+    assert rows(mem, "window_vectors") == []
+    mem = vec_mem(Embedder())
+    vec_talk(mem)
+    turn(mem, "When does my sibling get here?", sid="now")
+    run(mem.forget_user("ada"))
+    assert rows(mem, "window_vectors") == []
+
+
+def test_at_most_so_many_windows_are_embedded_by_one_search(monkeypatch):
+    import commonmemo.said as said
+
+    monkeypatch.setattr(said, "EMBED_PER_SEARCH", 2)
+    embed = Embedder()
+    mem = vec_mem(embed)
+    vec_talk(mem)
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert len(rows(mem, "window_vectors")) == 2  # the newest two; the next search does the rest
+    turn(mem, "When does my sibling get here?", sid="now7")
+    assert len(rows(mem, "window_vectors")) == 3
+
+
+def test_numpy_and_plain_python_agree(monkeypatch):
+    import builtins
+
+    from commonmemo.said import _cosines
+
+    assert _cosines([1.0], []) == []
+    q, vs = [1.0, 0.0, 0.5], [[1.0, 0.0, 0.5], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    with_numpy = _cosines(q, vs)
+    real = builtins.__import__
+    monkeypatch.setattr(builtins, "__import__", lambda name, *a, **k: (_ for _ in ()).throw(ImportError()) if name == "numpy" else real(name, *a, **k))
+    plain = _cosines(q, vs)
+    assert [round(x, 5) for x in with_numpy] == [round(x, 5) for x in plain] == [1.0, 0.0, 0.0, 0.0]
+
+
+def test_no_windows_means_no_embedding_call():
+    embed = Embedder()
+    mem = vec_mem(embed)
+    turn(mem, "When does my sibling get here?", sid="now")
+    assert embed.seen == []
