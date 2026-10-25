@@ -5,6 +5,78 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-10-25: LoCoMo, the other five conversations ([#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18))
+
+Everything above came from conversations 0 to 4, and the extraction prompt was
+adjusted once after looking at their misses. Conversations 5 to 9 were never used
+while building, so this is the held-out check. Nothing was changed before it: the
+same script, seed 7, 12 questions per category (228 questions: 43, 48, 46, 48 and 43),
+the same seven conditions (`memory` and `extracted` with `--messages 0`, `said` and
+`both` with 8 and 8), disguised, Haiku for answering, extraction and judging
+(`claude-haiku-5-5`, Claude Code `2.1.310`). $5.58, with five
+conversations run in parallel. The bar, set in the issue: windows beat retrieval, and memory
+without windows stays far below both; if not, the README table is reworded as a result that did not replicate.
+
+**The five held-out conversations:**
+
+| Condition | Correct | multi-hop | temporal | open-domain | single-hop | $ / question |
+|---|---|---|---|---|---|---|
+| none | 12/228 (5%) | 1/60 | 1/60 | 7/48 | 3/60 | 0.0008 |
+| memory, recaps and facts only | 32/228 (14%) | 7/60 | 5/60 | 15/48 | 5/60 | 0.0015 |
+| rag (8 excerpts by shared words) | 109/228 (48%) | 28/60 | 26/60 | 18/48 | 37/60 | 0.0018 |
+| extracted | 149/228 (65%) | 34/60 | 38/60 | 29/48 | 48/60 | 0.0029 |
+| said (windows) | 140/228 (61%) | 33/60 | 34/60 | 25/48 | 48/60 | 0.0021 |
+| both | **151/228 (66%)** | 32/60 | 41/60 | 26/48 | 52/60 | 0.0032 |
+| full conversation | 115/228 (50%) | 33/60 | 28/60 | 15/48 | 39/60 | 0.0106 |
+
+Extraction wrote 184 to 232 facts a conversation (216, 232, 220, 184 and 213).
+
+**All ten (450 questions):**
+
+| Condition | Correct | multi-hop | temporal | open-domain | single-hop |
+|---|---|---|---|---|---|
+| none | 25 (6%) | 4/119 | 1/120 | 13/91 | 7/120 |
+| memory, recaps and facts only | 71 (16%) | 14/119 | 14/120 | 25/91 | 18/120 |
+| rag | 227 (50%) | 46/119 | 63/120 | 29/91 | 89/120 |
+| extracted | 265 (59%) | 61/119 | 76/120 | 43/91 | 85/120 |
+| said (windows) | 276 (61%) | 61/119 | 76/120 | 41/91 | 98/120 |
+| both | **294 (65%)** | 66/119 | 83/120 | 43/91 | 102/120 |
+| full conversation | 228 (51%) | 63/119 | 54/120 | 24/91 | 87/120 |
+
+**Paired, the same questions (only A / only B, two-sided sign test):**
+
+| | First five | Held-out five | All ten |
+|---|---|---|---|
+| windows against retrieval | 42 / 24, p = 0.04 | 52 / 21, p < 0.001 | 94 / 45, p < 0.001 |
+| extraction against retrieval | 38 / 40, p = 0.91 | 67 / 27, p < 0.001 | 105 / 67, p = 0.005 |
+| both against windows | 30 / 23, p = 0.41 | 34 / 23, p = 0.19 | 64 / 46, p = 0.11 |
+| windows against memory without them | 102 / 5 | 111 / 3 | 213 / 8 |
+| whole conversation against retrieval | 33 / 38, p = 0.64 | 38 / 32, p = 0.55 | 71 / 70, p = 1.0 |
+
+**What held and what did not.**
+- **Held:** windows beat retrieval in both halves, by more on the held-out five. Memory without
+  windows is far below both (14% and 16%), and the whole conversation in the prompt is no better than
+  retrieval at about six times the cost. The default flipped on in [#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70) stands on ten conversations, not five.
+- **Did not hold: "extraction only ties retrieval".** On the first five it did (116 against 118);
+  on the held-out five it was 40 questions ahead (149 against 109). Over all ten it is ahead (p = 0.005).
+  This sample cannot say why: the prompt was adjusted once after the first five's misses (which may
+  have helped it elsewhere), or the conversations differ (retrieval is a little weaker on the held-out five, 48%
+  against 53%). Extraction also beats windows alone on the held-out five's open-domain and temporal questions (29 and
+  38 of 48 and 60, against 25 and 34), the kinds that need facts pulled together across sessions.
+- **Not settled: extraction on top of windows.** 18 more questions over ten (p = 0.11), and it costs
+  about 1.5 times as much and a model call per closing session. Extraction stays off by default.
+  Ten conversations still give wide intervals.
+- **Cost:** the new five cost $5.58 in all (answering, extraction and judging), $0.34 of it for extraction.
+
+Caveats as before: Haiku only, keyword ranking (embeddings untried), a model judge, 12 questions per
+category sampled from each conversation (450 of the benchmark's roughly 1,500 questions in categories
+1 to 4), and the disguise (names and years) stops lookup by name but not recognition of the story.
+Messages here are recorded at ingestion time with the session date written into the first message, as in the earlier runs.
+
+```
+python scripts/locomo_benchmark.py --conversation 5 --data locomo10.json --per-category 12 --seed 7 --model haiku --judge-model haiku   # 5 to 9
+```
+
 ## 2026-10-25: dates in message windows, and resolving relative dates, pronouns and places ([#71](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/71))
 
 A window said `[session s1, 2033-05-08]` and nothing else, so "see you Friday" in

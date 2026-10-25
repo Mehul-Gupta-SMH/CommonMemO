@@ -411,8 +411,8 @@ old scan: 69 to 93 ms, and only the latest 4,000 messages); writing a message
 costs about 0.1 ms more, and the index adds about 0.5 KB a message to the
 database. Not done: `WITHOUT ROWID` for SQLite would halve that (it isn't
 portable to Postgres), and a term dictionary would shrink it further. On
-five LoCoMo conversations this took memory from 18% to 61% correct and, with
-extraction, 64%, against 53% for naive retrieval (`docs/live-runs.md`).
+ten LoCoMo conversations this took memory from 16% to 61% correct and, with
+extraction, 65%, against 50% for naive retrieval (`docs/live-runs.md`, [#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74)).
 
 `revert` covers procedures too: an entry changed since the target point is
 restored as its next version, one added since is retired, and proposals
