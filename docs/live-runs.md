@@ -5,6 +5,134 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-10-24: a topic tree over message windows, searched coarse to fine ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67))
+
+Keyword metadata (above) left multi-hop questions where they were, since their
+evidence is spread over several windows. Would a normalised topic hierarchy,
+which can return everything under a node, do better? `scripts/locomo_topics.py`
+(Haiku only; `claude-haiku-5-5`, Claude Code `2.1.310`; $1.18: trees $0.34,
+routing $0.45, the rest end to end):
+
+1. **The tree, built as memory would build it.** The windows of a conversation
+   in session order; for each, one call sees the topics so far and returns one or
+   two paths of 2 to 3 levels ("career > education > counseling certification"),
+   reusing an existing path when it fits.
+2. **Coarse to fine.** One call per question picks up to 4 topics from the list (a
+   path stands for everything under it); the candidates are the windows under
+   them, ranked by the keyword ranker, and the 8 best returned, filled from plain
+   search if fewer. This primary variant and the decision rule were fixed in the
+   issue before the run. A hedged variant (4 routed, 4 plain) is also reported.
+
+| Variant | multi-hop (141) | temporal (156) | open-domain (44) | single-hop (418) | all evidence in the 8 (759) | any evidence |
+|---|---|---|---|---|---|---|
+| plain window | 40 (28%) | 133 (85%) | 12 (27%) | 354 (85%) | **539 (71%)** | 82% |
+| **route, then rank** (primary) | 28 (20%) | 110 (71%) | 11 (25%) | 300 (72%) | **449 (59%)** | 71% |
+| 4 routed + 4 plain (hedged) | 40 (28%) | 134 (86%) | 14 (32%) | 356 (85%) | 544 (72%) | 83% |
+
+Primary against plain: 24 questions only routing retrieved all the evidence for,
+114 only plain (p < 0.0001). End to end (the `rag` condition, 222 questions): plain
+118 (53%), routed 105 (47%); 26 only routed, 39 only plain (p = 0.14); multi-hop 21
+against 18, temporal 27 against 37, single-hop 46 against 52.
+
+**By the rule set beforehand it is a no**: multi-hop recall went *down* 8 points (the
+rule needed +10), overall recall fell 12 points (it had to not fall), and end to
+end was worse, though not significantly. Nothing is built.
+
+Why it failed here, as far as I can tell:
+- **The tree came out coarse.** Told to reuse an existing path, Haiku did: 10 to 21
+  distinct paths for conversations of 19 to 32 sessions, a median of 6 windows
+  per leaf and 65 in the biggest. Conversation 0's whole tree is 12 paths
+  (`social > hobbies`, `social > family`, `health > mental health`, ...). A node then
+  holds a mix of topics, and ranking within it is the same keyword ranking as before.
+- **Routing missed.** For 180 of 759 questions (24%), none of the chosen nodes
+  held any of the evidence. Because a window is committed to one or two nodes at
+  write time, a wrong label hides it from every query routed through the tree;
+  plain search has no such failure. With plain search as the fill, the loss is
+  only partial, but the primary variant ranked routed windows first.
+- **The hedged variant is a wash** (72% against 71%, 5 more questions).
+
+What it doesn't show: that no hierarchy can work. This is one prompt, one
+granularity, no tuning, no re-organising of the tree over time (merge, split,
+rename), and nodes with no summaries (RAPTOR-style summaries of nodes are a
+different thing, closer to the extraction of
+[#60](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/60)). Two experiments with LLM-written structure over windows
+(keywords, a tree) have now given a small gain or a loss against plain keyword
+search at this scale, while extraction of facts moved multi-hop most (27 and 34
+answers right of 59, against 18). The evidence points at aggregation, not
+vocabulary or topic structure, as what multi-hop needs.
+
+Rerun: `python scripts/locomo_topics.py --work DIR` (DIR holds the benchmark's `c0` to
+`c4` working dirs).
+
+## 2026-10-24: AI-enriched metadata for message windows ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66))
+
+Would it help to have a model write search metadata for each window of past
+messages, in place of (or before) embeddings? `scripts/locomo_enrich.py`: one
+Haiku call per window of 6 turns (512 windows in the five conversations) writes
+8 to 15 keywords (with synonyms and topics the text doesn't mention), 2 to 3
+questions the window answers, and its dates as absolute dates, resolving
+relative ones against the session date. About $0.0005 a window, about $0.25 for
+all five conversations. Models: `claude-haiku-5-5`; Claude Code `2.1.310`. The
+decision rule was written in the issue before the run: build enrichment only if
+window plus metadata beats the plain window and a length control by at least 5
+points of evidence recall, and doesn't lose end to end. Embeddings were not
+tried (the model hosts are blocked here; `EmbeddingRanker` takes any embedder).
+
+**Retrieval, no answer noise.** For all 759 category 1 to 4 questions in the five
+conversations that LoCoMo labels with evidence: are all of the question's
+evidence windows (any, in the last column) among the 8 best by the keyword
+ranker `said.py` uses?
+
+| Ranked on | multi-hop (141) | temporal (156) | open-domain (44) | single-hop (418) | all evidence (759) | any evidence |
+|---|---|---|---|---|---|---|
+| (a) the window | 40 (28%) | 133 (85%) | 12 (27%) | 354 (85%) | **539 (71%)** | 82% |
+| (b) window + metadata | 40 (28%) | 140 (90%) | 17 (39%) | 375 (90%) | **572 (75%)** | 87% |
+| (c) metadata only | 39 (28%) | 145 (93%) | 20 (45%) | 346 (83%) | 550 (72%) | 84% |
+| (d) window + as many random words as the metadata | 28 (20%) | 124 (79%) | 11 (25%) | 344 (82%) | 507 (67%) | 78% |
+
+(b) against (a): 54 questions only (b) retrieved all the evidence for, 21 only (a) (p = 0.0002).
+(b) against (d): 81 against 16.
+
+**End to end.** The `rag` condition (8 windows pasted, no tools, Haiku, the
+benchmark's 222 questions) with windows ranked on (b), against the same ranked on (a):
+
+| | Correct | multi-hop | temporal | open-domain | single-hop |
+|---|---|---|---|---|---|
+| plain | 118/222 (53%) | 18/59 | 37/60 | 11/43 | 52/60 |
+| enriched | 120/222 (54%) | 21/59 | 37/60 | 15/43 | 47/60 |
+
+Enriched only 25, plain only 23 (p = 0.89).
+
+What it says:
+- **Enrichment does find more.** Window plus metadata gets all the evidence into the
+  top 8 for 4.3 points more questions (75% against 71%) and some of it for 5
+  more (87% against 82%). The gain is real (p = 0.0002) and concentrated where the
+  words don't match: open-domain 27% to 39%, temporal 85% to 90%.
+- **It isn't more words.** Adding the same number of random words *lowers* recall
+  (67%), so the control confirms the gain is the content of the metadata. (It also
+  means (d) was a weak control: random words only dilute. The fair comparison is
+  (a).)
+- **The metadata alone is as findable as the whole window** (72% against 71%) and best
+  on temporal and open-domain questions. A metadata-only index would be much smaller.
+- **It didn't change the answers** at this sample: 120 against 118, a tie. A
+  4-point gain in retrieval would be worth about 1 to 2 points of accuracy, which
+  222 questions can't see (one standard error is about 3 points), and the
+  single-hop drop (52 to 47) is within noise.
+- **By the rule set beforehand it is a no.** The gain over the plain window is
+  4.3 points, not 5, and end to end is a tie: close, but under the bar. The result
+  is recorded; nothing is built. If the index in
+  [#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65) is built, store window text first with the ranker the
+  memory has, and treat enriched metadata as an optional, later field on the
+  window (a derived event with provenance) to be re-tested at a larger sample or
+  with embeddings.
+
+Limits: Haiku only; keyword ranking only; five of ten conversations; the
+end-to-end sample is small; one prompt for the metadata (not tuned); LoCoMo's
+evidence labels are hand-made.
+
+Rerun: `python scripts/locomo_enrich.py --work DIR` (DIR holds the benchmark's
+`c0` to `c4` working dirs); `--retrieval-only` skips the answer calls.
+
 ## 2026-10-24: memory that searches what was said, same five conversations ([#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62))
 
 The run above showed naive retrieval over the transcript tying extraction.

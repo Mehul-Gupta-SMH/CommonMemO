@@ -611,7 +611,11 @@ Extraction alone only ties retrieval. Searching past messages through memory
 (windows of the user's own earlier words, pushed and recalled) beats retrieval
 over the same text (42 questions against 24, p = 0.04), and adding extraction is
 better again, mostly on questions that pull facts together across sessions.
-Haiku only, five of ten conversations, keyword ranking, a model judge, and a
+Having a model write search metadata for each window (keywords, questions it
+answers, absolute dates) found the evidence for 4 points more questions but
+changed no answers at this sample, so it isn't built ([#66](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/66)); embeddings
+weren't tried. A normalised topic tree searched coarse to fine did worse than
+plain search, not better ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)). Haiku only, five of ten conversations, keyword ranking, a model judge, and a
 disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status
