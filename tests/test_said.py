@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 
+import pytest
+
 from commonmemo import Memory, MemoryPolicy
 from commonmemo.agent_tools import build_agent_tools
 from commonmemo.hooks import handle, hook_config
@@ -225,7 +227,7 @@ def test_prune_and_forget_user_take_the_index_with_them():
     assert turn(mem, "guest room key")[0].said == []
     mem = mem_with(messages=2)
     run(mem.forget_user("ada"))
-    assert rows(mem, "message_windows") == [] and rows(mem, "window_terms") == []
+    assert rows(mem, "message_windows") == [] and rows(mem, "window_terms") == [] and rows(mem, "window_users") == []
 
 
 def test_the_scratch_copies_history_replays_into_keep_no_windows():
@@ -264,3 +266,35 @@ def test_a_search_reads_only_its_candidates_from_the_log(monkeypatch):
     monkeypatch.setattr(mem.store, "get_events", lambda ids: asked.append(len(list(ids))) or original(ids))
     ctx, _ = turn(mem, "zebra enclosure code")
     assert [w.session_id for w in ctx.said] == ["needle"] and max(asked) <= 2  # not the 61 messages in the Log
+
+
+def test_index_rows_carry_small_integers_not_ids(tmp_path):
+    mem = mem_with(messages=2)
+    talk(mem, "b1", [("user", "Bob's guest room key is under the red mat.")], user="bob")
+    assert {r["user_id"]: r["uid"] for r in rows(mem, "window_users")} == {"ada": 1, "bob": 2}
+    assert sorted(r["wid"] for r in rows(mem, "message_windows")) == [1, 2]
+    assert all(isinstance(r["uid"], int) and isinstance(r["wid"], int) for r in rows(mem, "window_terms"))
+    assert {r["uid"] for r in rows(mem, "window_terms")} == {1, 2}
+    # forgetting one user leaves the other's index alone
+    run(mem.forget_user("ada"))
+    assert {r["uid"] for r in rows(mem, "window_terms")} == {2}
+    assert [w.session_id for w in turn(mem, "guest room key", user="bob", sid="s9")[0].said] == ["b1"]
+
+
+@pytest.mark.sqlite_only
+def test_an_index_in_the_old_shape_is_rebuilt_from_the_log(tmp_path):
+    db = tmp_path / "memory.db"
+    mem = Memory(f"sqlite:///{db}", policy=MemoryPolicy(messages=2))
+    talk(mem, "s1", [("user", "The guest room key is under the blue pot by the door.")])
+    run(mem.aclose())
+    import sqlite3
+
+    raw = sqlite3.connect(db)  # put the index back as it was before #76 (schema 6) and break it
+    raw.executescript("DROP TABLE window_terms; DROP TABLE window_users; "
+                      "CREATE TABLE window_terms (user_id TEXT NOT NULL, term TEXT NOT NULL, window_id TEXT NOT NULL, "
+                      "PRIMARY KEY (user_id, term, window_id)); UPDATE knowledge_meta SET value = 6 WHERE key = 'schema'")
+    raw.commit()
+    raw.close()
+    mem = Memory(f"sqlite:///{db}", policy=MemoryPolicy(messages=2))
+    ctx, _ = turn(mem, "where is the guest room key?")
+    assert [w.session_id for w in ctx.said] == ["s1"] and "uid" in {c for c in mem.knowledge._conn.columns("window_terms")}

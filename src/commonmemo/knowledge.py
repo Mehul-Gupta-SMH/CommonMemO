@@ -151,27 +151,30 @@ CREATE TABLE IF NOT EXISTS lessons_learned (
     sessions INTEGER NOT NULL, first_seen REAL NOT NULL, last_seen REAL NOT NULL, user_id TEXT
 );
 CREATE TABLE IF NOT EXISTS message_windows (
-    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, window_no INTEGER NOT NULL, user_id TEXT NOT NULL,
-    agent TEXT, first_ts REAL NOT NULL, n INTEGER NOT NULL, event_ids TEXT NOT NULL,
+    id TEXT PRIMARY KEY, wid INTEGER NOT NULL UNIQUE, session_id TEXT NOT NULL, window_no INTEGER NOT NULL,
+    user_id TEXT NOT NULL, agent TEXT, first_ts REAL NOT NULL, n INTEGER NOT NULL, event_ids TEXT NOT NULL,
     UNIQUE (session_id, window_no)
 );
 CREATE INDEX IF NOT EXISTS message_windows_user ON message_windows (user_id, first_ts);
-CREATE TABLE IF NOT EXISTS window_terms (
-    user_id TEXT NOT NULL, term TEXT NOT NULL, window_id TEXT NOT NULL,
-    PRIMARY KEY (user_id, term, window_id)
+CREATE TABLE IF NOT EXISTS window_users (
+    uid INTEGER PRIMARY KEY, user_id TEXT NOT NULL UNIQUE
 );
+CREATE TABLE IF NOT EXISTS window_terms (
+    uid INTEGER NOT NULL, term TEXT NOT NULL, wid INTEGER NOT NULL,
+    PRIMARY KEY (uid, term, wid)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS knowledge_meta (
     key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
            "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs",
-           "decisions", "lessons_learned", "message_windows", "window_terms"]
+           "decisions", "lessons_learned", "message_windows", "window_users", "window_terms"]
 
 
 @dataclass(frozen=True)
@@ -518,27 +521,43 @@ class Knowledge:
             return
         c = self._conn
         line = window_line(e.role, e.content)
-        last = c.execute("SELECT id, window_no, n, event_ids FROM message_windows WHERE session_id = ? "
+        uid = self._window_user(e.user_id, create=True)
+        last = c.execute("SELECT id, wid, window_no, n, event_ids FROM message_windows WHERE session_id = ? "
                          "ORDER BY window_no DESC LIMIT 1", (e.session_id,)).fetchone()
         if last is None or last["n"] >= WINDOW:
             number = 0 if last is None else last["window_no"] + 1
-            wid = f"{e.session_id}#{number}"
-            c.execute("INSERT INTO message_windows VALUES (?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING",
-                      (wid, e.session_id, number, e.user_id, e.agent, e.ts, json.dumps([e.id])))
+            # Window ids are integers in the order windows are applied (one writer at a time), so
+            # an index row is a few bytes, not the text of the session id.
+            wid = c.execute("SELECT COALESCE(MAX(wid), 0) + 1 AS n FROM message_windows").fetchone()["n"]
+            c.execute("INSERT INTO message_windows VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING",
+                      (f"{e.session_id}#{number}", wid, e.session_id, number, e.user_id, e.agent, e.ts, json.dumps([e.id])))
         else:
-            wid, ids = last["id"], json.loads(last["event_ids"])
+            wid, ids = last["wid"], json.loads(last["event_ids"])
             if e.id in ids:
                 return
             c.execute("UPDATE message_windows SET n = n + 1, event_ids = ? WHERE id = ?",
-                      (json.dumps([*ids, e.id]), wid))
+                      (json.dumps([*ids, e.id]), last["id"]))
         c.executemany("INSERT INTO window_terms VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-                      [(e.user_id, t, wid) for t in sorted(terms(line))])
+                      [(uid, t, wid) for t in sorted(terms(line))])
+
+    def _window_user(self, user_id: str, *, create: bool = False) -> Optional[int]:
+        """The small integer a user's index rows carry in place of their id."""
+        row = self._conn.execute("SELECT uid FROM window_users WHERE user_id = ?", (user_id,)).fetchone()
+        if row is not None or not create:
+            return None if row is None else row["uid"]
+        uid = self._conn.execute("SELECT COALESCE(MAX(uid), 0) + 1 AS n FROM window_users").fetchone()["n"]
+        self._conn.execute("INSERT INTO window_users VALUES (?, ?) ON CONFLICT DO NOTHING", (uid, user_id))
+        return self._window_user(user_id)
 
     def window_candidates(self, user_id: str, query_terms: Sequence[str], *, exclude_session: Optional[str] = None,
                           agent: Optional[str] = None, limit: int = 300) -> list[Row]:
         """The user's windows that share terms with a query, most shared terms first, then newest:
         `id, session_id, agent, first_ts, event_ids, hits`."""
         if not query_terms:
+            return []
+        with self._lock:
+            uid = self._window_user(user_id)
+        if uid is None:
             return []
         where, params = [f"t.term IN ({','.join('?' * len(query_terms))})"], list(query_terms)
         if exclude_session is not None:
@@ -550,10 +569,10 @@ class Knowledge:
         with self._lock:
             return self._conn.execute(
                 "SELECT w.id, w.session_id, w.agent, w.first_ts, w.event_ids, COUNT(*) AS hits "
-                "FROM window_terms t JOIN message_windows w ON w.id = t.window_id "
-                f"WHERE t.user_id = ? AND {' AND '.join(where)} "
+                "FROM window_terms t JOIN message_windows w ON w.wid = t.wid "
+                f"WHERE t.uid = ? AND {' AND '.join(where)} "
                 "GROUP BY w.id, w.session_id, w.agent, w.first_ts, w.event_ids "
-                "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (user_id, *params, limit)).fetchall()
+                "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (uid, *params, limit)).fetchall()
 
     def recent_windows(self, user_id: str, *, exclude_session: Optional[str] = None, agent: Optional[str] = None,
                        limit: int = 400) -> list[Row]:
@@ -575,7 +594,7 @@ class Knowledge:
         the text. Returns windows dropped."""
         dropped = 0
         with self._lock:
-            rows = self._conn.execute("SELECT id, user_id, event_ids FROM message_windows").fetchall()
+            rows = self._conn.execute("SELECT id, wid, user_id, event_ids FROM message_windows").fetchall()
         gone = []
         for i in range(0, len(rows), 500):
             chunk = rows[i: i + 500]
@@ -584,7 +603,8 @@ class Knowledge:
             gone += [r for r in chunk if (json.loads(r["event_ids"]) or [""])[0] not in alive]
         with self._lock:
             for r in gone:
-                self._conn.execute("DELETE FROM window_terms WHERE user_id = ? AND window_id = ?", (r["user_id"], r["id"]))
+                self._conn.execute("DELETE FROM window_terms WHERE uid = ? AND wid = ?",
+                                   (self._window_user(r["user_id"]), r["wid"]))
                 dropped += self._conn.execute("DELETE FROM message_windows WHERE id = ?", (r["id"],)).rowcount
             self._conn.commit()
         return dropped
@@ -1157,7 +1177,10 @@ class Knowledge:
 
     def _forget(self, user_id: str, session_ids: Sequence[str]) -> int:
         n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
-        n += self._conn.execute("DELETE FROM window_terms WHERE user_id = ?", (user_id,)).rowcount
+        uid = self._window_user(user_id)
+        if uid is not None:
+            n += self._conn.execute("DELETE FROM window_terms WHERE uid = ?", (uid,)).rowcount
+            n += self._conn.execute("DELETE FROM window_users WHERE uid = ?", (uid,)).rowcount
         n += self._conn.execute("DELETE FROM message_windows WHERE user_id = ?", (user_id,)).rowcount
         n += self._conn.execute(
             "DELETE FROM world_facts WHERE user_id = ? AND status IN ('proposed', 'disputed', 'rejected')",

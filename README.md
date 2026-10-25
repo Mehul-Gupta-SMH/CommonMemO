@@ -349,8 +349,8 @@ the text stays in the Log where `prune`, `forget_user` and redaction reach it. A
 search asks the index for the windows sharing the most terms with the request
 and reads only those: about half a millisecond at 10,000, 100,000 and 500,000
 messages, where scanning took 69 to 93 ms and only reached the latest 4,000. The
-index costs about 0.5 KB a message in the database (it more than doubled a
-synthetic 100,000-message file) and about a tenth of a millisecond to write. An
+index costs about 0.2 KB a message in the database (0.57 KB before [#76](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/76) made its rows
+small integers) and under a tenth of a millisecond to write. An
 embedding ranker, which scores meaning rather than shared words, ranks the
 user's 400 newest windows instead; a vector index is the next step.
 
@@ -673,7 +673,7 @@ and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-S
 ## Honest caveats
 
 - **Message windows are on by default** ([#70](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/70)): a user's own earlier words, not a summary,
-  can appear in a later prompt, and the database grows about 0.5 KB a message for the index. Only that user's other
+  can appear in a later prompt, and the database grows about 0.2 KB a message for the index. Only that user's other
   sessions; `MemoryPolicy(messages=0, recall_messages=0)` turns it off. Extraction (a model call per closing session) is off.
 
 - **One live run so far, with Claude Code as the model.** It covered the

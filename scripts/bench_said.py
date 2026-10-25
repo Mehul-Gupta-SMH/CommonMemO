@@ -48,11 +48,24 @@ def build(n: int, chunk: int = 50_000) -> tuple[Memory, float]:
     return mem, spent
 
 
+def index_bytes(mem: Memory) -> int:
+    """Bytes the message-window index takes in the knowledge database (SQLite only)."""
+    c = mem.knowledge._conn
+    try:
+        rows = c.execute("SELECT name, SUM(pgsize) AS size FROM dbstat WHERE name LIKE 'message_windows%' "
+                         "OR name LIKE 'window_%' OR name LIKE 'sqlite_autoindex_message_windows%' "
+                         "OR name LIKE 'sqlite_autoindex_window_%' GROUP BY name").fetchall()
+        return sum(r["size"] for r in rows)
+    except Exception:
+        return 0
+
+
 def main() -> None:
-    print("| messages | projections built in | median search | slowest of 30 | needles found |")
-    print("|---|---|---|---|---|")
+    print("| messages | projections built in | per message | index size | per message | median search | slowest of 30 | needles found |")
+    print("|---|---|---|---|---|---|---|---|")
     for n in (int(a) for a in sys.argv[1:] or ["10000"]):
         mem, built = build(n)
+        size = index_bytes(mem)
         queries = [q for q, _ in NEEDLES] * 10
         times, found = [], 0
         for q in queries:
@@ -60,7 +73,8 @@ def main() -> None:
             windows, _ = asyncio.run(search(mem, q, user_id=USER, agent=AGENT, exclude_session="now", limit=8))
             times.append(time.perf_counter() - t)
             found += any(w for w in windows if any(word in " ".join(w.lines) for word in ("4471", "Lena visits", "blue pot")))
-        print(f"| {n:,} | {built:.1f} s | {1000 * statistics.median(times):.1f} ms | {1000 * max(times):.1f} ms | {found}/{len(queries)} |",
+        print(f"| {n:,} | {built:.1f} s | {1e6 * built / n:.0f} us | {size / 1e6:.1f} MB | {size / n:.0f} B "
+              f"| {1000 * statistics.median(times):.1f} ms | {1000 * max(times):.1f} ms | {found}/{len(queries)} |",
               flush=True)
 
 

@@ -58,6 +58,17 @@ An index for message windows ([#65](https://github.com/Mehul-Gupta-SMH/CommonMem
 - **Cost**: about 0.1 ms more to write a message and about 0.5 KB a message in
   the database (it more than doubled a synthetic 100,000-message file).
 
+A smaller message-window index ([#76](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/76)):
+
+- **Index rows are integers.** A term row carries a user number, the term and a window
+  number, not the user id and the text window id, in a `WITHOUT ROWID` table on SQLite
+  (Postgres drops the clause); `message_windows` gains `wid`, a new `window_users` table maps
+  users to numbers. `SCHEMA_VERSION` is 7: existing indexes rebuild once from the Log.
+- **Measured** (`scripts/bench_said.py`, which now reports index size): 553 to 571 bytes a
+  message before, 195 to 197 after (-66%); writing a message 75 to 86 us against 101 us;
+  median search 0.4 to 0.6 ms against 0.5 ms; 30 of 30 planted needles found; the same windows as a
+  scan. A term dictionary was not needed to meet the bar (at most half the bytes).
+
 A topic tree over message windows, tried and not built ([#67](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/67)):
 
 - **`scripts/locomo_topics.py`**: a Haiku call per window assigns it to a

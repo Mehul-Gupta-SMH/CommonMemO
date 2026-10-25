@@ -408,9 +408,10 @@ meaning, not shared words, so it ranks the user's 400 newest windows instead (a
 vector index is the next step). Measured with `scripts/bench_said.py` on one
 user: a search takes about 0.3 to 0.6 ms from 10,000 to 500,000 messages (the
 old scan: 69 to 93 ms, and only the latest 4,000 messages); writing a message
-costs about 0.1 ms more, and the index adds about 0.5 KB a message to the
-database. Not done: `WITHOUT ROWID` for SQLite would halve that (it isn't
-portable to Postgres), and a term dictionary would shrink it further. On
+costs about 0.1 ms more, and the index adds about 0.2 KB a message to the
+database ([#76](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/76): a term row is a user number, the term and a window number, in a
+`WITHOUT ROWID` table on SQLite, which Postgres's DDL drops; it was 0.57 KB with text ids). Not done: a
+term dictionary would shrink it further. On
 ten LoCoMo conversations this took memory from 16% to 61% correct and, with
 extraction, 65%, against 50% for naive retrieval (`docs/live-runs.md`, [#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74)).
 
