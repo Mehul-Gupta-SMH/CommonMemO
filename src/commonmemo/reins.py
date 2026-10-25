@@ -82,7 +82,7 @@ class _Without:
 
 
 def _replay(source: object) -> Knowledge:
-    k = Knowledge(":memory:")
+    k = Knowledge(":memory:", windows=False)
     k.catch_up(source)  # type: ignore[arg-type]
     return k
 

@@ -151,3 +151,95 @@ def test_the_hooks_push_them_and_the_setup_carries_the_flags():
                               messages=4, recall_messages=6)
     command = hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "--messages 4" in command and "--recall-messages 6" in command
+
+
+# -- the index (#65) ------------------------------------------------------------------------
+
+
+def rows(mem, table):
+    return mem.knowledge._conn.execute(f"SELECT * FROM {table}").fetchall()
+
+
+def test_windows_fill_as_messages_arrive_and_a_rebuild_gives_the_same_index():
+    mem = Memory(policy=MemoryPolicy(messages=3))
+    talk(mem, "s1", [("user", f"message {i} about the garage code") for i in range(WINDOW + 3)])
+    before = sorted((r["id"], r["n"], r["event_ids"]) for r in rows(mem, "message_windows"))
+    terms_before = len(rows(mem, "window_terms"))
+    assert [n for _, n, _ in before] == [WINDOW, 3]
+    mem.knowledge.rebuild(mem.store)
+    assert sorted((r["id"], r["n"], r["event_ids"]) for r in rows(mem, "message_windows")) == before
+    assert len(rows(mem, "window_terms")) == terms_before
+    # a session continued later (same id) fills the open window first
+    talk(mem, "s1", [("user", "one more about the garage code")] * 4)
+    assert sorted(r["n"] for r in rows(mem, "message_windows")) == [1, WINDOW, WINDOW]
+
+
+def test_the_index_ranks_what_a_scan_of_every_window_would():
+    from commonmemo.ranking import KeywordRanker
+    from commonmemo.said import window_line
+
+    mem = Memory(policy=MemoryPolicy(messages=5))
+    topics = ["garage code", "sister Lena visit", "blue pot key", "flight to Lisbon", "dentist on Tuesday"]
+    for s in range(8):
+        talk(mem, f"s{s}", [("user", f"note {s}.{i}: {topics[(s + i) % 5]} and some filler words") for i in range(9)])
+    query = "when does my sister Lena visit and where is the key"
+    ctx, _ = turn(mem, query, sid="now")
+    # brute force: every window of every session, ranked by the same ranker
+    windows = []
+    for s in range(8):
+        msgs = mem.store.events(session_id=f"s{s}", kinds=["message"])
+        for i in range(0, len(msgs), WINDOW):
+            windows.append("\n".join(window_line(m.role, m.content) for m in msgs[i: i + WINDOW]))
+    scores = run(KeywordRanker().score(query, windows))
+    best = sorted(set(scores), reverse=True)[0]
+    assert ctx.said and ctx.said[0].score == round(best, 3)
+    assert {w.text() for w in ctx.said} <= set(windows)
+
+
+def test_prune_and_forget_user_take_the_index_with_them():
+    mem = mem_with(messages=2)
+    assert rows(mem, "message_windows") and rows(mem, "window_terms")
+    mem.prune(older_than_days=-1)  # everything is older than tomorrow
+    assert rows(mem, "message_windows") == [] and rows(mem, "window_terms") == []
+    assert turn(mem, "guest room key")[0].said == []
+    mem = mem_with(messages=2)
+    run(mem.forget_user("ada"))
+    assert rows(mem, "message_windows") == [] and rows(mem, "window_terms") == []
+
+
+def test_the_scratch_copies_history_replays_into_keep_no_windows():
+    from commonmemo.knowledge import Knowledge
+
+    mem = mem_with(messages=2)
+    scratch = Knowledge(":memory:", windows=False)
+    scratch.catch_up(mem.store)
+    assert scratch._conn.execute("SELECT COUNT(*) AS n FROM message_windows").fetchone()["n"] == 0
+    anon = Memory()
+    with anon.session("a1") as s:
+        s.message("user", "no user, so nothing is indexed")
+    assert rows(anon, "message_windows") == []
+
+
+def test_an_embedding_ranker_finds_windows_that_share_no_word_with_the_request():
+    from commonmemo.ranking import EmbeddingRanker
+
+    def embed(texts):  # a toy concept embedder: "sibling" words land together
+        return [[1.0 if any(w in t.lower() for w in ("sister", "brother", "sibling")) else 0.0, 0.1] for t in texts]
+
+    mem = Memory(policy=MemoryPolicy(messages=2), ranker=EmbeddingRanker(embed, threshold=0.5))
+    talk(mem, "s1", [("user", "My sister arrives on Friday."), ("assistant", "Noted.")])
+    talk(mem, "s2", [("user", "The dentist is on Tuesday."), ("assistant", "Noted.")])
+    ctx, _ = turn(mem, "When does my sibling get here?")  # shares no word with the message
+    assert [w.session_id for w in ctx.said] == ["s1"]
+
+
+def test_a_search_reads_only_its_candidates_from_the_log(monkeypatch):
+    mem = Memory(policy=MemoryPolicy(messages=2))
+    for s in range(30):
+        talk(mem, f"s{s}", [("user", f"filler {s} about nothing in particular"), ("assistant", "ok")])
+    talk(mem, "needle", [("user", "the zebra enclosure code is 4471")])
+    asked = []
+    original = mem.store.get_events
+    monkeypatch.setattr(mem.store, "get_events", lambda ids: asked.append(len(list(ids))) or original(ids))
+    ctx, _ = turn(mem, "zebra enclosure code")
+    assert [w.session_id for w in ctx.said] == ["needle"] and max(asked) <= 2  # not the 61 messages in the Log

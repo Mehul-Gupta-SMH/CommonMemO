@@ -35,6 +35,7 @@ from .events import (
     Forgotten,
     Freeze,
     MemoryEvent,
+    Message,
     Negative,
     NegativeRevoked,
     ProcedureConfirmed,
@@ -61,6 +62,8 @@ from .tool_memory import (
     shape_change,
 )
 
+from .ranking import terms
+from .said import WINDOW, window_line
 from .sqldb import connect
 
 if TYPE_CHECKING:
@@ -147,18 +150,28 @@ CREATE TABLE IF NOT EXISTS lessons_learned (
     event_id TEXT PRIMARY KEY, scope TEXT NOT NULL, text TEXT NOT NULL, task TEXT,
     sessions INTEGER NOT NULL, first_seen REAL NOT NULL, last_seen REAL NOT NULL, user_id TEXT
 );
+CREATE TABLE IF NOT EXISTS message_windows (
+    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, window_no INTEGER NOT NULL, user_id TEXT NOT NULL,
+    agent TEXT, first_ts REAL NOT NULL, n INTEGER NOT NULL, event_ids TEXT NOT NULL,
+    UNIQUE (session_id, window_no)
+);
+CREATE INDEX IF NOT EXISTS message_windows_user ON message_windows (user_id, first_ts);
+CREATE TABLE IF NOT EXISTS window_terms (
+    user_id TEXT NOT NULL, term TEXT NOT NULL, window_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, term, window_id)
+);
 CREATE TABLE IF NOT EXISTS knowledge_meta (
     key TEXT PRIMARY KEY, value INTEGER NOT NULL
 );
 """
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
            "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs",
-           "decisions", "lessons_learned"]
+           "decisions", "lessons_learned", "message_windows", "window_terms"]
 
 
 @dataclass(frozen=True)
@@ -377,8 +390,11 @@ def _agent_key(agent: Optional[str]) -> str:
 class Knowledge:
     """The structured-memory projections, in one SQLite file."""
 
-    def __init__(self, path: str | Path = ":memory:") -> None:
+    def __init__(self, path: str | Path = ":memory:", *, windows: bool = True) -> None:
         self.path = str(path)
+        self._windows = windows
+        """Index the messages of users' sessions in windows (`said.py`). Off for the scratch copies
+        history and reverts replay the log into, which never search them."""
         self._conn = connect(self.path, lock="knowledge")
         self._lock = threading.Lock()
         # Several processes may start at once: one checks the schema at a time.
@@ -493,6 +509,85 @@ class Knowledge:
                 "ok = excluded.ok, signature = excluded.signature, shape = excluded.shape",
                 (e.session_id, agent, tool, int(not failed), signature, dumps_shape(shape)),
             )
+
+    def _message(self, e: Message) -> None:
+        """Add a message to its session's open window (6 messages), indexing the window's terms. A
+        window holds event ids, not text: the text stays in the Log, so `prune` and `forget_user`
+        reach it (#65)."""
+        if not self._windows or e.user_id is None or e.session_id is None:
+            return
+        c = self._conn
+        line = window_line(e.role, e.content)
+        last = c.execute("SELECT id, window_no, n, event_ids FROM message_windows WHERE session_id = ? "
+                         "ORDER BY window_no DESC LIMIT 1", (e.session_id,)).fetchone()
+        if last is None or last["n"] >= WINDOW:
+            number = 0 if last is None else last["window_no"] + 1
+            wid = f"{e.session_id}#{number}"
+            c.execute("INSERT INTO message_windows VALUES (?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT DO NOTHING",
+                      (wid, e.session_id, number, e.user_id, e.agent, e.ts, json.dumps([e.id])))
+        else:
+            wid, ids = last["id"], json.loads(last["event_ids"])
+            if e.id in ids:
+                return
+            c.execute("UPDATE message_windows SET n = n + 1, event_ids = ? WHERE id = ?",
+                      (json.dumps([*ids, e.id]), wid))
+        c.executemany("INSERT INTO window_terms VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                      [(e.user_id, t, wid) for t in sorted(terms(line))])
+
+    def window_candidates(self, user_id: str, query_terms: Sequence[str], *, exclude_session: Optional[str] = None,
+                          agent: Optional[str] = None, limit: int = 300) -> list[Row]:
+        """The user's windows that share terms with a query, most shared terms first, then newest:
+        `id, session_id, agent, first_ts, event_ids, hits`."""
+        if not query_terms:
+            return []
+        where, params = [f"t.term IN ({','.join('?' * len(query_terms))})"], list(query_terms)
+        if exclude_session is not None:
+            where.append("w.session_id != ?")
+            params.append(exclude_session)
+        if agent is not None:
+            where.append("w.agent = ?")
+            params.append(agent)
+        with self._lock:
+            return self._conn.execute(
+                "SELECT w.id, w.session_id, w.agent, w.first_ts, w.event_ids, COUNT(*) AS hits "
+                "FROM window_terms t JOIN message_windows w ON w.id = t.window_id "
+                f"WHERE t.user_id = ? AND {' AND '.join(where)} "
+                "GROUP BY w.id, w.session_id, w.agent, w.first_ts, w.event_ids "
+                "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (user_id, *params, limit)).fetchall()
+
+    def recent_windows(self, user_id: str, *, exclude_session: Optional[str] = None, agent: Optional[str] = None,
+                       limit: int = 400) -> list[Row]:
+        """The user's newest windows, for rankers that don't work on shared terms (embeddings)."""
+        where, params = ["user_id = ?"], [user_id]
+        if exclude_session is not None:
+            where.append("session_id != ?")
+            params.append(exclude_session)
+        if agent is not None:
+            where.append("agent = ?")
+            params.append(agent)
+        with self._lock:
+            return self._conn.execute(
+                f"SELECT id, session_id, agent, first_ts, event_ids FROM message_windows WHERE {' AND '.join(where)} "
+                "ORDER BY first_ts DESC LIMIT ?", (*params, limit)).fetchall()
+
+    def prune_windows(self, store: "Store") -> int:
+        """Drop windows whose messages `prune` has removed from the Log, so their terms don't outlive
+        the text. Returns windows dropped."""
+        dropped = 0
+        with self._lock:
+            rows = self._conn.execute("SELECT id, user_id, event_ids FROM message_windows").fetchall()
+        gone = []
+        for i in range(0, len(rows), 500):
+            chunk = rows[i: i + 500]
+            alive = {e.id for e in store.get_events(
+                [json.loads(r["event_ids"])[0] for r in chunk if json.loads(r["event_ids"])])}
+            gone += [r for r in chunk if (json.loads(r["event_ids"]) or [""])[0] not in alive]
+        with self._lock:
+            for r in gone:
+                self._conn.execute("DELETE FROM window_terms WHERE user_id = ? AND window_id = ?", (r["user_id"], r["id"]))
+                dropped += self._conn.execute("DELETE FROM message_windows WHERE id = ?", (r["id"],)).rowcount
+            self._conn.commit()
+        return dropped
 
     def _world_insert(self, e: MemoryEvent, scope: str, key: str, value: str, valid_until: Optional[float],
                       source: str, rank: int, status: str, note: Optional[str] = None) -> None:
@@ -1062,6 +1157,8 @@ class Knowledge:
 
     def _forget(self, user_id: str, session_ids: Sequence[str]) -> int:
         n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute("DELETE FROM window_terms WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute("DELETE FROM message_windows WHERE user_id = ?", (user_id,)).rowcount
         n += self._conn.execute(
             "DELETE FROM world_facts WHERE user_id = ? AND status IN ('proposed', 'disputed', 'rejected')",
             (user_id,),
@@ -1123,6 +1220,7 @@ _HANDLERS = {
     ProcedureFollowed: Knowledge._procedure_followed,
     DecisionRecorded: Knowledge._decision,
     LessonLearned: Knowledge._lesson,
+    Message: Knowledge._message,
 }
 
 __all__ = [

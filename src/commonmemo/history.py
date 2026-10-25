@@ -121,7 +121,7 @@ class MemoryView:
 
 def as_of(memory: "Memory", point: Point) -> MemoryView:
     seq, at = resolve(memory, point)
-    scratch = Knowledge(":memory:")
+    scratch = Knowledge(":memory:", windows=False)
     scratch.catch_up(_Upto(memory.store, seq))  # type: ignore[arg-type]
     return MemoryView(seq=seq, at=at, knowledge=scratch, project_scope=memory.project_scope)
 

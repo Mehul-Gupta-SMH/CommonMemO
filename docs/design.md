@@ -390,7 +390,23 @@ current one or another user's; a session without a user has none (anonymous
 sessions share nothing); `recaps_across_agents=False` limits it to this
 agent's sessions. Windows carry their event ids (trace item `said`, found by
 `why`), forgotten text is redacted, and `forget_user` removes the messages.
-The latest 4,000 messages are windowed per call; an index is the next step. On
+**The index** ([#65](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/65)): windows are a projection of the Log. Each message joins
+its session's open window as it is logged, and the window's stemmed terms go
+into an inverted index (`message_windows`, `window_terms` in `Knowledge`). A
+window stores the ids of its events, not their text, so the text stays in the
+Log: `prune` drops the windows and terms of what it removed, `forget_user` deletes
+them, redaction of forgotten text happens at read time, and a rebuild from the
+Log gives the same index. A search asks the index for the 300 windows sharing
+the most terms with the query (exactly the keyword ranker's score, so it returns
+what a scan would), reads only those events and ranks them. The scratch copies
+that `as_of` and reverts replay into keep no windows. An embedding ranker scores
+meaning, not shared words, so it ranks the user's 400 newest windows instead (a
+vector index is the next step). Measured with `scripts/bench_said.py` on one
+user: a search takes about 0.3 to 0.6 ms from 10,000 to 500,000 messages (the
+old scan: 69 to 93 ms, and only the latest 4,000 messages); writing a message
+costs about 0.1 ms more, and the index adds about 0.5 KB a message to the
+database. Not done: `WITHOUT ROWID` for SQLite would halve that (it isn't
+portable to Postgres), and a term dictionary would shrink it further. On
 five LoCoMo conversations this took memory from 18% to 61% correct and, with
 extraction, 64%, against 53% for naive retrieval (`docs/live-runs.md`).
 
