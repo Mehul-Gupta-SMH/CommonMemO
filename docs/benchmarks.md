@@ -93,9 +93,9 @@ These are one machine's numbers, so the ratios matter more than the absolute val
 
 ## Follow-ups
 
-- `tool_notes` reads every tool's profile one query at a time: one grouped query instead. This is the largest single cost.
-- One transaction per turn for its events, and projection updates without a commit per event.
-- Smaller turn traces, or a shorter retention for them.
+- [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): `tool_notes` reads every tool's profile one query at a time; one grouped query instead. This is the largest single cost.
+- [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): one transaction per turn for its events, and projection updates without a commit per event.
+- [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): smaller turn traces, or a shorter retention for them.
 - A resident hook process (optional), so a hook doesn't pay for a process start and a connection.
 - #52 revisited:
   - the hot-counter work (part 3) is not needed at measured scale;
