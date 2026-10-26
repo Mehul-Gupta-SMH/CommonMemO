@@ -2,6 +2,19 @@
 
 ## 0.0.1 — unreleased
 
+The memory workload, measured ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)):
+
+- **`scripts/bench_workload.py`** writes turns exactly as the Claude Code hooks do (prompt, push,
+  8 tool calls each followed by a refresh, reply; sessions of 20 turns) from several processes, with
+  tool popularity skewed, and reports events a second, append, context and close latency (p50 / p99),
+  storage a turn, and optionally a hook as a new process. `--only-tools` isolates the tool-counter row.
+- **Results** (`docs/benchmarks.md`, a 4-CPU machine): 33 KB a turn on SQLite and 40 KB on Postgres
+  (33 to 42 GB per million turns; turn traces are almost half); one log tops out at about 400 events a
+  second on Postgres (634 with `synchronous_commit` off) and 270 on SQLite; one hot tool shows no
+  measurable contention; a turn issues about 1,060 SQL statements, 65% of a Postgres turn's time in
+  tool notes read one tool at a time; a hook process takes 270 to 550 ms. ADR 0001's estimate table
+  is replaced by these measurements; its decision stands and its order of work changes.
+
 LoCoMo, the other five conversations ([#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74)):
 
 - **Run with nothing changed** (conversations 5 to 9, 228 questions, Haiku, all seven

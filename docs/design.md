@@ -533,9 +533,10 @@ Postgres both accept, run through `sqldb.py`:
 an event becomes visible only once every earlier position is visible. On
 SQLite one writer at a time gives that. On Postgres, appends, claims and
 settles take one transaction-scoped advisory lock per memory, so positions
-commit in order across processes. This serializes the log's writes;
-partitioning the log by user or session is the step after measurements
-(#17).
+commit in order across processes. This serializes the log's writes: about
+400 events a second on Postgres on a 4-CPU machine, one commit per event
+(`docs/benchmarks.md`, #17). Committing a turn's events together comes before
+partitioning the log by user or session.
 
 **Setup.** `CREATE ... IF NOT EXISTS` isn't safe when several processes
 start at once on Postgres (two can both find a table missing), so creating

@@ -82,30 +82,39 @@ facts, world, lessons, tool notes, recaps, state, resume), all within one
 user's or session's partition, except tool notes (per tool) and world facts
 (per scope). Latency matters more than throughput here.
 
-## 3. Volume — an order of magnitude, to be measured ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17))
+## 3. Volume, measured ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17), [docs/benchmarks.md](../benchmarks.md))
 
-A turn produces roughly 5–30 events: run start and finish, LLM calls, tool
-calls, messages. Call it 20, at about 1–2 KB each.
+This section first held estimates (about 20 events a turn at 1 to 2 KB, so about 30 GB per
+million turns, and one Postgres primary covering about a million turns a day). The measurements
+that replace them were taken on a 4-CPU machine with the Postgres server beside the workers, using
+the workload the Claude Code hooks actually write:
 
-| Scale | Turns/day | Events/day | Avg writes/s | Peak (×10) | Raw log/day |
-|---|---|---|---|---|---|
-| Team | 10k | 200k | ~2 | ~25 | ~0.3 GB |
-| Product | 1M | 20M | ~230 | ~2.5k | ~30 GB |
-| Platform | 100M | 2B | ~23k | ~250k | ~3 TB |
+| | Measured | Estimated |
+|---|---|---|
+| Events a turn | 11 (2 messages, 8 tool calls, 1 trace) | 20 |
+| Storage a turn | 33 KB (SQLite), 40 KB (Postgres); about half of it turn traces | 20 to 40 KB |
+| Storage per million turns | 33 to 42 GB | about 30 GB |
+| Write ceiling of one log | about 400 events/s on Postgres from 4 writers on (634 with `synchronous_commit` off); about 270 on SQLite, whatever the writers | thousands of inserts/s |
+| Turns a day at that ceiling, if the load were flat | about 3 million | about 1 million and more |
+| Context for one turn, p50 / p99 | 15 / 40 ms SQLite, 55 / 90 ms Postgres (one writer); 100 / 200 ms with 8 Postgres writers | not estimated |
+| A hook as Claude Code runs it (a new process) | 270 to 310 ms SQLite, 470 to 550 ms Postgres | not estimated |
+| The tool-counter row under skew | no measurable contention up to 8 writers (0 to 8%) | "a hot key" |
 
-Read: a single well-run Postgres handles the first two rows on write
-throughput (thousands of small inserts per second with group commit and
-batching). What it needs at "Product" is **storage management**: time
-partitioning plus archiving old events to object storage. "Platform" needs
-horizontal write scale. These figures are estimates; [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) replaces them with
-measurements before anything is decided on them.
+Read: storage per turn is about as estimated, and storage management (time partitioning,
+archiving, per-kind retention, smaller traces) is still the wall that comes with volume. The
+estimate was wrong about what limits a turn now:
+- **the read path:** about 1,060 SQL statements a turn, mostly one query per known tool when building tool notes;
+- **the write path:** two commits per event, one of them under the log's single lock.
+
+Both are in the code, not the database. The "Product" average (about 230 writes a second) fits on one log; its peak (about 2,500) does not, until a turn's events commit together.
 
 Two hot spots exist at any scale and in any database:
 
 - **Tool counters:** every call of a popular tool increments the same row
   (`tool_stats`), a hot key in SQL and NoSQL alike. Fix it in the design,
   not the database: append tool outcomes, aggregate periodically or with
-  sharded counters.
+  sharded counters. *Measured (#17): no contention up to 8 writers; not
+  needed until a log takes far more than about 400 events a second.*
 - **Log growth:** fix it with time partitioning and archiving, plus
   per-kind retention.
 
@@ -170,7 +179,10 @@ interface honest.**
 
 - [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) measures one Postgres primary falling short of the target write rate
   even with batching and partitioning. Then distributed SQL, or DynamoDB, as
-  the primary.
+  the primary. *Measured (2026-10-26): the decision stands; the ceiling found
+  (about 400 events a second on one log) is set by one commit per event under
+  the log lock, which batching a turn's events addresses first. Re-measure
+  after that change before choosing a scale-out backend.*
 - Active-active multi-region writes become a requirement. Then distributed
   SQL or DynamoDB global tables.
 - A deployment can't operate a database at all. Then DynamoDB, or a
