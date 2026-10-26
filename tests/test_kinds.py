@@ -290,3 +290,84 @@ def test_record_many_logs_in_order_applies_once_and_is_idempotent():
     assert mem.tool_profile("t").calls == 4
     assert [e.id for e in mem.store.events(kinds=["tool_invoked"])] == ["c0", "c1", "c2", "c3"]
     assert [e.id for e in seen if e.kind == "tool_invoked"][:4] == ["c0", "c1", "c2", "c3"]
+
+
+async def _two_ids():
+    """`ada-login` and `ada-app` are one person; `bob` is not."""
+    mem = Memory()
+    for user, said in (("ada-login", "I only eat vegan food."), ("ada-app", "My dog is called Pixel."),
+                       ("bob", "I only eat steak.")):
+        async with mem.session(user_id=user, agent="a") as s:
+            s.message("user", said)
+            s.message("assistant", "Noted.")
+    return mem
+
+
+def test_link_users_reads_follow_the_link_and_unlink_undoes_it():
+    import asyncio
+
+    async def go():
+        mem = await _two_ids()
+        ask = lambda who: mem.context("what does my dog eat food pet", user_id=who)  # noqa: E731
+        alone = await ask("ada-app")
+        assert "vegan" not in alone.render() and "Pixel" in alone.render()
+        link = mem.link_users("ada-app", "ada-login", reason="same person")
+        assert mem.linked_users("ada-app") == ["ada-app", "ada-login"]
+        linked = (await ask("ada-app")).render()
+        assert "vegan" in linked and "Pixel" in linked and "steak" not in linked
+        assert mem.linked_users("bob") == ["bob"]
+        mem.unlink_users(link.id)
+        assert mem.linked_users("ada-app") == ["ada-app"]
+        assert "vegan" not in (await ask("ada-app")).render()
+
+    asyncio.run(go())
+
+
+def test_link_users_is_transitive_validated_and_rebuilds_from_the_log():
+    import asyncio
+
+    async def go():
+        mem = await _two_ids()
+        mem.link_users("a", "b")
+        mem.link_users("b", "c")
+        assert mem.linked_users("c") == ["c", "a", "b"]
+        with pytest.raises(ValueError):
+            mem.link_users("a", "a")
+        with pytest.raises(ValueError):
+            mem.link_users("", "a")
+        mem.knowledge.rebuild(mem.store)
+        assert mem.linked_users("a") == ["a", "b", "c"]
+
+    asyncio.run(go())
+
+
+def test_forget_user_forgets_every_linked_id_and_the_links():
+    import asyncio
+
+    async def go():
+        mem = await _two_ids()
+        mem.link_users("ada-app", "ada-login")
+        assert await mem.forget_user("ada-app") > 0
+        assert mem.user_links() == [] and mem.store.events(user_id="ada-login") == []
+        assert mem.store.events(user_id="ada-app") == [] and mem.store.events(kinds=["users_linked"]) == []
+        assert mem.store.events(user_id="bob")  # someone else is untouched
+
+    asyncio.run(go())
+
+
+def test_linked_profile_facts_own_value_wins_and_forgetting_applies_across_the_link():
+    import asyncio
+
+    async def go():
+        mem = Memory()
+        for user, key, value in (("x1", "city", "Pune"), ("x2", "city", "Oslo"), ("x2", "pet", "dog")):
+            async with mem.session(user_id=user) as s:
+                s.remember(key, value)
+        mem.link_users("x1", "x2")
+        facts = {f.key: f.value for f in await mem._profile(mem.engine, "x1")}
+        assert facts == {"city": "Pune", "pet": "dog"}  # x1's own city, x2's pet
+        async with mem.session(user_id="x2") as s:
+            s.forget("pet")
+        assert {f.key for f in await mem._profile(mem.engine, "x1")} == {"city"}
+
+    asyncio.run(go())

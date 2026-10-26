@@ -49,6 +49,8 @@ from .events import (
     Snapshot,
     Freeze,
     Unfreeze,
+    UsersLinked,
+    UsersUnlinked,
 )
 from .knowledge import (
     FeedbackSummary,
@@ -445,7 +447,7 @@ class Memory:
         found = [e for e in found if e.session_id != exclude_session]
         shown = [e for e in found if (e.score or 0.0) >= policy.min_recap_score][: policy.recaps]
         near = [e for e in found if e not in shown and (e.score or 0.0) >= policy.min_recap_score / 2]
-        facts = self._visible_facts(user_id, await engine.user_profile(user_id)) if user_id is not None else []
+        facts = await self._profile(engine, user_id) if user_id is not None else []
         world = self.world_facts([s for s in scopes if not s.startswith(("user:", "agent:"))])
         world_turn: list[WorldRecord] = []
         world_more = len(world) - policy.max_world
@@ -520,6 +522,18 @@ class Memory:
         related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}")
         return (related + rest)[:limit]
 
+    async def _profile(self, engine: Any, user_id: str) -> list[Fact]:
+        """The user's facts, then those of ids linked to them for keys they have not stated themselves."""
+        out = self._visible_facts(user_id, await engine.user_profile(user_id))
+        seen = {f.key for f in out}
+        for other in self.linked_users(user_id)[1:]:
+            theirs = [f for f in self._visible_facts(other, await engine.user_profile(other)) if f.key not in seen]
+            for f in sorted(theirs, key=lambda f: -f.valid_from):  # the newest statement of a key wins
+                if f.key not in seen:
+                    seen.add(f.key)
+                    out.append(f)
+        return sorted(out, key=lambda f: f.key)
+
     def _visible_facts(self, user_id: str, facts: list[Fact]) -> list[Fact]:
         """`facts` minus what the user asked to forget. A tombstone hides
         facts from before it; a fact stated again afterwards shows again."""
@@ -543,9 +557,15 @@ class Memory:
         """Text the user asked to forget: each forgotten key's values from
         before its tombstone, and each tombstone pattern. A value stated
         again after the tombstone is current again, so it is not included."""
+        out: set[str] = set()
+        for who in self.linked_users(user_id):
+            out |= self._forgotten_by(who)
+        return sorted((v for v in out if v.strip()), key=len, reverse=True)
+
+    def _forgotten_by(self, user_id: str) -> set[str]:
         stones = self.knowledge.tombstones(user_id)
         if not stones:
-            return []
+            return set()
         stated = [(e.key, e.value, e.ts) for e in self.store.events(user_id=user_id, kinds=[UserFact.kind])]
         out: set[str] = set()
         for key, pattern, ts in stones:
@@ -554,7 +574,7 @@ class Memory:
             old = {v for k, v, at in stated if k == key and at <= ts}
             again = {v for k, v, at in stated if k == key and at > ts}
             out |= old - again
-        return sorted((v for v in out if v.strip()), key=len, reverse=True)
+        return out
 
     def _visible_recaps(self, user_id: str, recaps: list[Recap]) -> list[Recap]:
         """`recaps` with what the user asked to forget redacted. A recap is
@@ -881,6 +901,28 @@ class Memory:
     def unfreeze(self, freeze_id: str) -> MemoryEvent:
         return self._append_outside_session(Unfreeze(freeze_id=freeze_id))
 
+    def link_users(self, user_a: str, user_b: str, *, reason: Optional[str] = None) -> MemoryEvent:
+        """Say `user_a` and `user_b` are one person (a login and an app id, say). Reads of either
+        follow the link: past messages and profile facts of both are seen, and `forget_user` forgets
+        both. Nothing is copied or merged, so `unlink_users` undoes it exactly, and ids are never linked
+        on a name alone. Links are transitive. The id returned undoes it: `unlink_users(event.id)`."""
+        if not user_a or not user_b:
+            raise ValueError("commonmemo: link_users needs two user ids")
+        if user_a == user_b:
+            raise ValueError("commonmemo: link_users needs two different user ids")
+        return self._append_outside_session(UsersLinked(user_id=user_a, user_a=user_a, user_b=user_b, reason=reason))
+
+    def unlink_users(self, link_id: str) -> MemoryEvent:
+        return self._append_outside_session(UsersUnlinked(link_id=link_id))
+
+    def linked_users(self, user_id: str) -> list[str]:
+        """`user_id` followed by every id linked to it, directly or through others."""
+        return self.knowledge.linked_users(user_id)
+
+    def user_links(self) -> list[tuple[str, str, str, Optional[str]]]:
+        """Active links: `(link id, user_a, user_b, reason)`."""
+        return self.knowledge.user_links()
+
     def freezes(self) -> list[FreezeRecord]:
         """Active freezes."""
         return self.knowledge.freezes()
@@ -913,12 +955,14 @@ class Memory:
         return why(self, key, session_id=session_id, user_id=user_id)
 
     async def forget_user(self, user_id: str) -> int:
-        """Delete everything about `user_id` from every tier and kind. Tool
+        """Delete everything about `user_id` (and every id linked to it, see `link_users`) from every tier and kind. Tool
         memory (argument shapes and scrubbed error signatures only) and world
         facts are not about the user and stay. Returns rows removed."""
-        sessions = self.store.session_ids(user_id)
-        n = self.knowledge.forget_user(user_id, sessions)
-        return n + self.store.forget_user(user_id) + await self.engine.forget_user(user_id)
+        n = 0
+        for who in self.linked_users(user_id):  # one person under several ids is forgotten whole
+            n += self.knowledge.forget_user(who, self.store.session_ids(who))
+            n += self.store.forget_user(who) + await self.engine.forget_user(who)
+        return n
 
     def prune(self, *, older_than_days: float) -> int:
         """Drop events older than `older_than_days` and expired sessions.

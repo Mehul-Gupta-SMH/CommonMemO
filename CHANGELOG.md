@@ -2,6 +2,10 @@
 
 ## 0.0.1 — unreleased
 
+`Memory.link_users` / `unlink_users` / `linked_users` ([#86](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/86)): one person under several ids, as a
+logged, revertible event (`UsersLinked`). Message search and profile facts follow the link, redaction covers both ids, and
+`forget_user` forgets every linked id. Never inferred from a name; recaps, lessons, procedures and rules stay per id.
+
 `examples/` ([#85](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/85)): runnable offline examples for plain Python, Google ADK through
 CommonADK, and harness hooks, with an index for people and agents; `tests/test_examples.py` runs them.
 

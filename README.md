@@ -312,6 +312,18 @@ and a failing model never fails the close. On a LoCoMo conversation it is the
 difference between 23 and 38 correct answers out of 48
 ([docs/live-runs.md](docs/live-runs.md)).
 
+### One person, several ids
+
+`user_id` is whatever string your app supplies. CommonMemo never decides two ids are the same person, and never from a name: two people given the same id share one memory, so make ids unique. When you know one person has two ids (a harness login and an app account), say so:
+
+```python
+link = mem.link_users("ada-login", "ada-app", reason="same person")
+mem.linked_users("ada-app")        # ["ada-app", "ada-login"]
+mem.unlink_users(link.id)          # undone exactly
+```
+
+A link is a logged, revertible event; nothing is copied or merged. Links are transitive. While linked, a search for either id also sees the other's past messages, the profile shows the other's facts for keys the first has not stated itself, redaction covers both, and `forget_user` forgets both ids and the links. Recaps, lessons, procedures and rules stay per id. See [#86](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/86).
+
 ### What was said
 
 Recaps and facts are what memory made of earlier sessions. Memory can also
