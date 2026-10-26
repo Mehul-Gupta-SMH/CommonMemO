@@ -479,6 +479,8 @@ Each turn, on a copy of the project (CommonADK itself is never changed):
   instead is requested in [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30);
   `run_with_memory` uses it automatically if a runner supports it ([#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7)).
 
+Runnable, offline examples for plain Python, Google ADK (through CommonADK) and harness hooks are in [`examples/`](examples/README.md).
+
 ## As an MCP server (Claude Code, Codex, any MCP client)
 
 `commonmemo mcp` serves the memory tools to MCP clients over stdio, bound to
