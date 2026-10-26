@@ -19,7 +19,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional, Sequence
 
 from ..events import MemoryEvent, event_from_dict
 from ..sqldb import connect
@@ -139,6 +139,11 @@ class SqlStore(Store):
         with self._lock, self._write():
             new = self._insert(event)
         return new
+
+    def append_many(self, events: Sequence[MemoryEvent]) -> list[bool]:
+        # One transaction under the log's write lock: all of them or none, in order.
+        with self._lock, self._write():
+            return [self._insert(e) for e in events]
 
     def events_after(self, seq: int, *, limit: Optional[int] = None) -> list[tuple[int, MemoryEvent]]:
         # Appends hold the log's write lock, so positions commit in order and

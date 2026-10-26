@@ -25,7 +25,7 @@ import contextvars
 import logging
 import time
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING, Any, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional, Sequence
 
 from .context import MemoryContext, MemoryPolicy
 from .engines.base import Recap, Fact
@@ -146,6 +146,13 @@ class Session:
         """Append `event` to the log, stamped with this session's envelope."""
         bound = self._bound(event)
         self.memory._append(bound)
+        return bound
+
+    def record_many(self, events: Sequence[MemoryEvent]) -> list[MemoryEvent]:
+        """Append `events` to the log, in order, in one transaction (one commit instead of
+        one each). They are all durable when this returns; for events that are known together."""
+        bound = [self._bound(e) for e in events]
+        self.memory._append_many(bound)
         return bound
 
     def _bound(self, event: MemoryEvent) -> MemoryEvent:

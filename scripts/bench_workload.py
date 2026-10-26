@@ -81,6 +81,17 @@ def worker(args: dict[str, Any], index: int, out: "mp.Queue[dict[str, Any]]") ->
             session = mem.session(f"s{index}-{turn}-{uuid.uuid4().hex[:6]}", user_id=user, agent="bench")
             session.__enter__()
         prompt = text(rng, rng.randint(60, 400))
+        if args["only_tools"] and args["batch"]:  # the same calls, written `batch` at a time in one transaction
+            for _ in range(0, args["tools_per_turn"], args["batch"]):
+                calls = [ToolInvoked(name=f"tool{rng.choices(range(args['tools']), weights)[0]}",
+                                     arguments={"input": "x"}, result="ok", duration_ms=1.0)
+                         for _ in range(min(args["batch"], args["tools_per_turn"]))]
+                t = time.perf_counter()
+                session.record_many(calls)
+                appends.extend([(time.perf_counter() - t) / len(calls)] * len(calls))
+                events += len(calls)
+            turn += 1
+            continue
         if args["only_tools"]:  # the hot-counter test: tool calls back to back, nothing else
             for _ in range(args["tools_per_turn"]):
                 name = f"tool{rng.choices(range(args['tools']), weights)[0]}"
@@ -162,7 +173,7 @@ def run(store: str, workers: int, skew: float, a: argparse.Namespace) -> dict[st
         url = f"{store}{'&' if '?' in store else '?'}schema=bench_{uuid.uuid4().hex[:8]}"
     args = {"url": url, "turns": a.turns, "turns_per_session": a.turns_per_session, "users": a.users,
             "tools": a.tools, "skew": skew, "tools_per_turn": a.tools_per_turn, "payload": a.payload,
-            "only_tools": a.only_tools}
+            "only_tools": a.only_tools, "batch": a.batch}
     ctx = mp.get_context("spawn")
     q: "mp.Queue[dict[str, Any]]" = ctx.Queue()
     # One process creates the schema first, so the workers measure writes, not setup.
@@ -208,6 +219,8 @@ def main() -> None:
     p.add_argument("--payload", type=int, default=1200, help="mean characters of a tool result")
     p.add_argument("--only-tools", action="store_true",
                    help="record tool calls only, back to back (isolates the tool-counter row under --skew)")
+    p.add_argument("--batch", type=int, default=0,
+                   help="with --only-tools, write this many tool calls per transaction (Session.record_many)")
     p.add_argument("--cold", type=int, default=0, help="also time this many hook processes, as Claude Code starts them")
     p.add_argument("--json", default=None, help="write the rows here too")
     a = p.parse_args()

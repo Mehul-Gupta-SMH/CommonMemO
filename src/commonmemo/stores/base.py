@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 from ..events import MemoryEvent
 
@@ -66,6 +66,12 @@ class Store(ABC):
         """Persist one event; return whether it was new. Appending an id that
         already exists is a no-op returning False (ids are idempotency
         keys), never an overwrite."""
+
+    def append_many(self, events: Sequence[MemoryEvent]) -> list[bool]:
+        """Persist `events` in order; return, for each, whether it was new.
+        A store may write them in one transaction (the SQL stores do); this
+        default appends one at a time."""
+        return [self.append(e) for e in events]
 
     @abstractmethod
     def events(
