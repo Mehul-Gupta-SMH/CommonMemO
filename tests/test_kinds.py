@@ -274,3 +274,19 @@ def test_tool_profiles_equal_one_profile_per_tool():
         assert sorted(got) == names
         for tool in names:
             assert got[tool] == mem.tool_profile(tool, agent)
+
+
+def test_record_many_logs_in_order_applies_once_and_is_idempotent():
+    mem = Memory()
+    seen = []
+    mem.listeners.append(seen.append)
+    with mem.session(agent="a", user_id="u") as s:
+        calls = [ToolInvoked(id=f"c{i}", name="t", error="boom" if i % 2 else None) for i in range(4)]
+        bound = s.record_many(calls)
+        assert [e.id for e in bound] == ["c0", "c1", "c2", "c3"]
+        assert all(e.session_id == s.session_id and e.agent == "a" for e in bound)
+        s.record_many(calls)  # a duplicate delivery is not counted again
+        assert s.record_many([]) == []
+    assert mem.tool_profile("t").calls == 4
+    assert [e.id for e in mem.store.events(kinds=["tool_invoked"])] == ["c0", "c1", "c2", "c3"]
+    assert [e.id for e in seen if e.kind == "tool_invoked"][:4] == ["c0", "c1", "c2", "c3"]

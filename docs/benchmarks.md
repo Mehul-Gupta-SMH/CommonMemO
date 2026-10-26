@@ -104,10 +104,25 @@ These are one machine's numbers, so the ratios matter more than the absolute val
 
 Postgres with one worker is 3.3 times faster, and the gap to SQLite is now about 1.7 times instead of 4. The write ceiling (point 3) is unchanged and is next ([#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82)).
 
+## After [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82)
+
+`Session.record_many(events)` writes events that are known together in one log transaction and one projection catch-up, instead of two commits each. Durability and order are unchanged: every event is on disk when it returns, in the order given. Events written one at a time are unchanged. `--only-tools --batch N` measures it (4 workers, skew 0):
+
+| Store | Tool calls per transaction | Events/s |
+|---|---|---|
+| Postgres | 1 | 452 |
+| Postgres | 8 | 836 (1.8 times) |
+| Postgres | 16 (32 calls per turn) | 1,016 (2.2 times) |
+| Postgres | 32 (32 calls per turn) | 1,134 (2.5 times) |
+| SQLite | 1 | 267 |
+| SQLite | 8 | 1,221 (4.6 times) |
+
+So the bar (at least double) is met from about 16 events a transaction on Postgres and from 8 on SQLite. It only helps where a caller has several events at hand (parallel tool calls, an import, a turn's messages); the hook makes one event per process, and a sequential agent loop writes one event, then reads, so neither gains. A single event still pays two commits; removing that second commit means projecting in the log's transaction, which needs the log and the projections in one database, and is not done here.
+
 ## Follow-ups
 
 - [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.
-- [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): one transaction per turn for its events, and projection updates without a commit per event.
+- [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): `record_many` done, see above; single events still pay two commits.
 - [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): smaller turn traces, or a shorter retention for them.
 - A resident hook process (optional), so a hook doesn't pay for a process start and a connection.
 - #52 revisited:

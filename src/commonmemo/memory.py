@@ -24,7 +24,7 @@ import re
 import time
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Sequence, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
 from .context import MemoryContext, MemoryPolicy
@@ -261,6 +261,24 @@ class Memory:
             except Exception:  # noqa: BLE001 -- an exporter must never break a write
                 logging.getLogger("commonmemo").exception("commonmemo: event listener failed")
         return event
+
+    def _append_many(self, events: Sequence[MemoryEvent]) -> list[MemoryEvent]:
+        """`_append` for several events: one log transaction and one projection
+        catch-up for all of them. Durable when it returns, like `_append`."""
+        run_id = current_run()
+        events = [e.bind(run_id=run_id) if run_id is not None and e.run_id is None else e for e in events]
+        if not events:
+            return []
+        self.store.append_many(events)
+        self.knowledge.catch_up(self.store)
+        for event in events:
+            after_write(self, event)
+            for listener in self.listeners:
+                try:
+                    listener(event)
+                except Exception:  # noqa: BLE001 -- an exporter must never break a write
+                    logging.getLogger("commonmemo").exception("commonmemo: event listener failed")
+        return events
 
     def step(
         self,

@@ -2,6 +2,13 @@
 
 ## 0.0.1 — unreleased
 
+`examples/` ([#85](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/85)): runnable offline examples for plain Python, Google ADK through
+CommonADK, and harness hooks, with an index for people and agents; `tests/test_examples.py` runs them.
+
+`Session.record_many` ([#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82)): events known together are written in one
+log transaction and one projection catch-up (`Store.append_many`). 2.2 to 2.5 times the events a second on Postgres
+at 16 to 32 a batch, 4.6 times on SQLite at 8; durability and order unchanged, single events unchanged.
+
 Tool notes in two queries ([#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81)): `Memory.tool_notes` and the
 history metrics read every tool's profile with `Knowledge.tool_profiles` (two grouped queries) instead of two per tool.
 On Postgres a turn's context takes 20 ms instead of 54 and the workload runs 3.3 times faster with one worker.
