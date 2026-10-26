@@ -171,8 +171,7 @@ def _snapshot_of(view: MemoryView) -> dict[tuple[str, str], str]:
             out[("negative", f"{n.scope}/{n.statement}")] = n.reason or ""
     for w in k.pending_world_facts():
         out[("pending_world_fact", f"{w.scope}/{w.key}#{w.event_id}")] = f"{w.value} ({w.status})"
-    for tool in k.tools():
-        p = k.tool_profile(tool)
+    for tool, p in k.tool_profiles().items():
         out[("tool", tool)] = f"calls={p.calls} failures={p.failures} signatures={len(p.errors)}"
     fb = k.feedback_summary()
     if fb.count:
@@ -343,7 +342,7 @@ class History:
             world_facts=sum(len(k.world_facts([s], include_stale=True)) for s in k.scopes_in_use()),
             pending_world_facts=len(k.pending_world_facts()),
             profile_keys=dict(top),
-            error_signatures={t: len(k.tool_profile(t).errors) for t in k.tools()},
+            error_signatures={t: len(p.errors) for t, p in k.tool_profiles().items()},
         )
 
     def by_run(self, run_id: str) -> dict[str, int]:

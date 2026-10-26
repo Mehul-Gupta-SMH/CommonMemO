@@ -2,6 +2,10 @@
 
 ## 0.0.1 — unreleased
 
+Tool notes in two queries ([#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81)): `Memory.tool_notes` and the
+history metrics read every tool's profile with `Knowledge.tool_profiles` (two grouped queries) instead of two per tool.
+On Postgres a turn's context takes 20 ms instead of 54 and the workload runs 3.3 times faster with one worker.
+
 The memory workload, measured ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)):
 
 - **`scripts/bench_workload.py`** writes turns exactly as the Claude Code hooks do (prompt, push,
