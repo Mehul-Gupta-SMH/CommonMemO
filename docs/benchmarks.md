@@ -130,12 +130,23 @@ What made a trace 5.4 KB on average was not tool notes but event ids: a `recap` 
 
 A trace is now about 0.9 KB, and traces are 9% of the log instead of 36%. A shorter retention for traces than for the events they describe (the issue's second option) is not done: it would need `prune` per kind, and the size is no longer the reason.
 
+## After [#92](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/92): the resident hook
+
+Where a hook's 253 ms went: 16 ms starting Python, about 230 ms importing the library (108 ms of that is the standard library: asyncio, inspect, dataclasses; our modules are about 115 ms, spread thin), 7 ms opening the store and pushing. Trimming imports (lazy history, environment, statistics, subprocess) would have saved under 15 ms, so `--resident` does not start the interpreter's work at all: the process imports `os` and the C socket module, sends the event to a server that already has `Memory` open, and prints the answer. Median of 15 hooks, `UserPromptSubmit`, same machine:
+
+| Store | Hook process | `--resident` |
+|---|---|---|
+| SQLite | 224 to 250 ms | 48 ms |
+| Postgres | 445 ms | 61 ms |
+
+Output is identical (a test compares them). Of the 48 ms, 17 is bare Python, about 10 is the round trip and the push, the rest is starting `commonmemo`. A turn with 8 tool calls spends about 0.4 s in hooks instead of about 2.2 s.
+
 ## Follow-ups
 
 - [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.
 - [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): `record_many` done, see above; single events still pay two commits.
 - [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): done, see above (retention per kind not done).
-- A resident hook process (optional), so a hook doesn't pay for a process start and a connection.
+- A resident hook process: done, see above ([#92](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/92)).
 - #52 revisited:
   - the hot-counter work (part 3) is not needed at measured scale;
   - log partitioning (part 4) comes after the two fixes above;
