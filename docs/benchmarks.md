@@ -119,11 +119,22 @@ Postgres with one worker is 3.3 times faster, and the gap to SQLite is now about
 
 So the bar (at least double) is met from about 16 events a transaction on Postgres and from 8 on SQLite. It only helps where a caller has several events at hand (parallel tool calls, an import, a turn's messages); the hook makes one event per process, and a sequential agent loop writes one event, then reads, so neither gains. A single event still pays two commits; removing that second commit means projecting in the log's transaction, which needs the log and the projections in one database, and is not done here.
 
+## After [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83)
+
+What made a trace 5.4 KB on average was not tool notes but event ids: a `recap` item named every event of its session (about 240, 8 KB) and a `said` item the six events of its window, again in every push. Now a `said` item holds its window's id (the index already names the window's events, and `why` reads them from there), and a `recap` item holds its first 5 source events and how many there are (`n`), with `session` saying where the rest are. `mem.why` still answers; for a recap it lists 5 sources and "and N more events of session S". Same workload, skew 1.2, 300 turns a worker:
+
+| Store | Bytes a turn before → after | GB per 1M turns |
+|---|---|---|
+| SQLite | 32,550 → 21,163 (-35%) | 32.5 → 21.2 |
+| Postgres | 40,332 → 27,313 (-32%) | 40.3 → 27.3 |
+
+A trace is now about 0.9 KB, and traces are 9% of the log instead of 36%. A shorter retention for traces than for the events they describe (the issue's second option) is not done: it would need `prune` per kind, and the size is no longer the reason.
+
 ## Follow-ups
 
 - [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.
 - [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): `record_many` done, see above; single events still pay two commits.
-- [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): smaller turn traces, or a shorter retention for them.
+- [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): done, see above (retention per kind not done).
 - A resident hook process (optional), so a hook doesn't pay for a process start and a connection.
 - #52 revisited:
   - the hot-counter work (part 3) is not needed at measured scale;

@@ -600,6 +600,12 @@ class Knowledge:
                 "GROUP BY w.id, w.wid, w.session_id, w.agent, w.first_ts, w.event_ids "
                 "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (*uids, *params, limit)).fetchall()
 
+    def window_events(self, window_id: str) -> list[str]:
+        """The event ids of the window `window_id` (`<session>#<number>`), or none if it is gone."""
+        with self._lock:
+            row = self._conn.execute("SELECT event_ids FROM message_windows WHERE id = ?", (window_id,)).fetchone()
+        return json.loads(row["event_ids"]) if row else []
+
     def recent_windows(self, user_id: Union[str, Sequence[str]], *, exclude_session: Optional[str] = None, agent: Optional[str] = None,
                        limit: int = 400) -> list[Row]:
         """The user's newest windows, for rankers that don't work on shared terms (embeddings)."""

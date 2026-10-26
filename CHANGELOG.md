@@ -2,6 +2,10 @@
 
 ## 0.0.1 — unreleased
 
+Smaller turn traces ([#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83)): a `said` item names its window instead of copying its event ids, and a `recap`
+item names its first 5 source events and how many there are. A turn takes 32% to 35% fewer bytes (traces were 36% of the log, now 9%).
+`mem.why` still finds the sources. Traces written before this keep their full lists and read the same.
+
 `Memory.link_users` / `unlink_users` / `linked_users` ([#86](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/86)): one person under several ids, as a
 logged, revertible event (`UsersLinked`). Message search and profile facts follow the link, redaction covers both ids, and
 `forget_user` forgets every linked id. Never inferred from a name; recaps, lessons, procedures and rules stay per id.

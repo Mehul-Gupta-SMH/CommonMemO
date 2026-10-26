@@ -128,8 +128,8 @@ def test_the_trace_names_the_events_and_why_finds_them():
         ctx = run(s.push_turn("where is the guest room key"))
         [item] = [i for i in mem.traces(session_id="s2")[-1].items if i["kind"] == "said"]
         found = mem.why(item["id"], session_id="s2")
-    assert item["session"] == "s1" and len(item["events"]) == 3 and ctx.said
-    assert found is not None and [e.id for e in found.sources] == item["events"]
+    assert item["session"] == "s1" and ctx.said and "events" not in item  # the window id names them (#83)
+    assert found is not None and [e.id for e in found.sources] == list(ctx.said[0].event_ids) and len(found.sources) == 3
 
 
 def test_a_stable_part_trace_does_not_claim_them():
@@ -454,3 +454,18 @@ def test_no_windows_means_no_embedding_call():
     mem = vec_mem(embed)
     turn(mem, "When does my sibling get here?", sid="now")
     assert embed.seen == []
+
+
+def test_a_recap_item_names_a_few_events_and_how_many_there_are():
+    from commonmemo.traces import RECAP_EVENTS
+
+    mem = Memory()
+    with mem.session("s1", user_id="ada", agent="chat") as s:
+        for i in range(RECAP_EVENTS * 3):
+            s.message("user", f"the guest room key number {i} is in the hall")
+    with mem.session("s2", user_id="ada", agent="chat") as s:
+        ctx = run(s.push_turn("where is the guest room key"))
+        [item] = [i for i in mem.traces(session_id="s2")[-1].items if i["kind"] == "recap"]
+        found = mem.why(item["id"], session_id="s2")
+    assert len(item["events"]) == RECAP_EVENTS and item["n"] >= RECAP_EVENTS * 3 and ctx.recaps
+    assert found is not None and any("more events of session s1" in line for line in found.lines())

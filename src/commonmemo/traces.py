@@ -27,6 +27,10 @@ if TYPE_CHECKING:
     from .memory import Memory
 
 
+RECAP_EVENTS = 5
+"""How many of a recap's source events a trace names; `n` says how many it has, and `session` where they are."""
+
+
 def trace_items(ctx: MemoryContext, part: str = "all") -> tuple[dict[str, Any], ...]:
     """One reference per item `ctx` pushes, in the `part` that was delivered
     ("stable", "turn" or "all"): kind, key or id, and provenance (#49)."""
@@ -51,10 +55,13 @@ def trace_items(ctx: MemoryContext, part: str = "all") -> tuple[dict[str, Any], 
         items += [{"kind": "procedure", "key": e.key, "id": e.event_id, "task": e.task, "entry": e.kind,
                    "version": e.version, "scope": e.scope, "source": e.source, "how": p.how, "score": p.score,
                    "events": [e.event_id]} for e in p.pushed]
-    items += [{"kind": "said", "id": w.id, "session": w.session_id, "agent": w.agent, "score": w.score,
-               "events": list(w.event_ids)} for w in ctx.said]
+    # A window's events are the window's own (its id names them in the index), and a recap's can be hundreds
+    # (all of its session): neither is copied into every trace (#83).
+    items += [{"kind": "said", "id": w.id, "window": w.window, "session": w.session_id, "agent": w.agent,
+               "score": w.score}
+              for w in ctx.said]
     items += [{"kind": "recap", "id": r.id, "session": r.session_id, "agent": r.agent, "score": r.score,
-               "events": list(r.source_event_ids)} for r in ctx.recaps]
+               "events": list(r.source_event_ids[:RECAP_EVENTS]), "n": len(r.source_event_ids)} for r in ctx.recaps]
     return tuple(items)
 
 
@@ -118,9 +125,19 @@ class Why:
             source = getattr(e, "source", None)
             where = f" in session {e.session_id}" if e.session_id else ""
             out.append(f"  from {e.kind} {e.id}{where}" + (f", source {source}" if source else ""))
+        more = (self.item.get("n") or 0) - len(self.item.get("events") or [])
+        if more > 0:
+            out.append(f"  and {more} more events of session {self.item.get('session')}")
         if not self.sources:
             out.append("  (its source events are no longer in the Log: pruned or forgotten)")
         return out
+
+
+def item_events(memory: "Memory", item: dict[str, Any]) -> list[str]:
+    """The event ids a trace item came from. A `said` item names its window, whose events the index holds."""
+    if item.get("events") is None and item.get("kind") == "said":
+        return memory.knowledge.window_events(item.get("window") or "")
+    return list(item.get("events") or [])
 
 
 def traces(memory: "Memory", *, session_id: Optional[str] = None, user_id: Optional[str] = None,
@@ -136,7 +153,7 @@ def why(memory: "Memory", key: str, *, session_id: Optional[str] = None,
         found = trace.find(key)
         if found:
             item = found[0]
-            return Why(trace, item, memory.store.get_events(item.get("events") or []))
+            return Why(trace, item, memory.store.get_events(item_events(memory, item)))
     return None
 
 
