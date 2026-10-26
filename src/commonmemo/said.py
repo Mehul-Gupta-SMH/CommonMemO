@@ -221,22 +221,23 @@ async def search(memory: "Memory", query: Optional[str], *, user_id: Optional[st
     if not query or user_id is None or limit <= 0:
         return [], 0
     only_agent = None if across_agents else agent
+    ids = memory.linked_users(user_id)  # one person under several ids (link_users)
     bar = memory.ranker.threshold if threshold is None else threshold
     if isinstance(memory.ranker, KeywordRanker):
         wanted = sorted(terms(query))[:MAX_QUERY_TERMS]
-        rows = memory.knowledge.window_candidates(user_id, wanted, exclude_session=exclude_session,
+        rows = memory.knowledge.window_candidates(ids, wanted, exclude_session=exclude_session,
                                                   agent=only_agent, limit=CANDIDATES)
     elif isinstance(memory.ranker, EmbeddingRanker):
         # meaning, not shared words: the windows sharing the most terms (old ones included) and the newest
         wanted = sorted(terms(query))[:MAX_QUERY_TERMS]
         rows = list({r["id"]: r for r in [
-            *memory.knowledge.window_candidates(user_id, wanted, exclude_session=exclude_session, agent=only_agent,
+            *memory.knowledge.window_candidates(ids, wanted, exclude_session=exclude_session, agent=only_agent,
                                                 limit=CANDIDATES),
-            *memory.knowledge.recent_windows(user_id, exclude_session=exclude_session, agent=only_agent,
+            *memory.knowledge.recent_windows(ids, exclude_session=exclude_session, agent=only_agent,
                                              limit=VECTOR_SCAN)]}.values())
         return await _by_meaning(memory, query, rows, user_id=user_id, limit=limit, bar=bar, dates=dates)
     else:
-        rows = memory.knowledge.recent_windows(user_id, exclude_session=exclude_session, agent=only_agent,
+        rows = memory.knowledge.recent_windows(ids, exclude_session=exclude_session, agent=only_agent,
                                                limit=SCAN_WINDOWS)
     found = _windows(memory, rows, user_id=user_id, dates=dates)
     if not found:

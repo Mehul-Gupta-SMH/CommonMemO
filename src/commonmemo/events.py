@@ -352,6 +352,20 @@ class Unfreeze(MemoryEvent):
     freeze_id: str
 
 
+class UsersLinked(MemoryEvent):
+    """`user_a` and `user_b` are the same person (`Memory.link_users`). Reads of one
+    follow the link to the other; nothing is copied or merged. Ends with
+    `UsersUnlinked(link_id=<this id>)`."""
+
+    user_a: str
+    user_b: str
+    reason: Optional[str] = None
+
+
+class UsersUnlinked(MemoryEvent):
+    link_id: str
+
+
 class ProcedureEntry(MemoryEvent):
     """How a type of task is done (ADR 0003): one `template` (the shape of a
     good result), `rule` (a constraint it must follow), `procedure` (the
@@ -462,7 +476,8 @@ class ExternalEvent(MemoryEvent):
 
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
-    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze,
+    WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze, UsersLinked,
+    UsersUnlinked,
     ProcedureEntry, ProcedureConfirmed, ProcedureRejected, ProcedureRetired, ProcedureFollowed,
     DecisionRecorded, LessonLearned,
 )
@@ -505,6 +520,8 @@ __all__ = [
     "Reverted",
     "Freeze",
     "Unfreeze",
+    "UsersLinked",
+    "UsersUnlinked",
     "Feedback",
     "Negative",
     "NegativeRevoked",

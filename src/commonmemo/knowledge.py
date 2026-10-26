@@ -26,7 +26,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
 
 from .events import (
     Checkpoint,
@@ -49,6 +49,8 @@ from .events import (
     StepStarted,
     ToolInvoked,
     Unfreeze,
+    UsersLinked,
+    UsersUnlinked,
     WorldFact,
     WorldFactConfirmed,
     WorldFactRejected,
@@ -126,6 +128,12 @@ CREATE TABLE IF NOT EXISTS steps (
     started_at REAL, finished_at REAL,
     PRIMARY KEY (session_id, step_id)
 );
+CREATE TABLE IF NOT EXISTS user_links (
+    event_id TEXT PRIMARY KEY, ts REAL NOT NULL, user_a TEXT NOT NULL, user_b TEXT NOT NULL, reason TEXT,
+    active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS user_links_a ON user_links (user_a);
+CREATE INDEX IF NOT EXISTS user_links_b ON user_links (user_b);
 CREATE TABLE IF NOT EXISTS freezes (
     event_id TEXT PRIMARY KEY, ts REAL NOT NULL, scope TEXT, source TEXT, reason TEXT,
     active INTEGER NOT NULL DEFAULT 1
@@ -180,7 +188,7 @@ SCHEMA_VERSION = 8
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
-           "negatives", "tombstones", "checkpoints", "steps", "freezes", "procedures", "procedure_runs",
+           "negatives", "tombstones", "checkpoints", "steps", "freezes", "user_links", "procedures", "procedure_runs",
            "decisions", "lessons_learned", "message_windows", "window_users", "window_terms",
            "window_vectors", "vector_probe"]
 
@@ -567,15 +575,15 @@ class Knowledge:
         self._conn.execute("INSERT INTO window_users VALUES (?, ?) ON CONFLICT DO NOTHING", (uid, user_id))
         return self._window_user(user_id)
 
-    def window_candidates(self, user_id: str, query_terms: Sequence[str], *, exclude_session: Optional[str] = None,
+    def window_candidates(self, user_id: Union[str, Sequence[str]], query_terms: Sequence[str], *, exclude_session: Optional[str] = None,
                           agent: Optional[str] = None, limit: int = 300) -> list[Row]:
         """The user's windows that share terms with a query, most shared terms first, then newest:
         `id, wid, session_id, agent, first_ts, event_ids, hits`."""
         if not query_terms:
             return []
         with self._lock:
-            uid = self._window_user(user_id)
-        if uid is None:
+            uids = [u for u in (self._window_user(i) for i in _ids(user_id)) if u is not None]
+        if not uids:
             return []
         where, params = [f"t.term IN ({','.join('?' * len(query_terms))})"], list(query_terms)
         if exclude_session is not None:
@@ -588,14 +596,15 @@ class Knowledge:
             return self._conn.execute(
                 "SELECT w.id, w.wid, w.session_id, w.agent, w.first_ts, w.event_ids, COUNT(*) AS hits "
                 "FROM window_terms t JOIN message_windows w ON w.wid = t.wid "
-                f"WHERE t.uid = ? AND {' AND '.join(where)} "
+                f"WHERE t.uid IN ({','.join('?' * len(uids))}) AND {' AND '.join(where)} "
                 "GROUP BY w.id, w.wid, w.session_id, w.agent, w.first_ts, w.event_ids "
-                "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (uid, *params, limit)).fetchall()
+                "ORDER BY hits DESC, w.first_ts DESC LIMIT ?", (*uids, *params, limit)).fetchall()
 
-    def recent_windows(self, user_id: str, *, exclude_session: Optional[str] = None, agent: Optional[str] = None,
+    def recent_windows(self, user_id: Union[str, Sequence[str]], *, exclude_session: Optional[str] = None, agent: Optional[str] = None,
                        limit: int = 400) -> list[Row]:
         """The user's newest windows, for rankers that don't work on shared terms (embeddings)."""
-        where, params = ["user_id = ?"], [user_id]
+        ids = _ids(user_id)
+        where, params = [f"user_id IN ({','.join('?' * len(ids))})"], list(ids)
         if exclude_session is not None:
             where.append("session_id != ?")
             params.append(exclude_session)
@@ -840,6 +849,13 @@ class Knowledge:
             "INSERT INTO freezes VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT DO NOTHING", (e.id, e.ts, e.scope, e.source, e.reason)
         )
 
+    def _linked(self, e: UsersLinked) -> None:
+        self._conn.execute("INSERT INTO user_links VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT DO NOTHING",
+                           (e.id, e.ts, e.user_a, e.user_b, e.reason))
+
+    def _unlinked(self, e: UsersUnlinked) -> None:
+        self._conn.execute("UPDATE user_links SET active = 0 WHERE event_id = ?", (e.link_id,))
+
     def _unfreeze(self, e: Unfreeze) -> None:
         self._conn.execute("UPDATE freezes SET active = 0 WHERE event_id = ?", (e.freeze_id,))
 
@@ -993,6 +1009,30 @@ class Knowledge:
                 "SELECT * FROM world_facts WHERE " + " AND ".join(where) + " ORDER BY valid_from", params
             ).fetchall()
         return [_world_record(r) for r in rows]
+
+    def user_links(self) -> list[tuple[str, str, str, Optional[str]]]:
+        """Active links, oldest first: `(link id, user_a, user_b, reason)`."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM user_links WHERE active = 1 ORDER BY ts, event_id").fetchall()
+        return [(r["event_id"], r["user_a"], r["user_b"], r["reason"]) for r in rows]
+
+    def linked_users(self, user_id: str) -> list[str]:
+        """`user_id` and every id reachable from it by active links (one person), `user_id` first, the rest sorted."""
+        with self._lock:
+            rows = self._conn.execute("SELECT user_a, user_b FROM user_links WHERE active = 1").fetchall()
+        if not rows:
+            return [user_id]
+        near: dict[str, set[str]] = {}
+        for r in rows:
+            near.setdefault(r["user_a"], set()).add(r["user_b"])
+            near.setdefault(r["user_b"], set()).add(r["user_a"])
+        seen, todo = {user_id}, [user_id]
+        while todo:
+            for other in near.get(todo.pop(), ()):
+                if other not in seen:
+                    seen.add(other)
+                    todo.append(other)
+        return [user_id, *sorted(seen - {user_id})]
 
     def freezes(self) -> list[FreezeRecord]:
         """Active freezes, oldest first."""
@@ -1255,6 +1295,7 @@ class Knowledge:
 
     def _forget(self, user_id: str, session_ids: Sequence[str]) -> int:
         n = self._conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,)).rowcount
+        n += self._conn.execute("DELETE FROM user_links WHERE user_a = ? OR user_b = ?", (user_id, user_id)).rowcount
         self._conn.execute("DELETE FROM window_vectors WHERE wid IN (SELECT wid FROM message_windows WHERE user_id = ?)",
                            (user_id,))
         uid = self._window_user(user_id)
@@ -1295,6 +1336,10 @@ class Knowledge:
             self._conn.close()
 
 
+def _ids(user_id: Union[str, Sequence[str]]) -> Sequence[str]:
+    return [user_id] if isinstance(user_id, str) else user_id
+
+
 def _step(r: Row) -> StepRecord:
     return StepRecord(r["session_id"], r["step_id"], r["status"], r["result"], bool(r["replayable"]),
                       r["error"], bool(r["side_effects"]), r["started_at"], r["finished_at"])
@@ -1308,6 +1353,8 @@ _HANDLERS = {
     WorldFactRetracted: Knowledge._world_retracted,
     Freeze: Knowledge._freeze,
     Unfreeze: Knowledge._unfreeze,
+    UsersLinked: Knowledge._linked,
+    UsersUnlinked: Knowledge._unlinked,
     Feedback: Knowledge._feedback,
     Negative: Knowledge._negative,
     NegativeRevoked: Knowledge._revoke,
