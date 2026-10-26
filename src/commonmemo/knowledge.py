@@ -914,6 +914,28 @@ class Knowledge:
             errors=[ToolError(r["signature"], r["n"], r["seen"], r["fix"]) for r in rows],
         )
 
+    def tool_profiles(self, agent: Optional[str] = None) -> dict[str, ToolProfile]:
+        """`{tool: profile}` for every tool, in two queries however many tools there are.
+        Each equals `tool_profile(tool, agent)`."""
+        where, params = ("WHERE agent = ?", (_agent_key(agent),)) if agent is not None else ("", ())
+        with self._lock:
+            stats = self._conn.execute(
+                "SELECT tool, SUM(calls) c, SUM(failures) f, SUM(total_ms) ms, SUM(timed_calls) t "
+                f"FROM tool_stats {where} GROUP BY tool ORDER BY tool", params
+            ).fetchall()
+            rows = self._conn.execute(
+                "SELECT tool, signature, SUM(count) n, MAX(last_seen) seen, MAX(fix) fix "
+                f"FROM tool_errors {where} GROUP BY tool, signature ORDER BY tool, n DESC", params
+            ).fetchall()
+        errors: dict[str, list[ToolError]] = {}
+        for r in rows:
+            errors.setdefault(r["tool"], []).append(ToolError(r["signature"], r["n"], r["seen"], r["fix"]))
+        return {
+            r["tool"]: ToolProfile(tool=r["tool"], agent=agent, calls=r["c"] or 0, failures=r["f"] or 0,
+                                   total_ms=r["ms"] or 0.0, timed_calls=r["t"] or 0, errors=errors.get(r["tool"], []))
+            for r in stats
+        }
+
     def tools(self, agent: Optional[str] = None) -> list[str]:
         with self._lock:
             if agent is None:

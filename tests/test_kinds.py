@@ -261,3 +261,16 @@ def test_a_forgotten_fact_is_redacted_from_recaps_and_shows_again_once_restated(
     with mem.session(user_id="ada") as s:
         text = run(s.context("home address Elm Road")).render()
     assert "9 Elm Road" in text and "12 Baker Street" not in text
+
+
+def test_tool_profiles_equal_one_profile_per_tool():
+    mem = Memory()
+    for agent, tool, error in [("a", "t1", "boom 1"), ("a", "t1", "boom 2"), ("b", "t1", None), ("b", "t2", "bad 7")]:
+        with mem.session(agent=agent) as s:
+            s.record(ToolInvoked(name=tool, error=error, duration_ms=5))
+    for agent in (None, "a", "b"):
+        got = mem.knowledge.tool_profiles(agent)
+        names = mem.knowledge.tools(agent)
+        assert sorted(got) == names
+        for tool in names:
+            assert got[tool] == mem.tool_profile(tool, agent)

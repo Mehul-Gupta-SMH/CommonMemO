@@ -91,9 +91,22 @@ These are one machine's numbers, so the ratios matter more than the absolute val
    - **Out of reach:** the "Product" peak of about 2,500 writes a second does not fit, nor does anything past it.
    - **What changes first:** fixes 1 and 3 move these numbers more than a new backend would. ADR 0001's ranking of backends stands, and its order of work changes.
 
+## After [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81)
+
+`tool_notes` and the two history metrics that walked every tool now read all profiles in two grouped queries (`Knowledge.tool_profiles`) instead of two queries per tool. Same workload, same machine, skew 1.2, 300 turns a worker:
+
+| Store | Workers | Events/s before → after | Context p50 before → after |
+|---|---|---|---|
+| SQLite | 1 | 96 → 136 | 14.6 → 11.0 ms |
+| SQLite | 4 | 103 → 137 | 38.9 → 25.7 ms |
+| Postgres | 1 | 25 → 82 | 54.4 → 20.4 ms |
+| Postgres | 4 | 99 → 202 | 50.9 → 27.2 ms |
+
+Postgres with one worker is 3.3 times faster, and the gap to SQLite is now about 1.7 times instead of 4. The write ceiling (point 3) is unchanged and is next ([#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82)).
+
 ## Follow-ups
 
-- [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): `tool_notes` reads every tool's profile one query at a time; one grouped query instead. This is the largest single cost.
+- [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.
 - [#82](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/82): one transaction per turn for its events, and projection updates without a commit per event.
 - [#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83): smaller turn traces, or a shorter retention for them.
 - A resident hook process (optional), so a hook doesn't pay for a process start and a connection.

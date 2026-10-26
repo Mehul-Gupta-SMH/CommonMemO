@@ -808,12 +808,12 @@ class Memory:
     def tool_notes(self, agent: Optional[str] = None) -> dict[str, list[str]]:
         """`{tool: advice lines}` for every tool with something worth saying.
         An agent's own experience comes first, then what other agents saw."""
+        everyone = self.knowledge.tool_profiles()
+        own = self.knowledge.tool_profiles(agent) if agent else {}
         out: dict[str, list[str]] = {}
-        for tool in self.knowledge.tools():
-            notes = self.tool_profile(tool, agent).notes() if agent else []
-            for line in self.tool_profile(tool).notes():
-                if line not in notes:
-                    notes.append(line)
+        for tool, profile in everyone.items():
+            notes = own[tool].notes() if tool in own else []
+            notes.extend(line for line in profile.notes() if line not in notes)
             if notes:
                 out[tool] = notes
         return out
