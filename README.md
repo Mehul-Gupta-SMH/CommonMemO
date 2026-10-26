@@ -707,8 +707,12 @@ and what's next is in the [roadmap issue (#14)](https://github.com/Mehul-Gupta-S
   `preferred_contact` without an embedding ranker or an engine that has one.
 - **One Postgres log, written one event at a time.** On Postgres, appends
   take one lock so positions commit in order. That's simple and correct, but
-  it caps write throughput at one log. Partitioning by user or session, and
-  the scale-out backends in [ADR 0001](docs/adr/0001-storage.md), wait for real numbers ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)).
+  it caps write throughput at one log: measured, about 400 events a second on
+  Postgres and 270 on SQLite on a 4-CPU machine, about 3 million turns a day if
+  the load were flat ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17, [docs/benchmarks.md](docs/benchmarks.md)). A turn
+  currently issues about 1,060 SQL statements, mostly tool notes read one tool at
+  a time, and a hook process costs 270 to 550 ms; both are fixable in the code and
+  come before partitioning or a scale-out backend.
   Graphiti and Mem0 keep their own stores either way.
 - **The review screen is a local tool, not an admin console.** It has no
   accounts: the reviewer's name is whatever `--reviewer` says, and it
