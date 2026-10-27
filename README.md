@@ -577,6 +577,14 @@ What else the hooks do:
   prompt's push missed, its recap is pushed before the next model call. At
   most 3 times per turn; `MemoryPolicy(refresh=False)` turns it off ([#22](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/22)).
 - **Never blocking:** on any error a hook writes to stderr and exits 0.
+- **Resident (opt-in, Unix):** a hook is a new Python process that imports the library,
+  about 250 ms on SQLite and 450 ms on Postgres, and Claude Code runs one per tool call.
+  `commonmemo setup claude-code --resident` (or `COMMONMEMO_RESIDENT=1`) makes each hook a thin
+  client of a server that stays loaded: 48 ms on SQLite, 61 ms on Postgres, the same output.
+  The server starts itself on the first hook (which is answered the usual way), listens on a
+  socket in a private per-user directory, serves only you, handles one event at a time, quits
+  after 10 idle minutes (`COMMONMEMO_HOOK_IDLE`, in seconds) and is replaced when the code changes.
+  If anything about it fails, the hook runs the usual way ([#92](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/92)).
 - **One session across harnesses:** each harness session is its own memory
   session by default. Give them the same `--session` (or
   `COMMONMEMO_SESSION`) to continue one: start in Claude Code, resume in

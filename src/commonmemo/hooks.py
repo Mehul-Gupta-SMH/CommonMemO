@@ -176,7 +176,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--harness", choices=HARNESSES, required=True)
     _recall_option(p)
     _environment_option(p)
+    _resident_option(p)
     return memory_options(p, agent=None)
+
+
+def _resident_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--resident", action="store_true", default=env_flag("COMMONMEMO_RESIDENT"),
+                   help="send the event to a resident hook server instead of starting a process that imports "
+                        "everything (about 250 ms a hook); started on first use, gone after 10 idle minutes")
 
 
 def _recall_option(p: argparse.ArgumentParser) -> None:
@@ -190,14 +197,21 @@ def _environment_option(p: argparse.ArgumentParser) -> None:
                    help="don't record the project's Python, OS and package versions at SessionStart")
 
 
-def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[str]) -> int:
+def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[str], *,
+        kept: Optional[dict[Any, Memory]] = None, key: Any = None) -> int:
+    """Handle one hook event. With `kept` (the resident server's), the `Memory` for this configuration
+    (`key`) is opened once and kept open between events instead of per event."""
     args = build_parser().parse_args(argv)
     memory: Optional[Memory] = None
     try:
         payload = json.load(stdin)
         if not isinstance(payload, dict) or "session_id" not in payload:
             raise ValueError("expected a hook payload with a session_id")
-        memory = Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
+        memory = kept.get(key) if kept is not None else None
+        if memory is None:
+            memory = Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
+            if kept is not None:
+                kept[key] = memory
         out = handle(payload, memory, harness=args.harness, user=args.user, agent=args.agent,
                      session=args.session, read_only=args.read_only, recall_tool=args.recall_tool, environment=not args.no_environment)
         if out is not None:
@@ -205,7 +219,7 @@ def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[s
     except Exception as e:  # noqa: BLE001 -- a memory failure must never block the harness
         print(f"commonmemo hook: {type(e).__name__}: {e}", file=stderr)
     finally:
-        if memory is not None:
+        if memory is not None and kept is None:
             run_sync(memory.aclose())
     return 0
 
@@ -234,6 +248,8 @@ def _command(harness: str, args: argparse.Namespace) -> str:
         parts.append("--recall-tool")
     if args.no_environment:
         parts.append("--no-environment")
+    if getattr(args, "resident", False):
+        parts.append("--resident")
     return " ".join(shlex.quote(p) for p in parts)
 
 
@@ -256,6 +272,7 @@ def setup_main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("harness", choices=HARNESSES)
     _recall_option(p)
     _environment_option(p)
+    _resident_option(p)
     args = memory_options(p, agent=None).parse_args(argv)
     if args.harness == "opencode":
         sys.stdout.write(opencode_plugin())

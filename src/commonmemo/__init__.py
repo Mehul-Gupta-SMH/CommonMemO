@@ -13,37 +13,109 @@ See docs/design.md for the full design.
 
 from __future__ import annotations
 
-from .context import MemoryContext, MemoryPolicy
-from .engines import Engine, Fact, LocalEngine, Recap
-from .events import (
-    Checkpoint,
-    ExternalEvent,
-    Feedback,
-    Forgotten,
-    MemoryEvent,
-    Message,
-    Negative,
-    ProcedureEntry,
-    ProcedureFollowed,
-    ToolInvoked,
-    UserFact,
-    WorldFact,
-    event_from_dict,
-)
-from .environment import EnvironmentResult
-from .facts import FactKey
-from .ranking import EmbeddingRanker, KeywordRanker
-from .history import Diff, History, MemoryView
-from .extraction import ExtractedFact, Extractor, ModelExtractor
-from .learning import Learner, ModelLearner
-from .memory import Memory
-from .procedures import TaskProcedures
-from .reins import Alert, AlertPolicy, Budget, RevertResult
-from .resume import ResumePoint, StepInDoubt, StepInProgress
-from .runs import Run, current_run
-from .session import Session, current_session
-from .stores import SQLiteStore, Store
-from .tool_memory import ToolProfile
+TYPE_CHECKING = False  # not `from typing import TYPE_CHECKING`: importing typing costs 7 ms a hook (#92)
+
+if TYPE_CHECKING:
+    from .context import MemoryContext, MemoryPolicy
+    from .engines import Engine, Fact, LocalEngine, Recap
+    from .events import (
+        Checkpoint,
+        ExternalEvent,
+        Feedback,
+        Forgotten,
+        MemoryEvent,
+        Message,
+        Negative,
+        ProcedureEntry,
+        ProcedureFollowed,
+        ToolInvoked,
+        UserFact,
+        WorldFact,
+        event_from_dict,
+    )
+    from .environment import EnvironmentResult
+    from .facts import FactKey
+    from .ranking import EmbeddingRanker, KeywordRanker
+    from .history import Diff, History, MemoryView
+    from .extraction import ExtractedFact, Extractor, ModelExtractor
+    from .learning import Learner, ModelLearner
+    from .memory import Memory
+    from .procedures import TaskProcedures
+    from .reins import Alert, AlertPolicy, Budget, RevertResult
+    from .resume import ResumePoint, StepInDoubt, StepInProgress
+    from .runs import Run, current_run
+    from .session import Session, current_session
+    from .stores import SQLiteStore, Store
+    from .tool_memory import ToolProfile
+
+
+# Importing the package must stay cheap: a hook process imports `commonmemo.hookclient` and nothing
+# else (#92), so the public names load on first use (PEP 562).
+_EXPORTS = {
+    "MemoryContext": ".context",
+    "MemoryPolicy": ".context",
+    "Engine": ".engines",
+    "Fact": ".engines",
+    "LocalEngine": ".engines",
+    "Recap": ".engines",
+    "Checkpoint": ".events",
+    "ExternalEvent": ".events",
+    "Feedback": ".events",
+    "Forgotten": ".events",
+    "MemoryEvent": ".events",
+    "Message": ".events",
+    "Negative": ".events",
+    "ProcedureEntry": ".events",
+    "ProcedureFollowed": ".events",
+    "ToolInvoked": ".events",
+    "UserFact": ".events",
+    "WorldFact": ".events",
+    "event_from_dict": ".events",
+    "EnvironmentResult": ".environment",
+    "FactKey": ".facts",
+    "EmbeddingRanker": ".ranking",
+    "KeywordRanker": ".ranking",
+    "Diff": ".history",
+    "History": ".history",
+    "MemoryView": ".history",
+    "ExtractedFact": ".extraction",
+    "Extractor": ".extraction",
+    "ModelExtractor": ".extraction",
+    "Learner": ".learning",
+    "ModelLearner": ".learning",
+    "Memory": ".memory",
+    "TaskProcedures": ".procedures",
+    "Alert": ".reins",
+    "AlertPolicy": ".reins",
+    "Budget": ".reins",
+    "RevertResult": ".reins",
+    "ResumePoint": ".resume",
+    "StepInDoubt": ".resume",
+    "StepInProgress": ".resume",
+    "Run": ".runs",
+    "current_run": ".runs",
+    "Session": ".session",
+    "current_session": ".session",
+    "SQLiteStore": ".stores",
+    "Store": ".stores",
+    "ToolProfile": ".tool_memory",
+}
+
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module 'commonmemo' has no attribute {name!r}")
+    from importlib import import_module
+
+    value = getattr(import_module(module, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_EXPORTS))
+
 
 __version__ = "0.0.1"
 

@@ -13,12 +13,13 @@ environment variable, which wins over the default.
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
+    import argparse
+
     from .context import MemoryPolicy
     from .memory import Memory
 
@@ -61,6 +62,13 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    args_ = sys.argv[1:] if argv is None else argv
+    if args_[:1] == ["hook"] and ("--resident" in args_ or env_flag("COMMONMEMO_RESIDENT")):
+        from .hookclient import main as client_main  # imports almost nothing: that is the point (#92)
+
+        return client_main(args_[1:])
+    import argparse
+
     parser = argparse.ArgumentParser(prog="commonmemo")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("mcp", help="serve memory to MCP clients over stdio", add_help=False)
@@ -95,6 +103,8 @@ def show_main(argv: Optional[list[str]] = None) -> int:
     from .agent_tools import run_sync
     from .views import session_lines, session_view, user_lines, user_view
 
+    import argparse
+
     p = argparse.ArgumentParser(prog="commonmemo show", description="Show what memory holds, read-only.")
     p.add_argument("what", choices=("user", "session"))
     p.add_argument("id")
@@ -118,6 +128,8 @@ def show_main(argv: Optional[list[str]] = None) -> int:
 def trace_main(argv: Optional[list[str]] = None) -> int:
     from .agent_tools import run_sync
     from .views import session_lines, session_view
+
+    import argparse
 
     p = argparse.ArgumentParser(prog="commonmemo trace", description="What each push gave the agent, and why.")
     p.add_argument("session")

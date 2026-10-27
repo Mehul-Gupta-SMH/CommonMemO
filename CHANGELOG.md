@@ -2,6 +2,10 @@
 
 ## 0.0.1 — unreleased
 
+Resident hooks ([#92](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/92)), opt-in: `commonmemo hook --resident` (`setup --resident`, `COMMONMEMO_RESIDENT=1`) is a thin
+client of `commonmemo.hookserver`, which keeps `Memory` open: 224-250 ms to 48 ms on SQLite, 445 to 61 ms on Postgres, same output.
+`import commonmemo` is now lazy (PEP 562) so the client imports almost nothing. Unix only; any failure falls back to the usual hook.
+
 Smaller turn traces ([#83](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/83)): a `said` item names its window instead of copying its event ids, and a `recap`
 item names its first 5 source events and how many there are. A turn takes 32% to 35% fewer bytes (traces were 36% of the log, now 9%).
 `mem.why` still finds the sources. Traces written before this keep their full lists and read the same.
