@@ -19,8 +19,8 @@ over MCP, and inside Claude Code, Codex and OpenCode through their hooks.
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <p align="center">
-  <img src="docs/assets/inspector-session.png" alt="The inspector's session page: one turn's push, item by item, with where each came from and a why link, then the session's timeline" width="49%">
-  <img src="docs/assets/inspector-review.png" alt="The inspector's review page: an agent's proposed world fact beside the value it would replace, a proposed rule, and a learned exemplar that needs a personal-data check before it can be shared" width="49%">
+  <img src="docs/assets/inspector-session.png" alt="The inspector's session page: the session in turns, each event coloured by kind with failures in red, and what memory pushed folded under the push" width="49%">
+  <img src="docs/assets/inspector-review.png" alt="The inspector's review page: an agent's proposed world fact shown old to new, one Approve button with the rest folded away, a proposed rule, and a learned exemplar that needs a personal-data check before it can be shared" width="49%">
 </p>
 
 Real pages, from [`scripts/demo_memory.py`](scripts/demo_memory.py) (offline, no keys). Left: one turn's
@@ -762,8 +762,9 @@ OPENAI_API_KEY=... python scripts/live_engines.py      # Neo4j if NEO4J_* is set
 ```
 
 Planned work is tracked in issues, indexed by the [roadmap (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14).
-Nothing gets coded without an issue. An earlier static mockup of the
-inspector, with sample data, is at <https://mehul-gupta-smh.github.io/CommonMemO/> (`pages/index.html`).
+Nothing gets coded without an issue. The inspector's real pages over sample data
+are at <https://mehul-gupta-smh.github.io/CommonMemO/> (`python scripts/build_pages.py` renders them
+from the product's own page code, so they cannot drift from it).
 
 ## Related
 

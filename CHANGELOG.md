@@ -2,6 +2,12 @@
 
 ## 0.0.1 — unreleased
 
+Inspector UX ([#87](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/87)): the pages are rebuilt (`inspector_ui.py`), still without a script. Overview: counts, a "waiting for review" strip, user cards, a filter box, empty states
+that say what to do. Session: grouped by turn, rows coloured by kind with failures in red, relative times, what each push delivered folded under it, filter
+by kind (`?show=`). Review: old to new, one Approve button, edit and reject folded away, a count in the navigation. Active navigation, breadcrumbs, skip link,
+visible focus, light and dark, small screens. `pages/` is now the real pages over the demo memory (`scripts/build_pages.py`), not a mockup. A world-fact event reads as a
+sentence instead of a dict.
+
 Resident hooks ([#92](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/92)), opt-in: `commonmemo hook --resident` (`setup --resident`, `COMMONMEMO_RESIDENT=1`) is a thin
 client of `commonmemo.hookserver`, which keeps `Memory` open: 224-250 ms to 48 ms on SQLite, 445 to 61 ms on Postgres, same output.
 `import commonmemo` is now lazy (PEP 562) so the client imports almost nothing. Unix only; any failure falls back to the usual hook.
