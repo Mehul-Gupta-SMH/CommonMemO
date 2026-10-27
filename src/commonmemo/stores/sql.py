@@ -253,6 +253,8 @@ class SqlStore(Store):
             params.append(user_id)
         if kinds is not None:
             kinds = list(kinds)
+            if not kinds:
+                return []  # `IN ()` is an error on Postgres: no kinds, no events
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
             params.extend(kinds)
         if since is not None:

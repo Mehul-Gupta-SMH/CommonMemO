@@ -2,6 +2,11 @@
 
 ## 0.0.1 — unreleased
 
+Storage interfaces, part 1: the log store ([#95](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/95), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `MemoryStore` (`Memory("memory://")`) implements `Store` in plain
+Python, with no SQL and no persistence: the reference for a non-SQL backend, and for tests. `tests/test_store_contract.py` is the `Store` contract as one suite that
+every store must pass (SQLite, Postgres, memory); the contract is written out in `Store`'s docstring. The suite found a bug: `Store.events(kinds=[])` raised
+on Postgres (`IN ()`); it now returns no events.
+
 Inspector UX ([#87](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/87)): the pages are rebuilt (`inspector_ui.py`), still without a script. Overview: counts, a "waiting for review" strip, user cards, a filter box, empty states
 that say what to do. Session: grouped by turn, rows coloured by kind with failures in red, relative times, what each push delivered folded under it, filter
 by kind (`?show=`). Review: old to new, one Approve button, edit and reject folded away, a count in the navigation. Active navigation, breadcrumbs, skip link,
