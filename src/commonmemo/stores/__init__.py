@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..sqldb import POSTGRES_SCHEMES
 from .base import ClaimRecord, EventCount, SessionRecord, Store
+from .memory import MemoryStore
 from .sql import PostgresStore, SQLiteStore, SqlStore
 
 
@@ -14,13 +15,15 @@ def store_from_url(url: str) -> Store:
     scheme, sep, rest = url.partition("://")
     if not sep:
         raise ValueError(f"commonmemo: store URL {url!r} has no scheme (expected 'sqlite:///...' or 'postgresql://...')")
+    if scheme == "memory":  # `memory://`: plain Python, gone with the process (see memory.py)
+        return MemoryStore()
     if scheme == "sqlite":
         path = rest[1:] if rest.startswith("/") else rest
         return SQLiteStore(path or ":memory:")
     if scheme in POSTGRES_SCHEMES:
         return PostgresStore(url)
-    raise ValueError(f"commonmemo: unknown store scheme {scheme!r} (known: 'sqlite', 'postgresql')")
+    raise ValueError(f"commonmemo: unknown store scheme {scheme!r} (known: 'sqlite', 'postgresql', 'memory')")
 
 
-__all__ = ["Store", "SessionRecord", "ClaimRecord", "EventCount", "SqlStore", "SQLiteStore", "PostgresStore",
+__all__ = ["Store", "SessionRecord", "ClaimRecord", "EventCount", "SqlStore", "SQLiteStore", "PostgresStore", "MemoryStore",
            "store_from_url"]

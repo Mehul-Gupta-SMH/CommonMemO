@@ -57,7 +57,22 @@ class ClaimRecord:
 
 class Store(ABC):
     """Persistence for events and sessions. Implementations must be safe to
-    call from multiple threads of one process."""
+    call from multiple threads of one process.
+
+    The contract, as `tests/test_store_contract.py` checks it for every store:
+
+    - **Idempotent append:** an event id already present is a no-op returning False.
+    - **Ordered positions:** each new event gets a position greater than every earlier one,
+      and `events_after(n)` returns events in position order and never skips one that is
+      committed later than a reader saw (a reader that remembers its last position misses nothing).
+    - **Atomic claims:** `claim` and `settle` write the claim and their event together, or neither;
+      of any number of callers racing for one free key, exactly one wins, across processes.
+    - **Copies:** what comes back is the caller's own; changing it changes nothing stored.
+    - **Durable on return:** an acknowledged write survives the process (not for `MemoryStore`, which
+      is gone with it by design).
+
+    `stores/memory.py` is the reference implementation in plain Python; the SQL stores are
+    `stores/sql.py`. Nothing in the interface mentions SQL."""
 
     # -- the Log ------------------------------------------------------------
 
