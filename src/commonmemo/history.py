@@ -38,7 +38,7 @@ from .events import (
     WorldFactConfirmed,
     WorldFactRejected,
 )
-from .knowledge import FeedbackSummary, Knowledge, NegativeRecord, StepRecord, WorldRecord
+from .projections import FeedbackSummary, NegativeRecord, Projections, StepRecord, WorldRecord
 from .stores.base import EventCount, Store
 from .tool_memory import ToolProfile
 
@@ -91,7 +91,7 @@ class MemoryView:
     """The last log position included."""
     at: float
     """The time the view is as of; expiry (`valid_until`) is judged against it."""
-    knowledge: Knowledge
+    knowledge: Projections
     project_scope: str
 
     def _scopes(self, scopes: Optional[list[str]]) -> list[str]:
@@ -121,7 +121,7 @@ class MemoryView:
 
 def as_of(memory: "Memory", point: Point) -> MemoryView:
     seq, at = resolve(memory, point)
-    scratch = Knowledge(":memory:", windows=False)
+    scratch = memory.knowledge.scratch()
     scratch.catch_up(_Upto(memory.store, seq))  # type: ignore[arg-type]
     return MemoryView(seq=seq, at=at, knowledge=scratch, project_scope=memory.project_scope)
 

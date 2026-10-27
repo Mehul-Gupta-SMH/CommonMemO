@@ -24,7 +24,6 @@ import array
 import json
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
 
@@ -65,6 +64,22 @@ from .tool_memory import (
     shape_change,
 )
 
+from .projections import (
+    PENDING,
+    CheckpointRecord,
+    DecisionRecord,
+    FeedbackRecord,
+    FeedbackSummary,
+    FreezeRecord,
+    LessonRecord,
+    NegativeRecord,
+    ProcedureOutcome,
+    ProcedureRecord,
+    Projections,
+    StepRecord,
+    WorldRecord,
+    source_rank,
+)
 from .ranking import terms
 from .said import WINDOW, window_line
 from .sqldb import connect
@@ -193,213 +208,15 @@ _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
            "window_vectors", "vector_probe"]
 
 
-@dataclass(frozen=True)
-class WorldRecord:
-    scope: str
-    key: str
-    value: str
-    valid_from: float
-    """When it became current: written, or confirmed. Shown as its age."""
-    valid_until: Optional[float]
-    source: str
-    event_id: str
-    status: str = "current"
-    """`current`, or for a pending fact `proposed` / `disputed`."""
-    user_id: Optional[str] = None
-    """Who proposed it, for a pending fact."""
-    note: Optional[str] = None
-
-    @property
-    def pending(self) -> bool:
-        return self.status in PENDING
-
-
-PENDING = ("proposed", "disputed")
-
-_RANKS = {"extracted": 0, "agent": 1, "tool": 2}
-
-
-def source_rank(source: str) -> int:
-    """How much a world fact's source is trusted: `extracted` 0, `agent` 1,
-    `tool` (checked against a tool result) 2, and anything else -- `explicit`,
-    `operator`, an integration's name -- 3, since application code wrote it.
-    A fact can only supersede a current fact of equal or lower rank."""
-    return _RANKS.get(source, 3)
-
-
 def _world_record(r: Row) -> WorldRecord:
     return WorldRecord(r["scope"], r["key"], r["value"], r["valid_from"], r["valid_until"], r["source"],
                        r["event_id"], r["status"], r["user_id"], r["note"])
-
-
-@dataclass(frozen=True)
-class ProcedureRecord:
-    """One procedural entry (ADR 0003), as the projection holds it."""
-
-    event_id: str
-    scope: str
-    task: str
-    kind: str
-    """`template`, `rule`, `procedure` or `exemplar`."""
-    name: str
-    use_when: str
-    body: str
-    steps: tuple[str, ...]
-    version: int
-    """1 for the first body that became current, then +1 per change (0 while pending)."""
-    source: str
-    status: str
-    valid_from: float
-    user_id: Optional[str] = None
-    note: Optional[str] = None
-
-    @property
-    def pending(self) -> bool:
-        return self.status in PENDING
-
-    @property
-    def key(self) -> str:
-        """How traces name it: `task/kind/name`."""
-        return f"{self.task}/{self.kind}/{self.name}"
 
 
 def _procedure_record(r: Row) -> ProcedureRecord:
     return ProcedureRecord(r["event_id"], r["scope"], r["task"], r["entry_kind"], r["name"], r["use_when"],
                            r["body"], tuple(json.loads(r["steps"])), r["version"], r["source"], r["status"],
                            r["valid_from"], r["user_id"], r["note"])
-
-
-@dataclass
-class ProcedureOutcome:
-    """How runs that used one version of an entry went (`Memory.procedure_outcomes`)."""
-
-    task: str
-    kind: str
-    name: str
-    version: int
-    runs: int = 0
-    rated: int = 0
-    positive: int = 0
-    negative: int = 0
-    corrections: int = 0
-    skipped: dict[str, int] = field(default_factory=dict)
-    """Step name -> runs that never finished it (runs with tracked steps only)."""
-
-    @property
-    def approval(self) -> Optional[float]:
-        return self.positive / self.rated if self.rated else None
-
-
-@dataclass(frozen=True)
-class DecisionRecord:
-    event_id: str
-    ts: float
-    session_id: Optional[str]
-    user_id: Optional[str]
-    agent: Optional[str]
-    task: Optional[str]
-    goal: str
-    plan: str
-    chosen: str
-    rejected: tuple[str, ...]
-    outcome: str
-
-    def line(self) -> str:
-        out = f"{self.goal}: chose {self.chosen}"
-        if self.rejected:
-            out += f" over {', '.join(self.rejected)}"
-        return out + (f"; {self.outcome}" if self.outcome else "")
-
-
-@dataclass(frozen=True)
-class LessonRecord:
-    event_id: str
-    scope: str
-    text: str
-    task: Optional[str]
-    sessions: int
-    """How many sessions taught it (merged repeats)."""
-    first_seen: float
-    last_seen: float
-
-    def line(self) -> str:
-        return self.text + (f" (seen in {self.sessions} sessions)" if self.sessions > 1 else "")
-
-
-@dataclass(frozen=True)
-class FeedbackRecord:
-    event_id: str
-    ts: float
-    user_id: Optional[str]
-    agent: Optional[str]
-    session_id: Optional[str]
-    kind: str
-    rating: Optional[float]
-    comment: Optional[str]
-    wrong: Optional[str]
-    right: Optional[str]
-    target_event_id: Optional[str]
-
-    def line(self) -> str:
-        if self.kind == "correction" and self.wrong and self.right:
-            return f"Corrected: not '{self.wrong}' but '{self.right}'" + (f" ({self.comment})" if self.comment else "")
-        mood = "" if self.rating is None else ("liked: " if self.rating > 0 else "disliked: " if self.rating < 0 else "")
-        return f"{mood}{self.comment}" if self.comment else f"{mood}rating {self.rating}"
-
-
-@dataclass(frozen=True)
-class NegativeRecord:
-    event_id: str
-    ts: float
-    scope: str
-    statement: str
-    reason: Optional[str]
-    source: str
-
-
-@dataclass(frozen=True)
-class FreezeRecord:
-    event_id: str
-    ts: float
-    scope: Optional[str]
-    source: Optional[str]
-    reason: Optional[str]
-
-
-@dataclass(frozen=True)
-class CheckpointRecord:
-    event_id: str
-    session_id: str
-    ts: float
-    label: str
-    data: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class StepRecord:
-    session_id: str
-    step_id: str
-    status: str  # "started" | "finished" | "failed"
-    result: Optional[str]
-    replayable: bool
-    error: Optional[str]
-    side_effects: bool
-    started_at: Optional[float]
-    finished_at: Optional[float]
-
-
-@dataclass
-class FeedbackSummary:
-    count: int = 0
-    rated: int = 0
-    positive: int = 0
-    negative: int = 0
-    corrections: int = 0
-    recent: list[FeedbackRecord] = field(default_factory=list)
-
-    @property
-    def approval(self) -> Optional[float]:
-        return self.positive / self.rated if self.rated else None
 
 
 def _encode(vec: Sequence[float]) -> bytes:
@@ -416,7 +233,7 @@ def _agent_key(agent: Optional[str]) -> str:
     return agent or ""
 
 
-class Knowledge:
+class Knowledge(Projections):
     """The structured-memory projections, in one SQLite file."""
 
     def __init__(self, path: str | Path = ":memory:", *, windows: bool = True) -> None:
@@ -445,6 +262,9 @@ class Knowledge:
             self._conn.commit()
 
     # -- applying events ----------------------------------------------------
+
+    def scratch(self) -> "Knowledge":
+        return Knowledge(":memory:", windows=False)
 
     def catch_up(self, store: "Store") -> int:
         """Apply every event the log holds past `applied_seq`; return how

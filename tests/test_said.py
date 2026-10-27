@@ -183,6 +183,7 @@ def rows(mem, table):
     return mem.knowledge._conn.execute(f"SELECT * FROM {table}").fetchall()
 
 
+@pytest.mark.sql_internals
 def test_windows_fill_as_messages_arrive_and_a_rebuild_gives_the_same_index():
     mem = Memory(policy=MemoryPolicy(messages=3))
     talk(mem, "s1", [("user", f"message {i} about the garage code") for i in range(WINDOW + 3)])
@@ -219,6 +220,7 @@ def test_the_index_ranks_what_a_scan_of_every_window_would():
     assert {w.text() for w in ctx.said} <= set(windows)
 
 
+@pytest.mark.sql_internals
 def test_prune_and_forget_user_take_the_index_with_them():
     mem = mem_with(messages=2)
     assert rows(mem, "message_windows") and rows(mem, "window_terms")
@@ -230,6 +232,7 @@ def test_prune_and_forget_user_take_the_index_with_them():
     assert rows(mem, "message_windows") == [] and rows(mem, "window_terms") == [] and rows(mem, "window_users") == []
 
 
+@pytest.mark.sql_internals
 def test_the_scratch_copies_history_replays_into_keep_no_windows():
     from commonmemo.knowledge import Knowledge
 
@@ -268,6 +271,7 @@ def test_a_search_reads_only_its_candidates_from_the_log(monkeypatch):
     assert [w.session_id for w in ctx.said] == ["needle"] and max(asked) <= 2  # not the 61 messages in the Log
 
 
+@pytest.mark.sql_internals
 def test_index_rows_carry_small_integers_not_ids(tmp_path):
     mem = mem_with(messages=2)
     talk(mem, "b1", [("user", "Bob's guest room key is under the red mat.")], user="bob")
@@ -282,6 +286,7 @@ def test_index_rows_carry_small_integers_not_ids(tmp_path):
 
 
 @pytest.mark.sqlite_only
+@pytest.mark.sql_internals
 def test_an_index_in_the_old_shape_is_rebuilt_from_the_log(tmp_path):
     db = tmp_path / "memory.db"
     mem = Memory(f"sqlite:///{db}", policy=MemoryPolicy(messages=2))
@@ -371,6 +376,7 @@ def test_a_windows_older_than_the_newest_are_found_by_their_words(monkeypatch):
     assert [w.session_id for w in ctx.said] == ["s1"]
 
 
+@pytest.mark.sql_internals
 def test_another_embedder_drops_the_stored_vectors(tmp_path):
     db = tmp_path / "memory.db"
     mem = vec_mem(Embedder(), db)
@@ -408,6 +414,7 @@ def test_a_forgotten_value_never_reaches_the_embedder_or_a_stored_vector():
     assert len(embed.seen) > before and not any("9912" in t for t in embed.seen[before:])
 
 
+@pytest.mark.sql_internals
 def test_prune_and_forget_user_take_the_vectors_with_them():
     mem = vec_mem(Embedder())
     vec_talk(mem)
@@ -422,6 +429,7 @@ def test_prune_and_forget_user_take_the_vectors_with_them():
     assert rows(mem, "window_vectors") == []
 
 
+@pytest.mark.sql_internals
 def test_at_most_so_many_windows_are_embedded_by_one_search(monkeypatch):
     import commonmemo.said as said
 
