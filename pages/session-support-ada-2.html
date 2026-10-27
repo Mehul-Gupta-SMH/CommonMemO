@@ -1,0 +1,95 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'><title>Session support-ada-2 · CommonMemo</title><style>
+:root { color-scheme: light dark;
+  --bg:#f6f6f3; --surface:#fff; --sunken:#f0f0ec; --ink:#16181c; --ink-2:#464a52; --muted:#757981; --line:#e4e3dd;
+  --accent:#2f54c4; --accent-ink:#fff; --accent-soft:#e8edfb; --ok:#1d7a4b; --ok-soft:#e3f4ea;
+  --bad:#b3261e; --bad-soft:#fbe9e7; --warn:#935800; --warn-soft:#fdf0d9;
+  --k-message:#2f54c4; --k-tool:#5a6270; --k-memory:#7a45c9; --k-learn:#1d7a4b; --k-other:#8a8d94;
+  --radius:10px; --shadow:0 1px 2px rgba(20,22,28,.05); }
+@media (prefers-color-scheme: dark) { :root {
+  --bg:#121315; --surface:#1a1b1e; --sunken:#202226; --ink:#ecedef; --ink-2:#b9bcc3; --muted:#8e929b; --line:#2c2e33;
+  --accent:#8aa4f2; --accent-ink:#0f1320; --accent-soft:#222a45; --ok:#5fcf93; --ok-soft:#18281f;
+  --bad:#f2827a; --bad-soft:#331d1b; --warn:#e6b05a; --warn-soft:#30260f;
+  --k-message:#8aa4f2; --k-tool:#9aa3b2; --k-memory:#b793f0; --k-learn:#5fcf93; --k-other:#8e929b;
+  --shadow:none; } }
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color:var(--accent); text-underline-offset:2px; } a:hover { text-decoration-thickness:2px; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+.skip { position:absolute; left:-999px; } .skip:focus { left:12px; top:8px; background:var(--surface); padding:6px 10px; z-index:9; }
+header.top { background:var(--surface); border-bottom:1px solid var(--line); }
+header.top > div { max-width:1080px; margin:0 auto; padding:0 16px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; min-height:52px; }
+.brand { font-weight:650; color:var(--ink); text-decoration:none; margin-right:14px; letter-spacing:-.01em; }
+.brand::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; background:var(--accent); margin-right:8px; }
+nav.main a { color:var(--ink-2); text-decoration:none; padding:15px 10px 13px; border-bottom:2px solid transparent; display:inline-block; }
+nav.main a:hover { color:var(--ink); } nav.main a[aria-current=page] { color:var(--ink); border-bottom-color:var(--accent); font-weight:550; }
+.badge { display:inline-block; min-width:20px; padding:0 6px; margin-left:6px; border-radius:999px; background:var(--accent); color:var(--accent-ink);
+  font-size:12px; line-height:20px; text-align:center; font-weight:600; }
+.mode { margin-left:auto; font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 10px; }
+.mode.review { color:var(--ok); border-color:var(--ok); }
+main { max-width:1080px; margin:0 auto; padding:22px 16px 72px; }
+.crumbs { font-size:13px; color:var(--muted); margin:0 0 6px; } .crumbs a { color:var(--muted); }
+h1 { font-size:24px; line-height:1.25; margin:0 0 6px; letter-spacing:-.015em; }
+h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; margin:34px 0 10px; display:flex; align-items:baseline; gap:8px; }
+h2 .count { font-weight:500; letter-spacing:0; text-transform:none; }
+.lede { color:var(--ink-2); margin:0 0 4px; } .muted { color:var(--muted); } .small { font-size:13px; }
+.meta { display:flex; flex-wrap:wrap; gap:6px 14px; color:var(--ink-2); font-size:14px; margin:6px 0 0; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin:18px 0 0; }
+.tile { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; box-shadow:var(--shadow); color:inherit; text-decoration:none; display:block; }
+a.tile:hover { border-color:var(--accent); } .tile b { display:block; font-size:26px; line-height:1.2; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+.tile span { color:var(--muted); font-size:13px; } .tile.hot { background:var(--accent-soft); border-color:var(--accent); }
+.banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:var(--warn-soft); border:1px solid var(--warn); color:var(--ink);
+  border-radius:var(--radius); padding:10px 14px; margin:16px 0 0; }
+.banner.ok { background:var(--ok-soft); border-color:var(--ok); } .banner .grow { flex:1; min-width:200px; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin:10px 0; box-shadow:var(--shadow); }
+.cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; } .cards .card { margin:0; }
+.card h3 { margin:0 0 2px; font-size:16px; } .card .sub { color:var(--muted); font-size:13px; }
+.empty { border:1px dashed var(--line); border-radius:var(--radius); padding:18px 16px; color:var(--muted); background:transparent; }
+.empty b { color:var(--ink-2); display:block; margin-bottom:2px; }
+.wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:9px 12px; vertical-align:top; overflow-wrap:anywhere; }
+th { color:var(--muted); font-weight:550; font-size:12px; text-transform:uppercase; letter-spacing:.05em; background:var(--sunken); }
+td { border-top:1px solid var(--line); } tbody tr:hover td { background:var(--sunken); } td.nowrap, th.nowrap { white-space:nowrap; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.chip { display:inline-block; background:var(--sunken); color:var(--ink-2); border-radius:999px; padding:0 9px; font-size:12px; line-height:20px; margin:0 4px 2px 0; white-space:nowrap; }
+.chip.ok { background:var(--ok-soft); color:var(--ok); } .chip.bad { background:var(--bad-soft); color:var(--bad); }
+.chip.warn { background:var(--warn-soft); color:var(--warn); } .chip.accent { background:var(--accent-soft); color:var(--accent); }
+code, pre { font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0; background:var(--sunken); border-radius:8px; padding:10px 12px; }
+.search { display:flex; gap:8px; margin:22px 0 0; flex-wrap:wrap; } .search input { flex:1; min-width:200px; }
+input[type=text], input[type=search] { font:inherit; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); max-width:100%; }
+input::placeholder { color:var(--muted); }
+button, .btn { font:inherit; padding:7px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); cursor:pointer; text-decoration:none; display:inline-block; line-height:1.3; }
+button:hover, .btn:hover { border-color:var(--ink-2); } button.primary, .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:550; }
+button.primary:hover, .btn.primary:hover { filter:brightness(1.07); } button.danger { color:var(--bad); }
+.filters { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; align-items:center; }
+.filters a { text-decoration:none; color:var(--ink-2); border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:2px 12px; font-size:13px; }
+.filters a[aria-current=true] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.turn { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); margin:12px 0; box-shadow:var(--shadow); overflow:hidden; }
+.turn > header { display:flex; gap:10px; align-items:baseline; padding:10px 14px; background:var(--sunken); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.turn > header b { font-size:14px; } .turn > header .said { color:var(--ink-2); flex:1; min-width:200px; overflow-wrap:anywhere; }
+ol.events { list-style:none; margin:0; padding:0; } ol.events li { display:grid; grid-template-columns:62px 100px 1fr; gap:8px; padding:7px 14px; border-top:1px solid var(--line); align-items:baseline; }
+ol.events li:first-child { border-top:0; } ol.events .t { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+ol.events .k { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+ol.events .k::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--k-other); flex:none; }
+ol.events .k-message .k::before { background:var(--k-message); } ol.events .k-tool .k::before { background:var(--k-tool); }
+ol.events .k-memory .k::before { background:var(--k-memory); } ol.events .k-learn .k::before { background:var(--k-learn); }
+ol.events li.failed { background:var(--bad-soft); } ol.events li.failed .k::before { background:var(--bad); } ol.events li.failed .k { color:var(--bad); }
+ol.events .what { overflow-wrap:anywhere; } ol.events .what .who { color:var(--muted); }
+details.disclose > summary { cursor:pointer; color:var(--accent); font-size:13px; list-style:none; display:inline-block; padding:2px 0; }
+details.disclose > summary::-webkit-details-marker { display:none; } details.disclose > summary::before { content:"\25B8"; display:inline-block; margin-right:6px; transition:transform .1s; }
+details.disclose[open] > summary::before { transform:rotate(90deg); }
+.trace { margin:6px 0 2px; } .trace .wrap { box-shadow:none; }
+.diff { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; } .diff > div { border-radius:8px; padding:8px 12px; border:1px solid var(--line); overflow-wrap:anywhere; }
+.diff .old { background:var(--bad-soft); } .diff .new { background:var(--ok-soft); } .diff small { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-size:11px; }
+.diff .old b { text-decoration:line-through; text-decoration-thickness:1px; }
+.actions { display:flex; gap:10px 16px; flex-wrap:wrap; align-items:flex-start; margin-top:12px; }
+.actions form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; } .actions details form { margin-top:8px; }
+.actions details { background:var(--sunken); border-radius:8px; padding:6px 12px; }
+dl.facts { display:grid; grid-template-columns:minmax(120px, 28%) 1fr; margin:0; } dl.facts dt, dl.facts dd { margin:0; padding:9px 14px; border-top:1px solid var(--line); overflow-wrap:anywhere; }
+dl.facts dt { color:var(--ink-2); font-weight:550; } dl.facts dt:first-of-type, dl.facts dt:first-of-type + dd { border-top:0; }
+dl.facts dd small { display:block; color:var(--muted); } ul.plain { margin:0; padding-left:20px; }
+.card.done { border-color:var(--ok); background:var(--ok-soft); }
+@media (max-width:640px) { ol.events li { grid-template-columns:1fr; gap:0; } .diff { grid-template-columns:1fr; } dl.facts { grid-template-columns:1fr; }
+  dl.facts dd { border-top:0; padding-top:0; } nav.main a { padding:12px 8px 10px; } h1 { font-size:21px; } }
+@media print { header.top, .filters, .actions, .search { display:none; } body { background:#fff; } }
+</style></head><body><a class=skip data-page='session-support-ada-2.html' href='#main'>Skip to content</a><header class=top><div><a class=brand href='index.html'>CommonMemo</a><nav class=main aria-label=Main><a href='index.html'>Overview</a><a href='review.html'>Review<span class=badge title='waiting for review'>3</span></a></nav><span class='mode '>sample data</span></div></header><main id=main><div class=banner><div class=grow><b>Sample data.</b> These are the inspector's real pages over a demo memory; <code>commonmemo inspect</code> shows yours.</div></div><p class=crumbs><a href='index.html'>Overview</a></p><h1>support-ada-2</h1><div class=meta><span>user <a href='user-ada.html'>ada</a></span><span>agent claude-code</span><span>opened 2026-10-27 12:55:10</span><span class='chip ok'>closed 2026-10-27 12:55:10</span></div><div class=tiles><div class='tile'><b>5</b><span>events</span></div><div class='tile'><b>1</b><span>turns</span></div><div class='tile'><b>1</b><span>memory pushes</span></div><div class='tile'><b>1/1</b><span>tool calls ok</span></div></div><h2>Timeline <span class=count>by turn</span></h2><section class=turn><header><b>Turn 1</b><span class=said>Where&#x27;s my refund for A-1042?</span><span class='muted small'>5 events</span></header><ol class=events><li class='k-message' title='2026-10-27 12:55:10'><span class=t>+0s</span><span class=k>message</span><span class=what>user: Where&#x27;s my refund for A-1042?</span></li><li class='k-memory' title='2026-10-27 12:55:10'><span class=t>+0s</span><span class=k>memory</span><span class=what>memory pushed (turn): 7 items, 1555 chars<details class=disclose><summary>what was pushed</summary><div class=trace><b>turn push</b> <span class=muted>1555 chars, by claude-code</span><div class=wrap><table><thead><tr><th scope=col class='nowrap'>Kind</th><th scope=col>Item</th><th scope=col>From</th><th scope=col class='nowrap'></th></tr></thead><tbody><tr><td class='nowrap'><span class='chip accent'>negative</span></td><td>Never suggest phone calls. (ada asked for email only)</td><td><span class=chip>scope user:ada</span> <span class=chip>source explicit</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>fact</span></td><td>preferred_contact</td><td><span class=chip>source profile</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>world</span></td><td>refund_window</td><td><span class=chip>scope project:shop</span> <span class=chip>source explicit</span> <span class=chip>status current</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>world</span></td><td>refund_window</td><td><span class=chip>scope project:shop</span> <span class=chip>source agent</span> <span class=chip>status proposed</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>lesson</span></td><td>Use calendar days, not working days.</td><td><span class=chip>source learned</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>said</span></td><td>user: I&#x27;d like to return my order 1042, it doesn&#x27;t fit.</td><td><span class=chip>score 1.0</span> <span class=chip>session support-ada-1</span></td><td class='nowrap'></td></tr><tr><td class='nowrap'><span class='chip accent'>recap</span></td><td>ep_support-ada-1</td><td><span class=chip>score 0.6</span> <span class=chip>session support-ada-1</span></td><td class='nowrap'></td></tr></tbody></table></div><p class=small><span class='chip warn'>left out</span> 1 world</p></div></details></span></li><li class='k-tool' title='2026-10-27 12:55:10'><span class=t>+0s</span><span class=k>tool</span><span class=what>tool lookup_order -&gt; A-1042: delivered 2026-10-02, 59.00 EUR</span></li><li class='k-message' title='2026-10-27 12:55:10'><span class=t>+0s</span><span class=k>message</span><span class=what>assistant: It was issued on Oct 6; expect it within 5 calendar days.</span></li><li class='k-learn' title='2026-10-27 12:55:10'><span class=t>+0s</span><span class=k>procedure</span><span class=what>exemplar &#x27;ada-refund-issued&#x27; for refund_reply (user:ada, from extracted, waiting for review)</span></li></ol></section></main></body></html>

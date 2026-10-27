@@ -130,3 +130,37 @@ def test_the_demo_memory_builds_and_every_event_reads_as_a_sentence(tmp_path):
     assert "Use calendar days, not working days." in view["labels"].values()
     assert len(mem.pending_procedures()) == 2 and len(mem.pending_world_facts()) == 1
     asyncio.run(mem.aclose())
+
+
+def test_the_overview_filters_and_the_session_filters_by_kind(inspector):
+    _, _, everything = get(inspector + "/")
+    _, _, only = get(inspector + "/?q=mallory")
+    assert "s1" in everything and "s3" in only and "s1" not in only.split("Recent sessions")[1].split("World facts")[0]
+    assert "Clear" in only and "Filter" in everything
+    _, _, tools = get(inspector + "/session/s3?show=messages")
+    assert "user:" in tools and "memory pushed" not in tools
+    _, _, none = get(inspector + "/session/s3?show=tools")
+    assert "No events in this view" in none
+    assert get(inspector + "/session/s3?show=bogus")[0] == 200  # an unknown group is ignored
+
+
+def test_pages_have_landmarks_a_current_page_and_the_review_count(inspector):
+    _, _, body = get(inspector + "/")
+    assert "<main id=main>" in body and "Skip to content" in body and "aria-current=page" in body
+    assert "<title>Overview · CommonMemo</title>" in body and "waiting for review" in body
+    _, _, session = get(inspector + "/session/s2")
+    assert "Overview</a>" in session and "<th scope=col" in session
+    assert "<script" not in session.lower()
+
+
+def test_empty_states_say_what_to_do(tmp_path):
+    mem = Memory(f"sqlite:///{tmp_path / 'empty.db'}")
+    server = serve(mem, port=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        _, _, body = get(f"http://127.0.0.1:{server.server_address[1]}/")
+        assert "No sessions yet" in body and "mem.learn(key, value)" in body and "Nothing is waiting" in body
+    finally:
+        server.shutdown()
+        server.server_close()
+        asyncio.run(mem.aclose())

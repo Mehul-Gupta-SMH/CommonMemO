@@ -29,6 +29,7 @@ from .events import (
     ProcedureFollowed,
     ProcedureRejected,
     ProcedureRetired,
+    WorldFact,
     describe,
 )
 from .resume import ResumePoint
@@ -56,6 +57,9 @@ def _story(e: Any) -> Optional[str]:
     if isinstance(e, ProcedureFollowed):
         skipped = f", skipped {', '.join(e.skipped)}" if e.skipped else ""
         return f"used {e.task} {e.entry_kind} {e.name!r} v{e.version}{skipped}"
+    if isinstance(e, WorldFact):
+        status = ", waiting for review" if e.proposed else ""
+        return f"world fact {e.key} = {e.value} ({e.scope}, from {e.source}{status})"
     if isinstance(e, LessonLearned):
         return f"lesson learned: {e.text}" + (" (seen again)" if e.same_as else "")
     if isinstance(e, DecisionRecorded):
@@ -119,7 +123,9 @@ def session_view(mem: "Memory", session_id: str) -> Optional[dict[str, Any]]:
         "opened": _when(record.opened_at),
         "closed": _when(record.closed_at) if record.closed_at else None,
         "state": dict(record.state),
-        "timeline": [{"when": _when(e.ts), "kind": e.kind, "agent": e.agent, "line": event_line(e), "id": e.id}
+        "timeline": [{"when": _when(e.ts), "ts": e.ts, "kind": e.kind, "agent": e.agent, "line": event_line(e),
+                      "id": e.id, "role": getattr(e, "role", None),
+                      "failed": bool(getattr(e, "error", None)) if e.kind == "tool_invoked" else False}
                      for e in events],
         "resume": [] if resume.is_fresh else resume.lines(),
         "traces": (traces := [TurnTrace.from_event(e) for e in events if isinstance(e, ContextPushed)]),
@@ -143,7 +149,7 @@ def overview(mem: "Memory", *, limit: int = 2000) -> dict[str, Any]:
     for e in reversed(mem.store.events(limit=limit)):
         if e.session_id and e.session_id not in sessions:
             sessions[e.session_id] = {"session_id": e.session_id, "user_id": e.user_id, "agent": e.agent,
-                                      "last": _when(e.ts), "events": 0}
+                                      "last": _when(e.ts), "ts": e.ts, "events": 0}
         if e.session_id:
             sessions[e.session_id]["events"] += 1
     users = sorted({s["user_id"] for s in sessions.values() if s["user_id"]})
@@ -163,14 +169,14 @@ def review_queue(mem: "Memory") -> dict[str, Any]:
         current = {c.key: c for c in mem.knowledge.world_facts([w.scope])}.get(w.key)
         world.append({"id": w.event_id, "key": w.key, "value": w.value, "scope": w.scope, "source": w.source,
                       "status": w.status, "proposed_by": w.user_id, "note": w.note, "since": _when(w.valid_from),
-                      "current": current.value if current else None})
+                      "ts": w.valid_from, "current": current.value if current else None})
     procedures = []
     for p in mem.pending_procedures():
         current = next((c for c in mem.knowledge.procedure_entries([p.scope], p.task)
                         if (c.kind, c.name, c.scope) == (p.kind, p.name, p.scope)), None)
         procedures.append({"id": p.event_id, "task": p.task, "kind": p.kind, "name": p.name, "scope": p.scope,
                            "source": p.source, "status": p.status, "proposed_by": p.user_id, "note": p.note,
-                           "use_when": p.use_when, "body": p.body, "since": _when(p.valid_from),
+                           "use_when": p.use_when, "body": p.body, "since": _when(p.valid_from), "ts": p.valid_from,
                            "current": current.body if current else None,
                            "current_version": current.version if current else None})
     return {"world": world, "procedures": procedures}
