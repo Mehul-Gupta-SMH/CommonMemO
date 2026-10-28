@@ -2,6 +2,11 @@
 
 ## 0.0.1 — unreleased
 
+Release check ([#103](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/103), for [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)): the wheel and sdist build and pass `twine check`; a fresh virtualenv on Python 3.11 to 3.13 installs the wheel, runs
+the quickstart, the CLI and the inspector, loads no third-party module, and passes the whole test suite. Added keywords, classifiers and project URLs; the README is rewritten
+at build time so its images and links work on PyPI (`hatch-fancy-pypi-readme`); `.github/workflows/release.yml` publishes through PyPI trusted publishing when a GitHub release is
+published (inert until the owner registers the project: `docs/releasing.md`); a test keeps the version in `pyproject.toml` and in the code equal.
+
 Storage interfaces, part 3: the engine ([#99](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/99), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `Engine`'s docstring now states the whole contract (provenance, explicit facts win,
 idempotent ingest, search order and filters, a current-only profile, forgetting), and `tests/test_engine_contract.py` runs it against `LocalEngine` and a
 plain-Python `ListEngine`, and ([#101](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/101)) on `GraphitiEngine` and `Mem0Engine` over the fakes their own tests use, which holds each engine's

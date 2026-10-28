@@ -1,13 +1,27 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
 
 [project]
 name = "commonmemo"
 version = "0.0.1"
 description = "Framework-neutral memory for agents and workflows: event, session, episodic and user memory behind one handle."
-readme = "README.md"
+dynamic = ["readme"]
 license = "Apache-2.0"
+keywords = ["agents", "memory", "llm", "mcp", "claude-code", "codex", "rag", "event-log", "postgres", "sqlite"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 requires-python = ">=3.10"
 authors = [
     { name = "Mehul Gupta", email = "mehulgupta85@gmail.com" },
@@ -50,8 +64,32 @@ otel = [
     "opentelemetry-sdk>=1.20",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Mehul-Gupta-SMH/CommonMemO"
+Documentation = "https://github.com/Mehul-Gupta-SMH/CommonMemO/blob/main/docs/design.md"
+Source = "https://github.com/Mehul-Gupta-SMH/CommonMemO"
+Issues = "https://github.com/Mehul-Gupta-SMH/CommonMemO/issues"
+Changelog = "https://github.com/Mehul-Gupta-SMH/CommonMemO/blob/main/CHANGELOG.md"
+Sample = "https://mehul-gupta-smh.github.io/CommonMemO/"
+
 [project.scripts]
 commonmemo = "commonmemo.cli:main"
+
+# The README on PyPI has no repository around it, so its relative images and links become GitHub URLs when
+# the package is built; the README in the repository is untouched.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '''src="(docs/assets/[^"]+)"'''
+replacement = 'src="https://raw.githubusercontent.com/Mehul-Gupta-SMH/CommonMemO/main/\1"'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '''\]\(((?:\.\./)?(?:docs|examples|scripts|evals|pages|src|tests)/[^)]*|LICENSE|CHANGELOG\.md)\)'''
+replacement = '](https://github.com/Mehul-Gupta-SMH/CommonMemO/blob/main/\1)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commonmemo"]
