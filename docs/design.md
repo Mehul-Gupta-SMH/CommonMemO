@@ -193,7 +193,9 @@ index if an engine's client is bound to the caller's loop.
 
 Each structured kind is an event type in the log plus a projection table
 (`knowledge.py`), rebuildable from the log at any time
-(`Memory.rebuild_knowledge`).
+(`Memory.rebuild_knowledge`). What memory reads from them is the `Projections`
+interface (`projections.py`, [#97](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/97)), by operation and not by SQL;
+`Knowledge` implements it, and `Memory(projections=...)` takes another.
 
 The projections are a **consumer of the log**
 ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15)). They store the last log position they applied, and
@@ -521,7 +523,12 @@ for now.
 [ADR 0001](adr/0001-storage.md) (accepted). Everything CommonMemo keeps itself (the Log,
 sessions and claims, the projections in `knowledge.py`, and the local
 engine's recaps and facts) is plain SQL in one dialect that SQLite and
-Postgres both accept, run through `sqldb.py`:
+Postgres both accept, run through `sqldb.py`. Behind that sit three interfaces
+that name the operations and not the SQL ([#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)): `Store` (the Log and
+Working memory; `MemoryStore` is a plain-Python reference, and one suite,
+`tests/test_store_contract.py`, holds every store to the contract), `Projections`
+(what memory reads from the Log; the suite also runs entirely behind it with
+`COMMONMEMO_TEST_INTERFACE=1`) and `Engine` (Recaps and the UserProfile):
 
 - **SQLite** (default): `sqlite:///mem.db`, one file, standard library only.
 - **Postgres** (`commonmemo[postgres]`): `postgresql://user@host/db`, with

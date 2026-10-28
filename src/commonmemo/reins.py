@@ -56,7 +56,7 @@ from .events import (
     WorldFactRetracted,
 )
 from .history import Point, as_of
-from .knowledge import Knowledge
+from .projections import Projections
 
 if TYPE_CHECKING:
     from .memory import Memory
@@ -81,23 +81,23 @@ class _Without:
         return [(s, e) for s, e in self._store.events_after(seq) if e.id not in self._skip]
 
 
-def _replay(source: object) -> Knowledge:
-    k = Knowledge(":memory:", windows=False)
+def _replay(memory: "Memory", source: object) -> Projections:
+    k = memory.knowledge.scratch()
     k.catch_up(source)  # type: ignore[arg-type]
     return k
 
 
-def _world_state(k: Knowledge, now: float) -> dict[tuple[str, str], tuple[str, Optional[float]]]:
+def _world_state(k: Projections, now: float) -> dict[tuple[str, str], tuple[str, Optional[float]]]:
     return {(w.scope, w.key): (w.value, w.valid_until)
             for s in k.scopes_in_use() for w in k.world_facts([s], now=now, include_stale=True)}
 
 
-def _negative_state(k: Knowledge) -> dict[tuple[str, str], str]:
+def _negative_state(k: Projections) -> dict[tuple[str, str], str]:
     """`(scope, statement) -> event id` of the active negatives."""
     return {(n.scope, n.statement): n.event_id for n in k.all_negatives()}
 
 
-def _procedure_state(k: Knowledge) -> dict[tuple[str, str, str, str], tuple[str, str, tuple[str, ...]]]:
+def _procedure_state(k: Projections) -> dict[tuple[str, str, str, str], tuple[str, str, tuple[str, ...]]]:
     """`(scope, task, kind, name) -> (body, use_when, steps)` of the current entries."""
     return {(p.scope, p.task, p.kind, p.name): (p.body, p.use_when, p.steps) for p in k.all_procedures()}
 
@@ -134,12 +134,12 @@ def plan_revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = N
         raise ValueError(f"commonmemo: can't revert {sorted(unknown)}; revertible kinds are {REVERTIBLE}")
 
     now = time.time()
-    current = _replay(memory.store)
+    current = _replay(memory, memory.store)
     if by_cause:
         # Every event matching all the given causes is left out of the replay.
         candidates = memory.store.events(run_id=run_id, session_id=session_id)
         skip = {e.id for e in candidates if source is None or getattr(e, "source", None) == source}
-        target = _replay(_Without(memory, skip))
+        target = _replay(memory, _Without(memory, skip))
         what = " ".join(f"{k}={v}" for k, v in (("run", run_id), ("source", source), ("session", session_id)) if v)
     else:
         view = as_of(memory, to)

@@ -2,6 +2,11 @@
 
 ## 0.0.1 — unreleased
 
+Storage interfaces, part 2: the projections ([#97](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/97), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `projections.py` names what memory reads from the Log by operation
+(`Projections`, with the guarantees a backend must keep) and holds the record types; `Knowledge` is its SQL implementation; `Memory(projections=...)` takes another.
+History and reverts use `scratch()` instead of building SQL. `COMMONMEMO_TEST_INTERFACE=1 pytest` (and CI) runs the whole suite with every `Memory` behind
+`InterfaceOnly`, which shows nothing but the interface, so the library can't come to need a private method or a SQL connection unnoticed.
+
 Storage interfaces, part 1: the log store ([#95](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/95), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `MemoryStore` (`Memory("memory://")`) implements `Store` in plain
 Python, with no SQL and no persistence: the reference for a non-SQL backend, and for tests. `tests/test_store_contract.py` is the `Store` contract as one suite that
 every store must pass (SQLite, Postgres, memory); the contract is written out in `Store`'s docstring. The suite found a bug: `Store.events(kinds=[])` raised

@@ -81,6 +81,7 @@ from .said import search as search_said
 from .runs import Run, current_run
 from .session import Session, current_session
 from .tool_memory import ToolProfile
+from .projections import Projections
 from .stores import SqlStore, Store, store_from_url
 from .stores.base import SessionRecord
 
@@ -108,7 +109,9 @@ class Memory:
 
     `store` is a `Store` or a URL (`sqlite:///mem.db`, `sqlite://:memory:`).
     `engine` is an `Engine` or a name; the default `"local"` engine shares
-    the store's SQLite file, so one path is the whole setup.
+    the store's SQLite file, so one path is the whole setup. `projections` is
+    a `Projections` (default: the SQL one on the store's path), for a backend
+    that is not SQL.
     """
 
     def __init__(
@@ -126,6 +129,7 @@ class Memory:
         ranker: Optional[Ranker] = None,
         learner: Optional["Learner"] = None,
         extractor: Optional["Extractor"] = None,
+        projections: Optional[Projections] = None,
     ) -> None:
         self.store = store_from_url(store) if isinstance(store, str) else store
         if isinstance(engine, str):
@@ -135,7 +139,7 @@ class Memory:
             engine = engine_from_name(engine, **options)
         engine.bind(self.store)
         self.engine = engine
-        self.knowledge = Knowledge(getattr(self.store, "path", ":memory:"))
+        self.knowledge: Projections = projections or Knowledge(getattr(self.store, "path", ":memory:"))
         """Tool memory, world facts, feedback, negatives, checkpoints and
         steps -- projections of the event log (see `knowledge.py`)."""
         self.knowledge.catch_up(self.store)  # apply whatever an earlier process left unapplied

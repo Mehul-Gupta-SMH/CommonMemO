@@ -34,11 +34,30 @@ if BASE:
     assert sqldb.connect.__module__ == "commonmemo_pg_mode", "Postgres mode did not take effect"
 
 
+INTERFACE = os.environ.get("COMMONMEMO_TEST_INTERFACE")
+"""Interface mode (#52): every `Memory` reads its projections only through the `Projections` interface
+(`InterfaceOnly` wraps the SQL ones and hides everything else), so the library can be shown to need nothing
+a backend that is not SQL could not give. Tests that reach into the SQL are marked `sql_internals`."""
+
+if INTERFACE:
+    import commonmemo.memory as _memory
+    from commonmemo.projections import InterfaceOnly
+
+    _real = _memory.Knowledge
+    _memory.Knowledge = lambda path="…": InterfaceOnly(_real(path))  # type: ignore[assignment,misc]
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "sqlite_only: about SQLite itself; skipped when running on Postgres")
+    config.addinivalue_line("markers", "sql_internals: reaches into the SQL projections; skipped in interface mode")
 
 
 def pytest_collection_modifyitems(config, items):
+    if INTERFACE:
+        skip_sql = pytest.mark.skip(reason="reaches into the SQL projections (COMMONMEMO_TEST_INTERFACE is set)")
+        for item in items:
+            if "sql_internals" in item.keywords:
+                item.add_marker(skip_sql)
     if BASE:
         skip = pytest.mark.skip(reason="about SQLite itself (COMMONMEMO_TEST_POSTGRES is set)")
         for item in items:
