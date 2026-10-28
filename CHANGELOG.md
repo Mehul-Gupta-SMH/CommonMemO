@@ -4,7 +4,9 @@
 
 Storage interfaces, part 3: the engine ([#99](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/99), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `Engine`'s docstring now states the whole contract (provenance, explicit facts win,
 idempotent ingest, search order and filters, a current-only profile, forgetting), and `tests/test_engine_contract.py` runs it against `LocalEngine` and a
-plain-Python `ListEngine`. With part 1 and 2, all three storage interfaces (`Store`, `Projections`, `Engine`) have a contract suite that more than one
+plain-Python `ListEngine`, and ([#101](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/101)) on `GraphitiEngine` and `Mem0Engine` over the fakes their own tests use, which holds each engine's
+own code to it without a model (all 32 checks pass; nothing needed fixing, but the contract learned that an engine may add extracted facts beside the explicit ones, under
+the same key, after them). With part 1 and 2, all three storage interfaces (`Store`, `Projections`, `Engine`) have a contract suite that more than one
 implementation passes. No behaviour changed.
 
 Storage interfaces, part 2: the projections ([#97](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/97), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `projections.py` names what memory reads from the Log by operation

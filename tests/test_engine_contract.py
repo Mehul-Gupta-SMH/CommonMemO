@@ -1,9 +1,11 @@
 """The `Engine` contract (#99): one suite, run against every engine that can run offline.
 
 `LocalEngine` (SQL) and `ListEngine`, a few lines of plain Python defined here, so the suite itself is shown
-to pass on something that is not SQL. Graphiti and Mem0 need a model and their extras; a live run of this
-suite against them is `scripts/live_engines.py`'s job (#3), and a new engine is correct when this passes
-for it: add it to `ENGINES`.
+to pass on something that is not SQL; and `GraphitiEngine` and `Mem0Engine` on the fakes their own tests
+use (`FakeGraph`, `FakeMem0`), which exercises each engine's own code (what it keeps locally, how it maps
+sessions, users and provenance onto the backend, forgetting, re-ingest) without a model. What the fakes cannot
+say anything about is Graphiti's or Mem0's real extraction and search quality: that is a live run
+(`scripts/live_engines.py`, #3). A new engine is correct when this passes for it: add it to `ENGINES`.
 """
 
 import asyncio
@@ -14,7 +16,11 @@ from commonmemo import Message, ToolInvoked, UserFact
 from commonmemo.engines import LocalEngine
 from commonmemo.engines.base import Engine, Fact, Recap
 from commonmemo.engines.local import content_words, summarize
+from commonmemo.engines.graphiti import GraphitiEngine
+from commonmemo.engines.mem0 import Mem0Engine
 from commonmemo.stores import MemoryStore, SessionRecord
+from test_engine_graphiti import FakeGraph  # noqa: E402 -- the fakes the engines' own tests use
+from test_engine_mem0 import FakeMem0  # noqa: E402
 
 
 class ListEngine(Engine):
@@ -71,7 +77,12 @@ class ListEngine(Engine):
         return n
 
 
-ENGINES = {"local": LocalEngine, "list": ListEngine}
+ENGINES = {
+    "local": LocalEngine,
+    "list": ListEngine,
+    "graphiti": lambda: GraphitiEngine(backend=FakeGraph()),
+    "mem0": lambda: Mem0Engine(backend=FakeMem0()),
+}
 
 
 @pytest.fixture(params=sorted(ENGINES))
@@ -88,6 +99,17 @@ def run(coro):
 
 def session(sid, user="ada", agent="a"):
     return SessionRecord(sid, user, agent, opened_at=1.0)
+
+
+def stated(engine, user, keys=("city", "pet")):
+    """The user's explicit facts for the keys the tests state: the first one listed for each key. An engine may add
+    extracted facts beside them (`Mem0Engine`, `GraphitiEngine`: that is what a model reading the conversation is
+    for), sometimes under the same key, but after them and never in place of them: explicit facts win."""
+    out: dict = {}
+    for f in run(engine.user_profile(user)):
+        if f.key in keys:
+            out.setdefault(f.key, f)
+    return out
 
 
 def talk(sid, said, *, user="ada", ts=10.0, facts=()):
@@ -111,7 +133,7 @@ def test_ingesting_a_session_again_replaces_never_duplicates(engine):
     run(engine.ingest(session("s1"), events))
     run(engine.ingest(session("s1"), events))
     assert len(run(engine.search_recaps("guest room key", user_id="ada"))) == 1
-    assert [(f.key, f.value) for f in run(engine.user_profile("ada"))] == [("pet", "dog")]
+    assert {k: f.value for k, f in stated(engine, "ada").items()} == {"pet": "dog"}
 
 
 def test_search_puts_the_best_match_first_and_scores_it(engine):
@@ -137,18 +159,17 @@ def test_the_profile_holds_current_facts_only_with_their_sources(engine):
     run(engine.ingest(session("s1"), first))
     second = talk("s2", "I moved", ts=50.0, facts=[("city", "Oslo")])
     run(engine.ingest(session("s2"), second))
-    profile = {f.key: f for f in run(engine.user_profile("ada"))}
+    profile = stated(engine, "ada")
     assert {k: f.value for k, f in profile.items()} == {"city": "Oslo", "pet": "dog"}  # the superseded value is gone
     fact_event = next(e for e in second if isinstance(e, UserFact))
     assert profile["city"].source_event_ids == (fact_event.id,) and profile["city"].user_id == "ada"
-    assert run(engine.user_profile("bob")) == []
+    assert stated(engine, "bob") == {}
 
 
 def test_facts_belong_to_their_user(engine):
     run(engine.ingest(session("s1", "ada"), talk("s1", "hi", user="ada", facts=[("city", "Pune")])))
     run(engine.ingest(session("s2", "bob"), talk("s2", "hi", user="bob", facts=[("city", "Lima")])))
-    assert [f.value for f in run(engine.user_profile("ada"))] == ["Pune"]
-    assert [f.value for f in run(engine.user_profile("bob"))] == ["Lima"]
+    assert stated(engine, "ada")["city"].value == "Pune" and stated(engine, "bob")["city"].value == "Lima"
 
 
 def test_forget_user_removes_their_recaps_and_facts_and_nobody_else_s(engine):
@@ -156,7 +177,7 @@ def test_forget_user_removes_their_recaps_and_facts_and_nobody_else_s(engine):
     run(engine.ingest(session("s2", "bob"), talk("s2", "boats and more boats", user="bob", facts=[("city", "Lima")])))
     assert run(engine.forget_user("ada")) > 0
     assert run(engine.user_profile("ada")) == [] and run(engine.search_recaps("boats", user_id="ada")) == []
-    assert [f.value for f in run(engine.user_profile("bob"))] == ["Lima"]
+    assert stated(engine, "bob")["city"].value == "Lima"
     assert [r.session_id for r in run(engine.search_recaps("boats"))] == ["s2"]
     assert run(engine.forget_user("ada")) == 0
 
