@@ -17,6 +17,24 @@ Two rules every engine must keep:
 
 Engine methods are async: every real engine underneath (Graphiti, Mem0's
 AsyncMemory) is async-first.
+
+The rest of the contract, as `tests/test_engine_contract.py` checks it:
+
+3. **Idempotent per session.** Ingesting a session again replaces what the
+   last ingest made (one recap, one set of facts), never adds to it; a
+   session with no events makes no recap.
+4. **Search.** `search_recaps` returns the best match first with a `score`,
+   honours `user_id` and `agent`, and stops at `limit`; another user's recap
+   never comes back for a `user_id` filter.
+5. **Current profile.** `user_profile` holds each key once, as its latest value
+   (superseded values are not returned), with the ids of the events it came
+   from, and only the asked user's facts.
+6. **Forgetting.** `forget_user` removes the user's recaps and facts, and
+   nobody else's, and returns how many it removed (0 the second time).
+
+`LocalEngine` is the SQL engine, `ListEngine` in the contract tests is the
+same in plain Python; Graphiti and Mem0 are the non-SQL ones, held to this by
+`scripts/live_engines.py` where a model and their extras are available (#3).
 """
 
 from __future__ import annotations

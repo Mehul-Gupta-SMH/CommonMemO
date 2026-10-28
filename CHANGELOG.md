@@ -2,6 +2,11 @@
 
 ## 0.0.1 — unreleased
 
+Storage interfaces, part 3: the engine ([#99](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/99), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `Engine`'s docstring now states the whole contract (provenance, explicit facts win,
+idempotent ingest, search order and filters, a current-only profile, forgetting), and `tests/test_engine_contract.py` runs it against `LocalEngine` and a
+plain-Python `ListEngine`. With part 1 and 2, all three storage interfaces (`Store`, `Projections`, `Engine`) have a contract suite that more than one
+implementation passes. No behaviour changed.
+
 Storage interfaces, part 2: the projections ([#97](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/97), of [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52)). `projections.py` names what memory reads from the Log by operation
 (`Projections`, with the guarantees a backend must keep) and holds the record types; `Knowledge` is its SQL implementation; `Memory(projections=...)` takes another.
 History and reverts use `scratch()` instead of building SQL. `COMMONMEMO_TEST_INTERFACE=1 pytest` (and CI) runs the whole suite with every `Memory` behind
