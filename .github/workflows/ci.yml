@@ -31,14 +31,17 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.10", "3.13"]
-        extras: ["dev", "dev,commonadk", "dev,graphiti", "dev,mem0", "dev,mcp,otel"]
+        extras: ["dev", "dev,commonadk", "dev,adk", "dev,openai-agents", "dev,graphiti", "dev,mem0", "dev,mcp,otel"]
+        exclude:
+          - python: "3.10"  # google-adk 2 needs Python 3.11
+            extras: "dev,adk"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[${{ matrix.extras }}]"
-      - run: python -c "import sys, commonmemo, commonmemo.sqldb, commonmemo.stores, commonmemo.engines.graphiti, commonmemo.engines.mem0, commonmemo.mcp, commonmemo.otel, commonmemo.views; assert not any(m.split('.')[0] in ('commonadk', 'graphiti_core', 'mem0', 'mcp', 'opentelemetry', 'psycopg') for m in sys.modules)"
+      - run: python -c "import sys, commonmemo, commonmemo.sqldb, commonmemo.stores, commonmemo.adapters, commonmemo.engines.graphiti, commonmemo.engines.mem0, commonmemo.mcp, commonmemo.otel, commonmemo.views; assert not any(m.split('.')[0] in ('commonadk', 'graphiti_core', 'mem0', 'mcp', 'opentelemetry', 'psycopg') for m in sys.modules)"
       - run: pytest -q
       # The whole suite again with every Memory reading its projections only through the Projections interface (#52).
       - run: pytest -q

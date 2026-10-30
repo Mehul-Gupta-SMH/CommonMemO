@@ -45,6 +45,41 @@ def run_sync(coro: Coroutine[Any, Any, Any]) -> Any:
         return pool.submit(asyncio.run, coro).result()
 
 
+def recall_entries(session: "Session", query: str) -> tuple[list[tuple[str, str]], MemoryContext, list]:
+    """What `memory_recall` finds for `query`: (label, text) lines, best first
+    within each kind, the context they came from, and the decisions among them.
+    The adapters for framework memory interfaces (`commonmemo.adapters`) search with it too."""
+    memory = session.memory
+    try:
+        ctx = run_sync(session.context(query, policy=memory.policy_for_recall))
+    except Exception:  # noqa: BLE001 -- see module docstring: degrade to the local index
+        ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
+    bar = memory.policy_for_recall.min_recall_score
+
+    def related(items: list, text: Callable[[Any], str]) -> list:
+        # Best first, by the memory's ranker: by meaning with an embedder (#21).
+        return run_sync(rank(memory.ranker, query, items, text, threshold=bar))[0]
+
+    found = MemoryContext(
+        facts=related(ctx.facts, lambda f: f"{f.key} {f.value}"),
+        world=related([*ctx.world, *ctx.world_turn], memory._world_text),
+        lessons=related(ctx.lessons, lambda item: item.line()),
+        learned=related(ctx.learned, lambda x: x.text),
+        recaps=ctx.recaps, said=ctx.said, policy=memory.policy, agent=session.agent,
+    )
+    decisions = (related(memory.decisions(user_id=session.user_id)[:50],
+                         lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5] if session.user_id is not None else [])
+    lines: list[tuple[str, str]] = []
+    lines += [("user", f"{f.key}: {f.value}") for f in found.facts]
+    lines += [("fact", world_line(w)) for w in found.world]
+    lines += [("feedback", item.line()) for item in found.lessons]
+    lines += [("lesson", x.line()) for x in found.learned]
+    lines += [("decision", d.line()) for d in decisions]
+    lines += [("past session", ctx.recap_line(e)) for e in found.recaps]
+    lines += [("said", w.line()) for w in found.said]
+    return lines, found, decisions
+
+
 def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callable[..., str]]:
     """The memory tools for `session`. `writes=False` gives read-only
     tools (recall only). The session then knows its agent can recall, so
@@ -63,33 +98,8 @@ def build_agent_tools(session: "Session", *, writes: bool = True) -> list[Callab
         Args:
             query: What to look for, in plain words.
         """
-        try:
-            ctx = run_sync(session.context(query, policy=memory.policy_for_recall))
-        except Exception:  # noqa: BLE001 -- see module docstring: degrade to the local index
-            ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
-        bar = memory.policy_for_recall.min_recall_score
-
-        def related(items: list, text: Callable[[Any], str]) -> list:
-            # Best first, by the memory's ranker: by meaning with an embedder (#21).
-            return run_sync(rank(memory.ranker, query, items, text, threshold=bar))[0]
-
-        found = MemoryContext(
-            facts=related(ctx.facts, lambda f: f"{f.key} {f.value}"),
-            world=related([*ctx.world, *ctx.world_turn], memory._world_text),
-            lessons=related(ctx.lessons, lambda item: item.line()),
-            learned=related(ctx.learned, lambda x: x.text),
-            recaps=ctx.recaps, said=ctx.said, policy=memory.policy, agent=session.agent,
-        )
-        decisions = (related(memory.decisions(user_id=session.user_id)[:50],
-                             lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5] if session.user_id is not None else [])
-        lines = []
-        lines += [f"[user] {f.key}: {f.value}" for f in found.facts]
-        lines += [f"[fact] {world_line(w)}" for w in found.world]
-        lines += [f"[feedback] {item.line()}" for item in found.lessons]
-        lines += [f"[lesson] {x.line()}" for x in found.learned]
-        lines += [f"[decision] {d.line()}" for d in decisions]
-        lines += [f"[past session] {ctx.recap_line(e)}" for e in found.recaps]
-        lines += [f"[said] {w.line()}" for w in found.said]
+        lines, found, decisions = recall_entries(session, query)
+        lines = [f"[{label}] {text}" for label, text in lines]
         text = "\n".join(lines) if lines else "Nothing in memory matches that."
         if writes and not session.closed:  # what the agent pulled, as a trace (#50); read-only tools record nothing
             session._trace("recall", found, text, extra=tuple(
