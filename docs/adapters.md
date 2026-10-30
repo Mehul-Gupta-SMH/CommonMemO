@@ -17,6 +17,8 @@ Each is imported by name and needs its SDK (one extra each), and each is tested 
 
 ## Google ADK
 
+Needs Python 3.11 or later (google-adk 2 does).
+
 ```python
 from commonmemo import Memory
 from commonmemo.adapters.adk import CommonMemoMemoryService

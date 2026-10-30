@@ -32,6 +32,9 @@ jobs:
       matrix:
         python: ["3.10", "3.13"]
         extras: ["dev", "dev,commonadk", "dev,adk", "dev,graphiti", "dev,mem0", "dev,mcp,otel"]
+        exclude:
+          - python: "3.10"  # google-adk 2 needs Python 3.11
+            extras: "dev,adk"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
