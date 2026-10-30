@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.1 — unreleased
+## 0.0.1 — 2026-10-30
 
 Release check ([#103](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/103), for [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)): the wheel and sdist build and pass `twine check`; a fresh virtualenv on Python 3.11 to 3.13 installs the wheel, runs
 the quickstart, the CLI and the inspector, loads no third-party module, and passes the whole test suite. Added keywords, classifiers and project URLs; the README is rewritten
