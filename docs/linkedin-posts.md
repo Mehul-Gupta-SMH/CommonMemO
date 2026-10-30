@@ -1,6 +1,6 @@
 # CommonMemo: LinkedIn posts
 
-Five posts, a few days apart, in this order ([#79](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/79)). Every number is from `docs/live-runs.md`: ten LoCoMo conversations, 450 questions, Claude Haiku for everything; update a post when its numbers change. Repo link goes in the first comment: https://github.com/Mehul-Gupta-SMH/CommonMemO
+Five posts, a few days apart, in this order ([#79](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/79)). Every number is from `docs/live-runs.md`: ten LoCoMo conversations, 450 questions, Claude Haiku for everything; update a post when its numbers change. Repo link goes in the first comment: https://github.com/Mehul-Gupta-SMH/CommonMemO. Install line for any post: `pip install commonmemo` (https://pypi.org/project/commonmemo/).
 
 ---
 
@@ -21,7 +21,7 @@ What it does differently:
 
 I tested it on LoCoMo, a public benchmark of long multi-session conversations: 450 questions across ten conversations, with the smallest Claude model doing all the work. Five of those conversations I never looked at while building. The result held on them too.
 
-It's early, it's not on PyPI yet, and I'd like people to try to break it.
+It's early (alpha, on PyPI as commonmemo), and I'd like people to try to break it.
 
 Link in the comments.
 
