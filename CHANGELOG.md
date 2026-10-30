@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Framework adapters, the first: Google ADK ([#109](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/109), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.adk.CommonMemoMemoryService` is a
+`BaseMemoryService` over a `Memory`, so an ADK app can use CommonMemo without CommonADK: sessions and event deltas become messages (ids from the ADK event id, so adding
+twice records nothing new), `add_memory` becomes user facts, and `search_memory` returns what `memory_recall` finds. `pip install "commonmemo[adk]"`; tested against the installed
+google-adk, with its own CI leg. `agent_tools.recall_entries` is the search behind `memory_recall`, now shared. `docs/adapters.md` says what each SDK's interface can and cannot express.
+
 ## 0.0.1 — 2026-10-30
 
 Release check ([#103](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/103), for [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)): the wheel and sdist build and pass `twine check`; a fresh virtualenv on Python 3.11 to 3.13 installs the wheel, runs

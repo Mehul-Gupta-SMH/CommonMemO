@@ -62,6 +62,7 @@ Nothing above needs an API key or spends money. Add what you use:
 
 ```bash
 pip install "commonmemo[commonadk]"    # + CommonADK integration
+pip install "commonmemo[adk]"          # + Google ADK memory service (no CommonADK needed)
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
 pip install "commonmemo[postgres]"     # + Postgres for everything CommonMemo stores
@@ -494,6 +495,8 @@ Each turn, on a copy of the project (CommonADK itself is never changed):
   CommonADK can take it. Putting stable memory in the agent's instructions
   instead is requested in [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30);
   `run_with_memory` uses it automatically if a runner supports it ([#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7)).
+
+Using an SDK directly instead? [`docs/adapters.md`](docs/adapters.md) lists the adapters that put CommonMemo behind each SDK's own memory or session interface.
 
 Runnable, offline examples for plain Python, Google ADK (through CommonADK) and harness hooks are in [`examples/`](examples/README.md).
 

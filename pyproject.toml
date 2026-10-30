@@ -38,6 +38,10 @@ dev = [
 commonadk = [
     "commonadk>=0.0.2",
 ]
+# Framework-native adapters (#6): CommonMemo behind each SDK's own memory or session interface.
+adk = [
+    "google-adk>=2.13",
+]
 graphiti = [
     "graphiti-core>=0.31",
     # graphiti-core imports httpx (llm_client/client.py) without declaring
