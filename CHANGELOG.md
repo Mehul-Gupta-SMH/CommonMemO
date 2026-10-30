@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+Framework adapters, the second: OpenAI Agents ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.openai_agents.CommonMemoSession` is a `Session` over a `Memory`: items kept verbatim and returned exactly
+as added (tested against the SDK's own `SQLiteSession`), `pop_item` and `clear_session` as compensating events, user and assistant text also searchable as messages. `pip install "commonmemo[openai-agents]"`.
+
 Framework adapters, the first: Google ADK ([#109](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/109), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.adk.CommonMemoMemoryService` is a
 `BaseMemoryService` over a `Memory`, so an ADK app can use CommonMemo without CommonADK: sessions and event deltas become messages (ids from the ADK event id, so adding
 twice records nothing new), `add_memory` becomes user facts, and `search_memory` returns what `memory_recall` finds. `pip install "commonmemo[adk]"`; tested against the installed

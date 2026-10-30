@@ -42,6 +42,9 @@ commonadk = [
 adk = [
     "google-adk>=2.13; python_version >= '3.11'",
 ]
+openai-agents = [
+    "openai-agents>=0.24",
+]
 graphiti = [
     "graphiti-core>=0.31",
     # graphiti-core imports httpx (llm_client/client.py) without declaring

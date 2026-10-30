@@ -9,7 +9,7 @@ Each is imported by name and needs its SDK (one extra each), and each is tested 
 | SDK | Adapter | Extra | Status |
 |---|---|---|---|
 | Google ADK | `commonmemo.adapters.adk.CommonMemoMemoryService` | `commonmemo[adk]` | shipped ([#109](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/109)) |
-| OpenAI Agents | `Session` over the Log | `commonmemo[openai-agents]` | planned ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110)) |
+| OpenAI Agents | `commonmemo.adapters.openai_agents.CommonMemoSession` | `commonmemo[openai-agents]` | shipped ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110)) |
 | LangGraph | `BaseStore` | `commonmemo[langgraph]` | planned ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111)) |
 | AutoGen | `Memory` | `commonmemo[autogen]` | planned ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112)) |
 | Claude Agent SDK | `SessionStore` | `commonmemo[claude-agent-sdk]` | planned ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113)) |
@@ -41,3 +41,27 @@ What `BaseMemoryService` cannot express:
 - It has no approval step. An agent's world-fact proposals still wait for review.
 - A search is scoped to `(app_name, user_id)`, so the recaps it returns are the user's across agents.
 - Events without text (function calls, state changes) are not stored. Tool memory comes from `@mem.track` or the hooks.
+
+## OpenAI Agents
+
+```python
+from commonmemo import Memory
+from commonmemo.adapters.openai_agents import CommonMemoSession
+
+session = CommonMemoSession(Memory("sqlite:///mem.db"), "ada-chat", user_id="ada")
+await Runner.run(agent, "My daughter is allergic to peanuts.", session=session)
+```
+
+| `Session` call | In CommonMemo |
+|---|---|
+| `add_items(items)` | each item kept verbatim as an `ExternalEvent`; a user or assistant item with text also becomes a `Message`, so it is searchable |
+| `get_items(limit)` | the live items in order, exactly as added; `limit` keeps the latest N |
+| `pop_item()` | a compensating `openai_agents.pop` event; the item stops being returned |
+| `clear_session()` | a compensating `openai_agents.clear` event |
+
+The test suite runs the same calls on the SDK's own `SQLiteSession` and requires the same answers.
+
+What `Session` cannot express:
+- The Log is append-only, so `pop_item` and `clear_session` hide items rather than delete them. The `Message` made from a popped or cleared item stays searchable as something the user said; `Memory.forget_user` removes it.
+- Items are the SDK's own dicts and are returned untouched; CommonMemo does not interpret function calls or reasoning items. Tool memory comes from `@mem.track` or the hooks.
+- A session id belongs to one user: resuming it as another raises `PermissionError`.
