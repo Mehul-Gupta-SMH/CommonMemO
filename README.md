@@ -16,6 +16,8 @@ CrewAI, AutoGen and LangGraph (through [CommonADK](https://github.com/Mehul-Gupt
 over MCP, and inside Claude Code, Codex and OpenCode through their hooks.
 
 [![ci](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/commonmemo)](https://pypi.org/project/commonmemo/)
+[![python](https://img.shields.io/pypi/pyversions/commonmemo)](https://pypi.org/project/commonmemo/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <p align="center">
@@ -34,8 +36,10 @@ Right: what waits for review, beside what it would replace.
 ## Quickstart
 
 ```bash
+pip install commonmemo                # core: stdlib only, offline local engine
+
+# The demo scripts and the evals live in the repository.
 git clone https://github.com/Mehul-Gupta-SMH/CommonMemO.git && cd CommonMemO
-pip install -e .                      # core: stdlib only, offline local engine
 
 # Build a small memory to look at: sessions, facts, procedures, a learned lesson.
 python scripts/demo_memory.py demo.db
@@ -54,11 +58,9 @@ python -m evals
 commonmemo setup claude-code --user ada
 ```
 
-Nothing above needs an API key or spends money. CommonMemo isn't on PyPI yet
-([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)); once it is:
+Nothing above needs an API key or spends money. Add what you use:
 
 ```bash
-pip install commonmemo                 # core: stdlib only, local engine
 pip install "commonmemo[commonadk]"    # + CommonADK integration
 pip install "commonmemo[graphiti]"     # + Graphiti engine (temporal knowledge graph)
 pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memories)
@@ -66,6 +68,8 @@ pip install "commonmemo[postgres]"     # + Postgres for everything CommonMemo st
 pip install "commonmemo[mcp]"          # + the official MCP client, for testing the server
 pip install "commonmemo[otel]"         # + turn traces as OpenTelemetry spans
 ```
+
+To work on CommonMemo itself, install the clone with `pip install -e ".[dev]"`.
 
 ## How it works
 
@@ -677,7 +681,7 @@ disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status
 
-v0.0.1, not on PyPI yet ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12)). In:
+v0.0.1, on [PyPI](https://pypi.org/project/commonmemo/) and marked Alpha: the API may change before 0.1. In:
 - the four tiers and three engines (local, Graphiti, Mem0);
 - the structured kinds: tool memory, world facts, procedures, feedback,
   negatives, resume points;
@@ -687,7 +691,7 @@ v0.0.1, not on PyPI yet ([#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/iss
 - the CommonADK integration, the MCP server, and hooks for Claude Code,
   Codex and OpenCode.
 
-CI runs the test suite on Python 3.10 and 3.13: 285 tests in the fullest
+CI runs the test suite on Python 3.10 and 3.13: about 450 tests in the fullest
 environment. It also runs with no extras, with each extra on its own, and
 once more with everything on Postgres 16. It checks that the core imports
 none of the extras.
