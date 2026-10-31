@@ -99,6 +99,8 @@ _EXPORTS = {
     "SQLiteStore": ".stores",
     "Store": ".stores",
     "ToolProfile": ".tool_memory",
+    "instrument": ".adapters.auto",
+    "uninstrument": ".adapters.auto",
 }
 
 
@@ -120,6 +122,8 @@ def __dir__() -> list[str]:
 __version__ = "0.0.1"
 
 __all__ = [
+    "instrument",
+    "uninstrument",
     "Memory",
     "Session",
     "current_session",

@@ -90,3 +90,32 @@ What `BaseStore` cannot express here:
 - The values are LangGraph's own key-value memory kept in the Log; they are not turned into CommonMemo facts, so `memory_recall` does not find them.
 - One `session_id` is one store; stores with different ids on one Log are separate.
 - A namespace whose last item was deleted stops being listed (as in LangGraph's Postgres store; `InMemoryStore` keeps listing it).
+
+## Attaching everything at once: `commonmemo.instrument` (#116)
+
+```python
+import commonmemo
+commonmemo.instrument(memory)                       # every installed SDK
+commonmemo.instrument(memory, ["adk"], user_id=lambda: current_user())
+commonmemo.uninstrument()
+```
+
+It patches each SDK's *defaults* so the adapter above is used where the
+application did not pick a memory; anything passed explicitly wins. Nothing
+happens on import, an SDK that is not installed is skipped, and a hook that
+has moved in a newer SDK warns and is skipped rather than raising.
+
+| SDK | Default patched |
+|---|---|
+| Google ADK | `Runner(memory_service=None)` |
+| OpenAI Agents | `Runner.run / run_sync / run_streamed` without `session=` (string/list input only) |
+| LangGraph | `StateGraph.compile(store=None)` |
+
+`user_id` and `session_id` are a string or a callable read at each use. Without
+`user_id` everything belongs to one anonymous user, which is right for a
+single-user agent and wrong for a multi-user one: pass a resolver. The OpenAI
+Agents SDK supplies no session id, so runs share `session_id` (default
+`"auto"`) and therefore one conversation. ADK takes its user and session ids
+from the framework. Like the adapters, it stores and searches; it does not
+push context into a prompt. AutoGen and Claude Agent SDK hooks arrive with
+their adapters.
