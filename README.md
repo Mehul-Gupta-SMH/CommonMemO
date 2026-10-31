@@ -684,7 +684,7 @@ disguise against the model having seen the public data: a baseline, not a rate.
 
 ## Status
 
-v0.0.1, on [PyPI](https://pypi.org/project/commonmemo/) and marked Alpha: the API may change before 0.1. In:
+v0.0.2, on [PyPI](https://pypi.org/project/commonmemo/) and marked Alpha: the API may change before 0.1. In:
 - the four tiers and three engines (local, Graphiti, Mem0);
 - the structured kinds: tool memory, world facts, procedures, feedback,
   negatives, resume points;

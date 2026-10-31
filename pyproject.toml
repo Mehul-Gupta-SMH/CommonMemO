@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "commonmemo"
-version = "0.0.1"
+version = "0.0.2"
 description = "Framework-neutral memory for agents and workflows: event, session, episodic and user memory behind one handle."
 dynamic = ["readme"]
 license = "Apache-2.0"
