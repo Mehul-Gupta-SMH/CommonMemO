@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.0.2 — 2026-10-31
+
+Release ([#120](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/120)): carries the framework adapters and `instrument()` below, and the README and posts that install from PyPI ([#107](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/107)). CrewAI, the sixth adapter of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6), is deferred: its `StorageBackend.search` takes an embedding vector.
 
 Framework adapters, the fifth: the Claude Agent SDK ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.claude_agent_sdk.CommonMemoSessionStore` is a `SessionStore`: transcripts are kept in the Log (idempotent on entry `uuid`, with list, summaries, subagent keys and cascading delete, checked against the SDK's `InMemorySessionStore`), and what was said is searchable with `memory_recall`. `commonmemo.instrument` hooks `ClaudeAgentOptions`. `pip install "commonmemo[claude-agent-sdk]"`.
 
