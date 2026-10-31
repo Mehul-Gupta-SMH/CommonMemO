@@ -12,7 +12,7 @@ Each is imported by name and needs its SDK (one extra each), and each is tested 
 | OpenAI Agents | `commonmemo.adapters.openai_agents.CommonMemoSession` | `commonmemo[openai-agents]` | shipped ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110)) |
 | LangGraph | `commonmemo.adapters.langgraph.CommonMemoStore` | `commonmemo[langgraph]` | shipped ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111)) |
 | AutoGen | `commonmemo.adapters.autogen.CommonMemoMemory` | `commonmemo[autogen]` | shipped ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112)) |
-| Claude Agent SDK | `SessionStore` | `commonmemo[claude-agent-sdk]` | planned ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113)) |
+| Claude Agent SDK | `SessionStore` | `commonmemo[claude-agent-sdk]` | shipped ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113)) |
 | CrewAI | `StorageBackend` | | deferred: `search` takes an embedding vector, which assumes a vector database |
 
 ## Google ADK
@@ -113,6 +113,33 @@ delete or correction; a query carries no user, so one `CommonMemoMemory` serves 
 and image content is refused. This is the one adapter that pushes into a prompt, because
 `update_context` is the interface's whole purpose; `inject=False` keeps it to store and search.
 
+## Claude Agent SDK
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from commonmemo.adapters.claude_agent_sdk import CommonMemoSessionStore
+
+options = ClaudeAgentOptions(session_store=CommonMemoSessionStore(Memory("sqlite:///mem.db"), user_id="ana"))
+```
+
+The SDK mirrors each session's transcript to the store and loads it back to resume.
+
+| SessionStore call | In CommonMemo |
+|---|---|
+| `append(key, entries)` | one `ExternalEvent` holding the batch; an entry whose `uuid` is already stored is skipped, entries without one are always kept |
+| `load(key)` | the entries appended so far, in order, or `None` |
+| `list_sessions` / `list_session_summaries` / `list_subkeys` | read from the same replayed state (summaries folded with the SDK's own `fold_session_summary`) |
+| `delete(key)` | a delete event; deleting a session also drops its subagent transcripts |
+
+The tests run the same calls on the SDK's `InMemorySessionStore` and require the same answers. What
+the user and the assistant said in a main transcript is also recorded as messages, so
+`memory_recall` finds it in later sessions.
+
+What the interface cannot express: the SDK hands the store whole transcript entries, not
+facts, so nothing is extracted from them; subagent transcripts are stored but not searchable; a
+deleted session leaves its recorded messages in the Log (`Memory.forget_user` erases). One
+`session_id` is one store; stores with different ids on one Log are separate.
+
 ## Attaching everything at once: `commonmemo.instrument` (#116)
 
 ```python
@@ -133,6 +160,7 @@ has moved in a newer SDK warns and is skipped rather than raising.
 | OpenAI Agents | `Runner.run / run_sync / run_streamed` without `session=` (string/list input only) |
 | LangGraph | `StateGraph.compile(store=None)` |
 | AutoGen | `AssistantAgent(memory=None)` |
+| Claude Agent SDK | `ClaudeAgentOptions(session_store=None)` |
 
 `user_id` and `session_id` are a string or a callable read at each use. Without
 `user_id` everything belongs to one anonymous user, which is right for a
@@ -141,5 +169,5 @@ Agents SDK supplies no session id, so runs share `session_id` (default
 `"auto"`) and therefore one conversation. ADK takes its user and session ids
 from the framework. Like the adapters, it stores and searches; the
 exception is AutoGen, whose `Memory` interface exists to put memory in the prompt
-(see below). The Claude Agent SDK hook arrives with its adapter. For AutoGen the
-user is `user_id`, one per hooked agent.
+(see below). For AutoGen and the Claude Agent SDK the
+user is `user_id`, one per hooked agent or options object.

@@ -109,11 +109,26 @@ def _autogen(memory: "Memory", user_id: Optional[Resolver], session_id: Optional
     _patch(AssistantAgent, "__init__", init)
 
 
+def _claude_agent_sdk(memory: "Memory", user_id: Optional[Resolver], session_id: Optional[Resolver]) -> None:
+    from claude_agent_sdk import ClaudeAgentOptions
+    from .claude_agent_sdk import CommonMemoSessionStore
+
+    original = ClaudeAgentOptions.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        if self.session_store is None:
+            self.session_store = CommonMemoSessionStore(memory, user_id=_value(user_id, ANONYMOUS))
+
+    _patch(ClaudeAgentOptions, "__init__", init)
+
+
 HOOKS: dict[str, tuple[str, Callable[..., None]]] = {
     "adk": ("google.adk", _adk),
     "openai_agents": ("agents", _openai_agents),
     "langgraph": ("langgraph", _langgraph),
     "autogen": ("autogen_agentchat", _autogen),
+    "claude_agent_sdk": ("claude_agent_sdk", _claude_agent_sdk),
 }
 
 

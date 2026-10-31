@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+Framework adapters, the fifth: the Claude Agent SDK ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.claude_agent_sdk.CommonMemoSessionStore` is a `SessionStore`: transcripts are kept in the Log (idempotent on entry `uuid`, with list, summaries, subagent keys and cascading delete, checked against the SDK's `InMemorySessionStore`), and what was said is searchable with `memory_recall`. `commonmemo.instrument` hooks `ClaudeAgentOptions`. `pip install "commonmemo[claude-agent-sdk]"`.
+
 Framework adapters, the fourth: AutoGen ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.autogen.CommonMemoMemory` is an `autogen_core` `Memory`: `add` stores a user fact, `query` is what `memory_recall`
 finds, `update_context` adds one system message with the findings as `ListMemory` does (`inject=False` turns that off). `commonmemo.instrument` hooks `AssistantAgent`. `pip install "commonmemo[autogen]"`.
 
