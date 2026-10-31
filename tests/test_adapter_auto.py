@@ -138,3 +138,19 @@ def test_autogen(mem):
     commonmemo.uninstrument()
     assert AssistantAgent.__init__ is original
     assert not agent()._memory
+
+
+def test_claude_agent_sdk(mem):
+    pytest.importorskip("claude_agent_sdk")
+    from claude_agent_sdk import ClaudeAgentOptions, InMemorySessionStore
+    from commonmemo.adapters.claude_agent_sdk import CommonMemoSessionStore
+
+    original = ClaudeAgentOptions.__init__
+    assert "claude_agent_sdk" in commonmemo.instrument(mem, ["claude_agent_sdk"], user_id="ana")
+    hooked = ClaudeAgentOptions().session_store
+    assert isinstance(hooked, CommonMemoSessionStore) and hooked.user_id == "ana"
+    own = InMemorySessionStore()
+    assert ClaudeAgentOptions(session_store=own).session_store is own
+    commonmemo.uninstrument()
+    assert ClaudeAgentOptions.__init__ is original
+    assert ClaudeAgentOptions().session_store is None
