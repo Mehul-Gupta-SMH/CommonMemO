@@ -11,7 +11,7 @@ Each is imported by name and needs its SDK (one extra each), and each is tested 
 | Google ADK | `commonmemo.adapters.adk.CommonMemoMemoryService` | `commonmemo[adk]` | shipped ([#109](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/109)) |
 | OpenAI Agents | `commonmemo.adapters.openai_agents.CommonMemoSession` | `commonmemo[openai-agents]` | shipped ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110)) |
 | LangGraph | `commonmemo.adapters.langgraph.CommonMemoStore` | `commonmemo[langgraph]` | shipped ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111)) |
-| AutoGen | `Memory` | `commonmemo[autogen]` | planned ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112)) |
+| AutoGen | `commonmemo.adapters.autogen.CommonMemoMemory` | `commonmemo[autogen]` | shipped ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112)) |
 | Claude Agent SDK | `SessionStore` | `commonmemo[claude-agent-sdk]` | planned ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113)) |
 | CrewAI | `StorageBackend` | | deferred: `search` takes an embedding vector, which assumes a vector database |
 
@@ -91,6 +91,28 @@ What `BaseStore` cannot express here:
 - One `session_id` is one store; stores with different ids on one Log are separate.
 - A namespace whose last item was deleted stops being listed (as in LangGraph's Postgres store; `InMemoryStore` keeps listing it).
 
+## AutoGen
+
+```python
+from commonmemo.adapters.autogen import CommonMemoMemory
+
+agent = AssistantAgent("helper", model_client=client,
+                       memory=[CommonMemoMemory(Memory("sqlite:///mem.db"), user_id="ana")])
+```
+
+| AutoGen call | In CommonMemo |
+|---|---|
+| `add(content)` | a `UserFact` (text as is, a dict as JSON; `metadata["key"]` names it, else a hash, so the same content is one fact) |
+| `query(text)` | what `memory_recall` finds, as text `MemoryContent`s with `metadata["kind"]` |
+| `update_context(ctx)` | queries with the last user message and appends one system message with the findings (`inject=False` to disable) |
+| `clear()` | `Memory.forget_user(user_id)`; refuses without a `user_id` |
+
+What the interface cannot express: AutoGen never reports the conversation to a memory, so this
+adapter records no turns (use `Memory.session` or the hooks for that); there is no per-entry
+delete or correction; a query carries no user, so one `CommonMemoMemory` serves one user; binary
+and image content is refused. This is the one adapter that pushes into a prompt, because
+`update_context` is the interface's whole purpose; `inject=False` keeps it to store and search.
+
 ## Attaching everything at once: `commonmemo.instrument` (#116)
 
 ```python
@@ -110,12 +132,14 @@ has moved in a newer SDK warns and is skipped rather than raising.
 | Google ADK | `Runner(memory_service=None)` |
 | OpenAI Agents | `Runner.run / run_sync / run_streamed` without `session=` (string/list input only) |
 | LangGraph | `StateGraph.compile(store=None)` |
+| AutoGen | `AssistantAgent(memory=None)` |
 
 `user_id` and `session_id` are a string or a callable read at each use. Without
 `user_id` everything belongs to one anonymous user, which is right for a
 single-user agent and wrong for a multi-user one: pass a resolver. The OpenAI
 Agents SDK supplies no session id, so runs share `session_id` (default
 `"auto"`) and therefore one conversation. ADK takes its user and session ids
-from the framework. Like the adapters, it stores and searches; it does not
-push context into a prompt. AutoGen and Claude Agent SDK hooks arrive with
-their adapters.
+from the framework. Like the adapters, it stores and searches; the
+exception is AutoGen, whose `Memory` interface exists to put memory in the prompt
+(see below). The Claude Agent SDK hook arrives with its adapter. For AutoGen the
+user is `user_id`, one per hooked agent.

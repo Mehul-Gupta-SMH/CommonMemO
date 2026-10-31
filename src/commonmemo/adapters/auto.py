@@ -12,7 +12,8 @@ instead of raising. Like the adapters it stores and searches; it does not
 push context into a prompt.
 
 Hooks: Google ADK (`Runner` memory service), OpenAI Agents (`Runner.run*`
-session), LangGraph (`StateGraph.compile` store).
+session), LangGraph (`StateGraph.compile` store), AutoGen (`AssistantAgent` memory; its
+`update_context` does put findings in the prompt).
 
 `user_id` is a string or a callable returning one, read at each use; without
 it everything belongs to one anonymous user. `session_id` (OpenAI Agents
@@ -94,10 +95,25 @@ def _langgraph(memory: "Memory", user_id: Optional[Resolver], session_id: Option
     _patch(StateGraph, "compile", compile)
 
 
+def _autogen(memory: "Memory", user_id: Optional[Resolver], session_id: Optional[Resolver]) -> None:
+    from autogen_agentchat.agents import AssistantAgent
+    from .autogen import CommonMemoMemory
+
+    original = AssistantAgent.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        if kwargs.get("memory") is None:
+            kwargs["memory"] = [CommonMemoMemory(memory, user_id=_value(user_id, ANONYMOUS), agent=kwargs.get("name"))]
+        original(self, *args, **kwargs)
+
+    _patch(AssistantAgent, "__init__", init)
+
+
 HOOKS: dict[str, tuple[str, Callable[..., None]]] = {
     "adk": ("google.adk", _adk),
     "openai_agents": ("agents", _openai_agents),
     "langgraph": ("langgraph", _langgraph),
+    "autogen": ("autogen_agentchat", _autogen),
 }
 
 

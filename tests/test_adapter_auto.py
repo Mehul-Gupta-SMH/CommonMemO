@@ -116,3 +116,25 @@ def test_openai_agents(mem, monkeypatch):
     assert seen[1] == "mine"
     commonmemo.uninstrument()
     assert Runner.__dict__["run_sync"] is original_run_sync
+
+
+def test_autogen(mem):
+    pytest.importorskip("autogen_agentchat")
+    pytest.importorskip("autogen_ext")
+    from autogen_agentchat.agents import AssistantAgent
+    from autogen_core.memory import ListMemory
+    from autogen_ext.models.replay import ReplayChatCompletionClient
+    from commonmemo.adapters.autogen import CommonMemoMemory
+
+    def agent(**kw):
+        return AssistantAgent("helper", model_client=ReplayChatCompletionClient(["ok"]), **kw)
+
+    original = AssistantAgent.__init__
+    assert "autogen" in commonmemo.instrument(mem, ["autogen"], user_id="ana")
+    (hooked,) = agent()._memory
+    assert isinstance(hooked, CommonMemoMemory) and hooked.user_id == "ana"
+    own = ListMemory()
+    assert agent(memory=[own])._memory == [own]
+    commonmemo.uninstrument()
+    assert AssistantAgent.__init__ is original
+    assert not agent()._memory

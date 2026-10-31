@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+Framework adapters, the fourth: AutoGen ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.autogen.CommonMemoMemory` is an `autogen_core` `Memory`: `add` stores a user fact, `query` is what `memory_recall`
+finds, `update_context` adds one system message with the findings as `ListMemory` does (`inject=False` turns that off). `commonmemo.instrument` hooks `AssistantAgent`. `pip install "commonmemo[autogen]"`.
+
 - `commonmemo.instrument(memory)` / `uninstrument()`: attach the adapters to the installed agent SDKs' defaults in one call (#116).
 
 Framework adapters, the third: LangGraph ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.langgraph.CommonMemoStore` is a `BaseStore` over a `Memory`: puts and deletes are
