@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `commonmemo.instrument(memory)` / `uninstrument()`: attach the adapters to the installed agent SDKs' defaults in one call (#116).
+
 Framework adapters, the third: LangGraph ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.langgraph.CommonMemoStore` is a `BaseStore` over a `Memory`: puts and deletes are
 Log events, reads are the Log replayed with LangGraph's own filter, namespace and wildcard semantics (tested against `InMemoryStore`, and in a compiled graph), `search(query=...)` ranks with the memory's ranker.
 `pip install "commonmemo[langgraph]"`.
