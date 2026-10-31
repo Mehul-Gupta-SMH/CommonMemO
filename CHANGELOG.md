@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Framework adapters, the third: LangGraph ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.langgraph.CommonMemoStore` is a `BaseStore` over a `Memory`: puts and deletes are
+Log events, reads are the Log replayed with LangGraph's own filter, namespace and wildcard semantics (tested against `InMemoryStore`, and in a compiled graph), `search(query=...)` ranks with the memory's ranker.
+`pip install "commonmemo[langgraph]"`.
+
 Framework adapters, the second: OpenAI Agents ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110), of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6)). `commonmemo.adapters.openai_agents.CommonMemoSession` is a `Session` over a `Memory`: items kept verbatim and returned exactly
 as added (tested against the SDK's own `SQLiteSession`), `pop_item` and `clear_session` as compensating events, user and assistant text also searchable as messages. `pip install "commonmemo[openai-agents]"`.
 

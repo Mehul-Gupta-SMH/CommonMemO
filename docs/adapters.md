@@ -10,7 +10,7 @@ Each is imported by name and needs its SDK (one extra each), and each is tested 
 |---|---|---|---|
 | Google ADK | `commonmemo.adapters.adk.CommonMemoMemoryService` | `commonmemo[adk]` | shipped ([#109](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/109)) |
 | OpenAI Agents | `commonmemo.adapters.openai_agents.CommonMemoSession` | `commonmemo[openai-agents]` | shipped ([#110](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/110)) |
-| LangGraph | `BaseStore` | `commonmemo[langgraph]` | planned ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111)) |
+| LangGraph | `commonmemo.adapters.langgraph.CommonMemoStore` | `commonmemo[langgraph]` | shipped ([#111](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/111)) |
 | AutoGen | `Memory` | `commonmemo[autogen]` | planned ([#112](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/112)) |
 | Claude Agent SDK | `SessionStore` | `commonmemo[claude-agent-sdk]` | planned ([#113](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/113)) |
 | CrewAI | `StorageBackend` | | deferred: `search` takes an embedding vector, which assumes a vector database |
@@ -65,3 +65,28 @@ What `Session` cannot express:
 - The Log is append-only, so `pop_item` and `clear_session` hide items rather than delete them. The `Message` made from a popped or cleared item stays searchable as something the user said; `Memory.forget_user` removes it.
 - Items are the SDK's own dicts and are returned untouched; CommonMemo does not interpret function calls or reasoning items. Tool memory comes from `@mem.track` or the hooks.
 - A session id belongs to one user: resuming it as another raises `PermissionError`.
+
+## LangGraph
+
+```python
+from commonmemo import Memory
+from commonmemo.adapters.langgraph import CommonMemoStore
+
+graph = builder.compile(store=CommonMemoStore(Memory("sqlite:///mem.db")))
+```
+
+| `BaseStore` call | In CommonMemo |
+|---|---|
+| `put(namespace, key, value)` | an `ExternalEvent(source="langgraph.put")`; every version stays in the Log |
+| `delete` / `put(..., None)` | an `ExternalEvent(source="langgraph.delete")` |
+| `get`, `search`, `list_namespaces` | the Log replayed in order, with LangGraph's own semantics for namespace prefixes, filter operators (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`), wildcards and `max_depth` |
+| `search(query=...)` | ranked by the memory's ranker over the value's text (keywords, or meaning when the memory has an embedder) |
+| `batch` / `abatch` | puts in a batch are written in one transaction; a read after a put in the same batch sees it |
+
+The test suite runs the same calls on LangGraph's `InMemoryStore` and requires the same answers, and runs a compiled graph over two separate memories on one Log. Two processes on one Log see each other's writes on the next call.
+
+What `BaseStore` cannot express here:
+- `ttl` and `index` are accepted and ignored: items do not expire, and every value's text is searchable.
+- The values are LangGraph's own key-value memory kept in the Log; they are not turned into CommonMemo facts, so `memory_recall` does not find them.
+- One `session_id` is one store; stores with different ids on one Log are separate.
+- A namespace whose last item was deleted stops being listed (as in LangGraph's Postgres store; `InMemoryStore` keeps listing it).

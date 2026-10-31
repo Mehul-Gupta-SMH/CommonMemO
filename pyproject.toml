@@ -45,6 +45,9 @@ adk = [
 openai-agents = [
     "openai-agents>=0.24",
 ]
+langgraph = [
+    "langgraph>=1.2",
+]
 graphiti = [
     "graphiti-core>=0.31",
     # graphiti-core imports httpx (llm_client/client.py) without declaring
