@@ -5,6 +5,53 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-11-01: Embedder bake-off, retrieval only ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
+
+Does a very small local embedder find the evidence better than keyword ranking? Four models,
+all ten LoCoMo conversations, categories 1 to 4 (1531 questions that LoCoMo labels with evidence),
+6-turn windows, the 8 best windows a question. No model API, no key: the GitHub Actions workflow
+`Embedder bake-off` (`embed-bakeoff.yml`, run 1 on `main` at 6d62b4d, 2 vCPU runner, Python 3.12,
+`model2vec` 0.10.0, `fastembed` 0.9.1) runs `scripts/embed_bakeoff.py`. Each model is ranked
+alone (cosine) and as a hybrid (0.5 x keyword score divided by its maximum + 0.5 x cosine; the weight was not tuned).
+
+Share of questions with **all** the evidence among the 8 windows (Wilson 95% interval); "vs keyword" is the
+number of questions each side wins alone, paired sign test:
+
+| Ranker | multi-hop | temporal | open-domain | single-hop | all questions | vs keyword (only / only) |
+|---|---|---|---|---|---|---|
+| keyword (today) | 28% | 78% | 33% | 86% | **70.7%** (68-73), any 83% | |
+| potion-base-8M | 12% | 52% | 33% | 68% | 52.2% (50-55), any 65% | 90 / 373 |
+| potion-base-8M + keyword | 27% | 82% | 40% | 92% | 74.9% (73-77), any 88% | 94 / 30 |
+| potion-base-32M | 15% | 58% | 34% | 72% | 56.2% (54-59), any 69% | 103 / 325 |
+| potion-base-32M + keyword | 28% | 83% | 42% | 92% | 75.4% (73-77), any 88% | 98 / 26 |
+| all-MiniLM-L6-v2 | 14% | 54% | 29% | 64% | 50.8% (48-53), any 62% | 113 / 417 |
+| all-MiniLM-L6-v2 + keyword | 31% | 82% | 40% | 92% | **76.0%** (74-78), any 88% | 114 / 32 |
+| bge-small-en-v1.5 | 21% | 63% | 33% | 72% | 58.6% (56-61), any 70% | 135 / 320 |
+| bge-small-en-v1.5 + keyword | 30% | 82% | 42% | 93% | **76.0%** (74-78), any 88% | 111 / 30 |
+
+All p-values are below 0.0001. Over keyword (1082 of 1531): potion-8M + keyword +64 (+4.2 points),
+potion-32M + keyword +72 (+4.7), MiniLM + keyword +82 (+5.4), bge-small + keyword +81 (+5.3).
+
+Cost on the runner (load, per window embedded, per question):
+
+| Model | Load | A window | A question |
+|---|---|---|---|
+| potion-base-8M | 1.87 s | 0.29 ms | 0.40 ms |
+| potion-base-32M | 2.13 s | 0.30 ms | 0.26 ms |
+| all-MiniLM-L6-v2 | 2.18 s | 36.0 ms | 5.7 ms |
+| bge-small-en-v1.5 | 1.89 s | 122.0 ms | 11.2 ms |
+
+**What this says**
+
+- An embedder on its own is worse than keyword ranking, by 12 to 20 points. Any embedder has to be a hybrid.
+- The hybrids add 4.2 to 5.4 points of all-evidence recall, with about three questions won for every one lost against keyword. The temporal and single-hop categories gain; multi-hop gains only with MiniLM and bge.
+- ADR 0005's bar for a default is at least 5 points **and** 11 more correct answers of 450. MiniLM and bge clear the first narrowly (+5.4 and +5.3); the potion models are under it (+4.2 and +4.7). The answer step has not been run.
+- The potion models are about 100 times cheaper than MiniLM and 400 times cheaper than bge-small, and need only numpy.
+
+**Not measured:** answers (retrieval recall does not guarantee them), the hybrid weight, other languages (LoCoMo is English), cost on a laptop rather than a 2-vCPU runner, and the saved top-8 windows exist only for the best ranker in `bakeoff.json`.
+
+Rerun: Actions, `Embedder bake-off`, Run workflow; or `pip install -e . numpy model2vec fastembed && python scripts/embed_bakeoff.py --out bakeoff.json`.
+
 ## 2026-10-25: LoCoMo, the other five conversations ([#74](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/74), part of [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18))
 
 Everything above came from conversations 0 to 4, and the extraction prompt was
