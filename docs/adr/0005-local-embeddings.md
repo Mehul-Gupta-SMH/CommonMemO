@@ -67,6 +67,18 @@ included in each of B to D.
 5. **License** allows redistribution of a download link (the weights are not
    vendored into the wheel).
 
+## Measurements so far
+
+The retrieval half of the bake-off ran on 2026-11-01 (full tables in
+[`docs/live-runs.md`](../live-runs.md)); all ten LoCoMo conversations, 1531 evidence
+items, 8 windows a question:
+
+- Keyword ranking has all the evidence for 70.7%. Every embedder alone is worse (50.8% to 58.6%).
+- A hybrid of keyword and vector score is better: potion-base-8M 74.9%, potion-base-32M 75.4%,
+  all-MiniLM-L6-v2 76.0%, bge-small-en-v1.5 76.0% (+4.2 to +5.4 points, p < 0.0001).
+- Cost per window embedded: 0.3 ms (potion), 36 ms (MiniLM), 122 ms (bge-small), on a 2-vCPU runner.
+- The answer half (+11 of 450 correct, criterion 1) has not been run, so nothing is decided.
+
 ## Decision
 
 *Left blank until the bake-off reports (#125).* The outcomes it can lead to:
