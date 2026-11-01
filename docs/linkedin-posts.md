@@ -1,6 +1,6 @@
 # CommonMemo: LinkedIn posts
 
-Five posts, a few days apart, in this order ([#79](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/79)). Every number is from `docs/live-runs.md`: ten LoCoMo conversations, 450 questions, Claude Haiku for everything; update a post when its numbers change. Repo link goes in the first comment: https://github.com/Mehul-Gupta-SMH/CommonMemO. Install line for any post: `pip install commonmemo` (https://pypi.org/project/commonmemo/).
+Six posts, a few days apart, in this order ([#79](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/79), [#124](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/124)). Posts 1 to 5: every number is from `docs/live-runs.md`: ten LoCoMo conversations, 450 questions, Claude Haiku for everything; update a post when its numbers change. Repo link goes in the first comment: https://github.com/Mehul-Gupta-SMH/CommonMemO. Install line for any post: `pip install commonmemo` (https://pypi.org/project/commonmemo/).
 
 ---
 
@@ -85,3 +85,21 @@ Always: only your own messages, never another user's. Anything you ask to forget
 Memory earns trust by being inspectable, not impressive.
 
 It's early and it will break. If you try it, tell me where.
+
+---
+
+## 6. One memory, five agent SDKs
+
+Your agent's memory shouldn't be locked to whichever framework you happened to pick first.
+
+Teams switch SDKs. If memory lives inside one framework, it gets rebuilt or left behind every time.
+
+CommonMemo is one memory for five: ADK, OpenAI Agents, LangGraph, AutoGen and the Claude Agent SDK. You attach it with one line: instrument(memory). Underneath is an append-only Log you can replay, so the record belongs to you, not to a runtime.
+
+Where it actually stands: the Claude Agent SDK path has run live on a real model. The other four are tested against their interfaces in CI, but not yet live, because I don't have the API keys. CrewAI is deferred on purpose.
+
+If you run one of those four, a live run is the most useful thing you could send me.
+
+pip install commonmemo
+
+#AIAgents
