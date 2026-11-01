@@ -1122,3 +1122,16 @@ Message [claude-code-b5f1e85a-fd94-4177-9142-7b6575aefafe] {"role": "user", "con
 ContextPushed [claude-code-b5f1e85a-fd94-4177-9142-7b6575aefafe] {"reason": "turn"}
 Message [claude-code-b5f1e85a-fd94-4177-9142-7b6575aefafe] {"role": "assistant", "content": "Write the subject line in the imperative mood and keep it under about 50 characters (e.g., \"Fix login timeout bug\"), then us [... 208 more chars]
 ```
+
+## Framework adapters in a real agent loop (#122)
+
+`scripts/live_adapters.py` runs the Claude Agent SDK adapter with a real agent (Claude Code as the model, Haiku, no tools, `setting_sources=[]`). The adapters are otherwise tested only against each SDK's interfaces.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | `query()` with `session_store=CommonMemoSessionStore(...)`: the transcript lands in the Log, the session lists, and `load` returns it | pass (2 append events, 23 entries) |
+| 2 | The CLI's own transcript file is deleted; a new `Memory` and store resume the session by id | pass: the model answered "Teal" from the Log alone |
+| 3 | `recall_entries` (what `memory_recall` runs) finds what was said | pass |
+| 4 | `commonmemo.instrument(memory)`, then `ClaudeAgentOptions()` with no store: the default is ours and a run lands in the Log | pass |
+
+Cost: about $0.01 in total. Not run: OpenAI Agents, LangGraph, AutoGen and ADK, which need a model API key this environment does not have. Reproduce with `python scripts/live_adapters.py [1 2 3 4]`.
