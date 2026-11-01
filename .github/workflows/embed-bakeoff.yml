@@ -1,0 +1,38 @@
+name: Embedder bake-off
+
+# Manually triggered (#125, ADR 0005). Downloads the LoCoMo data and the small
+# embedding models (the runner can reach their hosts; the build environment
+# cannot) and measures evidence recall against keyword ranking. Retrieval only:
+# no API key, no answer calls. The results JSON is uploaded as an artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Comma-separated models (see MODELS in scripts/embed_bakeoff.py)
+        default: potion-base-8M,potion-base-32M,all-MiniLM-L6-v2,bge-small-en-v1.5
+      conversations:
+        description: LoCoMo conversations to use
+        default: "0,1,2,3,4,5,6,7,8,9"
+
+permissions:
+  contents: read
+
+jobs:
+  bakeoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . numpy model2vec fastembed
+      - run: python scripts/embed_bakeoff.py --models "${{ inputs.models }}" --conversations "${{ inputs.conversations }}" --out bakeoff.json | tee bakeoff.md
+      - run: cat bakeoff.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embed-bakeoff
+          path: |
+            bakeoff.json
+            bakeoff.md
