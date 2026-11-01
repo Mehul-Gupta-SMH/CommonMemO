@@ -8,7 +8,7 @@ one a set of scenarios through the hooks and MCP.
 ## 2026-11-01: Embedder bake-off, retrieval only ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
 
 Does a very small local embedder find the evidence better than keyword ranking? Four models,
-all ten LoCoMo conversations, categories 1 to 4 (1531 evidence items in 450 questions),
+all ten LoCoMo conversations, categories 1 to 4 (1531 questions that LoCoMo labels with evidence),
 6-turn windows, the 8 best windows a question. No model API, no key: the GitHub Actions workflow
 `Embedder bake-off` (`embed-bakeoff.yml`, run 1 on `main` at 6d62b4d, 2 vCPU runner, Python 3.12,
 `model2vec` 0.10.0, `fastembed` 0.9.1) runs `scripts/embed_bakeoff.py`. Each model is ranked

@@ -30,9 +30,17 @@ jobs:
       - run: pip install -e . numpy model2vec fastembed
       - run: python scripts/embed_bakeoff.py --models "${{ inputs.models }}" --conversations "${{ inputs.conversations }}" --out bakeoff.json | tee bakeoff.md
       - run: cat bakeoff.md >> "$GITHUB_STEP_SUMMARY"
+      # The artifact needs a login to download; the job log does not. A compact copy of the rankings (the answer
+      # step's input) is printed so it can be read back from the log: gzip, base64, one line between the markers.
+      - run: |
+          echo "RANKINGS-BEGIN"
+          gzip -9c bakeoff-rankings.json | base64 -w0
+          echo
+          echo "RANKINGS-END"
       - uses: actions/upload-artifact@v4
         with:
           name: embed-bakeoff
           path: |
             bakeoff.json
+            bakeoff-rankings.json
             bakeoff.md

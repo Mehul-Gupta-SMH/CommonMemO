@@ -10,9 +10,9 @@ with evidence, are all of its evidence windows (6 turns, as in
   <model>+keyword    half normalised keyword score, half cosine
 
 for each model in MODELS. Also: install-free cost numbers (load time, ms per
-text, ms per query over the windows), and the ranked top 8 of every question
-for the best ranker, so the answer step (Haiku through Claude Code) can be run
-afterwards on exactly those windows.
+text, ms per query over the windows), and the 8 windows every ranker picked for
+the questions `locomo_benchmark` samples (`--rankings-out`), so the answer step
+(`embed_answers.py`: Haiku through Claude Code) runs on exactly those windows.
 
     pip install numpy model2vec fastembed
     python scripts/embed_bakeoff.py --out bakeoff.json
@@ -69,6 +69,10 @@ def main() -> int:
     p.add_argument("--conversations", default="0,1,2,3,4,5,6,7,8,9")
     p.add_argument("--models", default=",".join(MODELS))
     p.add_argument("--out", default="bakeoff.json")
+    p.add_argument("--rankings-out", default="bakeoff-rankings.json",
+                   help="the 8 windows every ranker picked for the answer step's questions (see embed_answers.py)")
+    p.add_argument("--per-category", type=int, default=12, help="answer-step questions per category")
+    p.add_argument("--seed", type=int, default=7)
     args = p.parse_args()
     import numpy as np
 
@@ -95,10 +99,12 @@ def main() -> int:
     stats = {r: {c: {"n": 0, "all": 0, "any": 0} for c in cats} for r in rankers}
     paired: dict[str, list[int]] = {r: [0, 0] for r in rankers if r != "keyword"}
     ranked_out: dict[str, dict[str, list[int]]] = {r: {} for r in rankers}
+    answer_ids: set[str] = set()
 
     for ci in (int(c) for c in args.conversations.split(",")):
         conv = lb.disguise(data[ci], ci)
         windows = specs(conv)
+        answer_ids |= {q["id"] for q in lb.sample(conv, ci, args.per_category, args.seed)}
         bodies = [w["body"] for w in windows]
         owner = {d: i for i, w in enumerate(windows) for d in w["ids"]}
         mats = {}
@@ -168,8 +174,13 @@ def main() -> int:
               f"load {info['load_s']} s, {info['embed_ms_per_text']} ms a window, {info['query_ms']} ms a question"))
     best = max((r for r in rankers), key=lambda r: result["rankers"][r]["all"])
     result["best"] = best
-    result["ranked_top8"] = {best: ranked_out[best], "keyword": ranked_out["keyword"]}
     Path(args.out).write_text(json.dumps(result, indent=2))
+    # The answer step's questions are the ones locomo_benchmark samples (same seed, same count), so its
+    # keyword condition is comparable with the earlier runs. Window numbers index specs(conv).
+    sampled = {qid: {r: ranked_out[r][qid] for r in rankers if qid in ranked_out[r]}
+               for qid in sorted(answer_ids) if qid in ranked_out["keyword"]}
+    Path(args.rankings_out).write_text(json.dumps({"per_category": args.per_category, "seed": args.seed,
+                                                   "rankings": sampled}, separators=(",", ":")))
     print(f"\nbest: {best} ({result['rankers'][best]['points_over_keyword']:+.1f} points over keyword); results in {args.out}")
     return 0
 

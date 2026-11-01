@@ -70,8 +70,8 @@ included in each of B to D.
 ## Measurements so far
 
 The retrieval half of the bake-off ran on 2026-11-01 (full tables in
-[`docs/live-runs.md`](../live-runs.md)); all ten LoCoMo conversations, 1531 evidence
-items, 8 windows a question:
+[`docs/live-runs.md`](../live-runs.md)); all ten LoCoMo conversations, 1531 questions
+with labelled evidence, 8 windows a question:
 
 - Keyword ranking has all the evidence for 70.7%. Every embedder alone is worse (50.8% to 58.6%).
 - A hybrid of keyword and vector score is better: potion-base-8M 74.9%, potion-base-32M 75.4%,
