@@ -5,6 +5,46 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-11-02: Multi-hop, where it fails ([#131](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/131))
+
+Is a multi-hop miss a retrieval failure or an answer failure, and does a larger k help? No model calls:
+`scripts/multihop_diagnose.py` joins the evidence labels to the saved answers of the bake-off (442 questions,
+three rankers pooled) and sweeps k for keyword ranking over all ten conversations (1531 questions).
+
+| Category | questions | windows needed (mean) | 1 window | 3+ windows | k=8 | k=16 | k=24 | k=32 |
+|---|---|---|---|---|---|---|---|---|
+| multi-hop | 281 | 2.87 | 3% | 43% | 28% | 42% | 51% | 55% |
+| temporal | 320 | 1.12 | 90% | 2% | 78% | 84% | 89% | 93% |
+| open-domain | 89 | 1.93 | 56% | 19% | 33% | 45% | 53% | 61% |
+| single-hop | 841 | 1.02 | 98% | 0% | 86% | 91% | 94% | 95% |
+
+Share of questions with all the evidence among the k best windows (keyword). Prompt size: about 7,900 characters
+at k=8, 22,400 at k=24 (2.8 times).
+
+Answers correct by how much of the evidence the answerer saw:
+
+| Category | all of it | some | none |
+|---|---|---|---|
+| multi-hop | 64/88 (73%) | 62/216 (29%) | 9/53 (17%) |
+| temporal | 206/267 (77%) | 6/17 (35%) | 8/73 (11%) |
+| open-domain | 62/92 (67%) | 20/56 (36%) | 31/104 (30%) |
+| single-hop | 272/317 (86%) | | 13/43 (30%) |
+
+**What this says**
+
+- Multi-hop is mostly a retrieval problem. A multi-hop question needs 2.9 windows on average (97% need more than one),
+  and the top 8 hold all of them for 28%. When the answerer sees all the evidence it is right 73% of the time, close to
+  single-hop's 86%; with only some of it, 29%. Of 357 multi-hop answers, 216 had partial evidence.
+- A larger k helps multi-hop: +14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt. Single-hop and
+  temporal gain little (+5 to +11), so an adaptive k (more windows when the question needs several pieces) is the thing to try.
+- Embedders barely help here (potion-32M 28%, MiniLM 31% at k=8), so ranking is not the fix; coverage is.
+
+**Not measured:** answers at a larger k (the retrieval sweep only says the evidence is there; more text can also distract the
+answerer), embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
+rows are pooled over three rankers and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
+
+Rerun: `python scripts/multihop_diagnose.py --answers answers.jsonl` (the answers file from `embed_answers.py`).
+
 ## 2026-11-02: Embedder bake-off, answers ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
 
 Do the better windows give better answers? The rankings from the CI run above (keyword, potion-base-32M +
