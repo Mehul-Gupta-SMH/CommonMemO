@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `commonmemo[embed]` (#129, ADR 0005): `commonmemo.embed.local_ranker()` is a `HybridRanker` (half shared words, half cosine) over the local Model2Vec model `potion-base-32M`, lazily imported, opt-in; windows keep their stored vectors. The model's revision and checksum are filled in by `.github/workflows/embed-pin.yml` before weights can be loaded.
+
 ## 0.0.2 — 2026-10-31
 
 Release ([#120](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/120)): carries the framework adapters and `instrument()` below, and the README and posts that install from PyPI ([#107](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/107)). CrewAI, the sixth adapter of [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6), is deferred: its `StorageBackend.search` takes an embedding vector.

@@ -1,0 +1,33 @@
+name: Embedder pin
+
+# Manually triggered (#129). Prints the revision and the SHA-256 of model.safetensors for the model
+# commonmemo.embed pins, and runs the real-weights test once they are filled in. The build environment
+# cannot reach the model host; the runner can.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[embed,dev]"
+      - run: |
+          python - <<'PY' | tee "$GITHUB_STEP_SUMMARY"
+          import hashlib
+          from huggingface_hub import HfApi, snapshot_download
+          from commonmemo.embed import MODEL
+          rev = HfApi().model_info(MODEL).sha
+          folder = snapshot_download(MODEL, revision=rev)
+          h = hashlib.sha256(open(f"{folder}/model.safetensors", "rb").read()).hexdigest()
+          print(f"REVISION = {rev!r}\nSHA256 = {h!r}")
+          PY
+      - run: python -m pytest tests/test_embed.py -q

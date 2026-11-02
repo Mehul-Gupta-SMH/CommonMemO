@@ -68,7 +68,10 @@ pip install "commonmemo[mem0]"         # + Mem0 engine (LLM-extracted user memor
 pip install "commonmemo[postgres]"     # + Postgres for everything CommonMemo stores
 pip install "commonmemo[mcp]"          # + the official MCP client, for testing the server
 pip install "commonmemo[otel]"         # + turn traces as OpenTelemetry spans
+pip install "commonmemo[embed]"        # + a small local embedder for meaning-based recall (opt-in, English only)
 ```
+
+Meaning-based recall is opt-in: `Memory(ranker=commonmemo.embed.local_ranker())` blends shared words with a small local model (`minishlab/potion-base-32M`, pinned by revision and checksum; English only; about 0.3 ms a window; no API call). On LoCoMo it found 4 to 5 points more of the evidence than keywords alone and 13 to 17 of 442 more answers, which was not significant (ADR 0005), so keywords stay the default. It fails with a message, never falls back silently, when the extra, the network or the weights are missing.
 
 To work on CommonMemo itself, install the clone with `pip install -e ".[dev]"`.
 
