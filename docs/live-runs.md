@@ -5,6 +5,84 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-11-02: Multi-hop, where it fails ([#131](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/131))
+
+Is a multi-hop miss a retrieval failure or an answer failure, and does a larger k help? No model calls:
+`scripts/multihop_diagnose.py` joins the evidence labels to the saved answers of the bake-off (442 questions,
+three rankers pooled) and sweeps k for keyword ranking over all ten conversations (1531 questions).
+
+| Category | questions | windows needed (mean) | 1 window | 3+ windows | k=8 | k=16 | k=24 | k=32 |
+|---|---|---|---|---|---|---|---|---|
+| multi-hop | 281 | 2.87 | 3% | 43% | 28% | 42% | 51% | 55% |
+| temporal | 320 | 1.12 | 90% | 2% | 78% | 84% | 89% | 93% |
+| open-domain | 89 | 1.93 | 56% | 19% | 33% | 45% | 53% | 61% |
+| single-hop | 841 | 1.02 | 98% | 0% | 86% | 91% | 94% | 95% |
+
+Share of questions with all the evidence among the k best windows (keyword). Prompt size: about 7,900 characters
+at k=8, 22,400 at k=24 (2.8 times).
+
+Answers correct by how much of the evidence the answerer saw:
+
+| Category | all of it | some | none |
+|---|---|---|---|
+| multi-hop | 64/88 (73%) | 62/216 (29%) | 9/53 (17%) |
+| temporal | 206/267 (77%) | 6/17 (35%) | 8/73 (11%) |
+| open-domain | 62/92 (67%) | 20/56 (36%) | 31/104 (30%) |
+| single-hop | 272/317 (86%) | | 13/43 (30%) |
+
+**What this says**
+
+- Multi-hop is mostly a retrieval problem. A multi-hop question needs 2.9 windows on average (97% need more than one),
+  and the top 8 hold all of them for 28%. When the answerer sees all the evidence it is right 73% of the time, close to
+  single-hop's 86%; with only some of it, 29%. Of 357 multi-hop answers, 216 had partial evidence.
+- A larger k raises multi-hop retrieval (+14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt), but
+  it did not raise answers (below): Haiku with 24 windows got 43/119 against 44/119 with 8.
+- Embedders barely help here (potion-32M 28%, MiniLM 31% at k=8), so ranking is not the fix; coverage is.
+
+**Answers at a larger k (run 2026-11-02, Haiku answers and grades, 119 multi-hop questions, $0.47):**
+
+| Windows | Correct | vs 8 windows (only / only, p) | Had all the evidence | Correct when it had all |
+|---|---|---|---|---|
+| 8 (keyword) | 44/119 | | 25 | 20 (80%) |
+| 16 | 42/119 | -2 (6 / 8, p = 0.79) | 47 | 24 (51%) |
+| 24 | 43/119 | -1 (6 / 7, p = 1.00) | 61 | 27 (44%) |
+
+More windows put all the evidence in front of the answerer for 2.4 times as many questions (25 to 61) and answers did not
+improve. Accuracy given all the evidence fell from 80% to 44%. The extra questions that reach "all evidence" at a larger
+k are harder ones (they needed more windows), so this is partly a selection effect, but the net result is flat: 2.8 times
+the prompt for no gain. The retrieval sweep above overstates what a bigger k buys. (Pooled "all / some / none" table, now
+including these runs: multi-hop 59% / 28% / 18%.)
+
+**Not measured:** embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
+rows are pooled over rankers and window counts and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
+
+Rerun: `python scripts/multihop_diagnose.py --answers answers.jsonl` (the answers file from `embed_answers.py`).
+
+## 2026-11-02: Embedder bake-off, answers ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
+
+Do the better windows give better answers? The rankings from the CI run above (keyword, potion-base-32M +
+keyword, all-MiniLM-L6-v2 + keyword) were answered and graded locally by `scripts/embed_answers.py`: Haiku
+answers from the 8 windows, Haiku grades against the gold answer. 12 questions a category (seed 7), 442
+questions with evidence, the same questions for every ranker. $2.77, 2652 Claude calls.
+
+| Ranker | Correct | multi-hop | temporal | open-domain | single-hop | vs keyword (only / only, p) |
+|---|---|---|---|---|---|---|
+| keyword | 241/442 | 44/119 | 70/119 | 36/84 | 91/120 | |
+| potion-base-32M + keyword | 254/442 | 42/119 | 75/119 | 39/84 | 98/120 | +13 (45 / 32, p = 0.17) |
+| all-MiniLM-L6-v2 + keyword | 258/442 | 49/119 | 75/119 | 38/84 | 96/120 | +17 (45 / 28, p = 0.06) |
+
+**What this says**
+
+- Both hybrids answer more questions than keyword, +13 and +17, over the +11 bar on the point estimate.
+- Neither gain is statistically significant on this sample (p = 0.17 and 0.06). Retrieval gains were significant; answers are not.
+- MiniLM clears the 5-point retrieval bar narrowly (+5.4); potion-32M does not (+4.7). MiniLM costs 100 times more per window and needs fastembed/ONNX.
+- Decision (ADR 0005): opt-in with potion-base-32M; keyword stays the default.
+
+**Caveats:** one sample of questions, Haiku is both answerer and grader, the 0.5 hybrid weight is untuned, English only.
+
+Rerun: download or regenerate `bakeoff-rankings.json` (workflow prints it between `RANKINGS-BEGIN` and `RANKINGS-END`), then
+`python scripts/embed_answers.py --rankings bakeoff-rankings.json --model haiku --judge-model haiku` (needs the Claude CLI).
+
 ## 2026-11-01: Embedder bake-off, retrieval only ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
 
 Does a very small local embedder find the evidence better than keyword ranking? Four models,
@@ -45,7 +123,7 @@ Cost on the runner (load, per window embedded, per question):
 
 - An embedder on its own is worse than keyword ranking, by 12 to 20 points. Any embedder has to be a hybrid.
 - The hybrids add 4.2 to 5.4 points of all-evidence recall, with about three questions won for every one lost against keyword. The temporal and single-hop categories gain; multi-hop gains only with MiniLM and bge.
-- ADR 0005's bar for a default is at least 5 points **and** 11 more correct answers of 450. MiniLM and bge clear the first narrowly (+5.4 and +5.3); the potion models are under it (+4.2 and +4.7). The answer step has not been run.
+- ADR 0005's bar for a default is at least 5 points **and** 11 more correct answers of 450. MiniLM and bge clear the first narrowly (+5.4 and +5.3); the potion models are under it (+4.2 and +4.7). The answer step is in the next section up.
 - The potion models are about 100 times cheaper than MiniLM and 400 times cheaper than bge-small, and need only numpy.
 
 **Not measured:** answers (retrieval recall does not guarantee them), the hybrid weight, other languages (LoCoMo is English), cost on a laptop rather than a 2-vCPU runner, and the saved top-8 windows exist only for the best ranker in `bakeoff.json`.

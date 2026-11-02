@@ -1,11 +1,10 @@
 # ADR 0005 — A very small local embedder for vector search
 
-**Status:** Proposed · **Date:** 2026-11-01 · **Tracks:** [#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125) (the bake-off) · **Unblocks, if accepted:** [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6) (CrewAI)
+**Status:** Accepted (opt-in) · **Date:** 2026-11-01 · **Tracks:** [#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125) (the bake-off) · **Unblocks, if accepted:** [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6) (CrewAI)
 
-This is a draft. It records the question, the options and the bar a
-decision must clear. The numbers come from the bake-off in #125; the
-decision (section 4) is filled in after it, and this ADR is then
-accepted, changed, or rejected with the numbers recorded.
+This ADR records the question, the options and the bar a decision must
+clear. The numbers come from the bake-off in #125; the decision is below.
+Implementation: [#129](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/129).
 
 ## Context
 
@@ -77,20 +76,23 @@ with labelled evidence, 8 windows a question:
 - A hybrid of keyword and vector score is better: potion-base-8M 74.9%, potion-base-32M 75.4%,
   all-MiniLM-L6-v2 76.0%, bge-small-en-v1.5 76.0% (+4.2 to +5.4 points, p < 0.0001).
 - Cost per window embedded: 0.3 ms (potion), 36 ms (MiniLM), 122 ms (bge-small), on a 2-vCPU runner.
-- The answer half (+11 of 450 correct, criterion 1) has not been run, so nothing is decided.
+- The answer half ran on 2026-11-02 (442 questions, Haiku answers and grades, $2.77): keyword 241 correct,
+  potion-32M + keyword 254 (+13, p = 0.17), MiniLM + keyword 258 (+17, p = 0.06). Over the +11 bar on the
+  point estimate, but not significant. Caveats: one sample, Haiku grades its own answers, untuned weight.
 
 ## Decision
 
-*Left blank until the bake-off reports (#125).* The outcomes it can lead to:
+**Ship opt-in, with potion-base-32M.** Keyword ranking stays the default.
 
-- **Ship as default:** `commonmemo[embed]` provides the chosen model;
-  `Memory` uses it when installed and no other embedder is set. Vectors for
-  facts, recaps and procedures follow in their own issue; CrewAI is
-  revisited.
-- **Ship opt-in:** the extra exists and is documented, but a memory without
-  an explicit choice still ranks by keywords.
-- **Do not build:** the numbers are recorded in `docs/live-runs.md` and the
-  roadmap, and the "real vector index" and CrewAI items stay as they are.
+- Why not default: the retrieval gain of potion-32M (+4.7) is under the 5-point bar, and the answer gains
+  are not significant (p = 0.17 and 0.06). The bar says a smaller measured gain makes it opt-in.
+- Why potion-32M over MiniLM: it is within 0.7 points on retrieval and 4 answers on this sample, needs only
+  numpy, and is about 100 times cheaper per window (0.3 ms vs 36 ms). MiniLM stays a documented alternative
+  (fastembed/ONNX); it is not built now.
+- `commonmemo[embed]` provides the model, lazily imported, pinned by name, revision and checksum; a memory
+  uses a hybrid ranker only when asked. Built in #129.
+- Revisit the default if a larger or independent-judge run shows a significant answer gain.
+- CrewAI (#6) stays deferred; vectors for facts, recaps and procedures are a separate issue.
 
 ## Risks
 
