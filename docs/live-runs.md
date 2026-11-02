@@ -39,19 +39,12 @@ Answers correct by how much of the evidence the answerer saw:
   it did not raise answers (below): Haiku with 24 windows got 43/119 against 44/119 with 8.
 - Embedders barely help here (potion-32M 28%, MiniLM 31% at k=8), so ranking is not the fix; coverage is.
 
-**Answers at a larger k (run 2026-11-02, Haiku answers and grades, 119 multi-hop questions, $0.47):**
-
-| Windows | Correct | vs 8 windows (only / only, p) | Had all the evidence | Correct when it had all |
-|---|---|---|---|---|
-| 8 (keyword) | 44/119 | | 25 | 20 (80%) |
-| 16 | 42/119 | -2 (6 / 8, p = 0.79) | 47 | 24 (51%) |
-| 24 | 43/119 | -1 (6 / 7, p = 1.00) | 61 | 27 (44%) |
-
-More windows put all the evidence in front of the answerer for 2.4 times as many questions (25 to 61) and answers did not
-improve. Accuracy given all the evidence fell from 80% to 44%. The extra questions that reach "all evidence" at a larger
-k are harder ones (they needed more windows), so this is partly a selection effect, but the net result is flat: 2.8 times
-the prompt for no gain. The retrieval sweep above overstates what a bigger k buys. (Pooled "all / some / none" table, now
-including these runs: multi-hop 59% / 28% / 18%.)
+**Answers at a larger k: retracted.** An earlier version of this section reported 42/119 at 16 windows and 43/119 at 24
+against 44/119 at 8, and concluded that a larger k does not help. That was a harness bug: `embed_answers.py` built its
+prompt with `question_prompt("rag")`, which re-ranks the windows it is given and keeps only the best `RAG_TOP` = 8. The
+answerer saw 8 windows every time. With 24 windows in the prompt, Haiku scores 59/119 (below), not 43. The retrieval
+sweep above is unaffected; the "accuracy given all the evidence fell" reading is withdrawn. `embed_answers.py` and the
+bake-off numbers (which use k=8) are unaffected.
 
 **Not measured:** embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
 rows are pooled over rankers and window counts and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
@@ -1260,3 +1253,47 @@ Message [claude-code-b5f1e85a-fd94-4177-9142-7b6575aefafe] {"role": "assistant",
 | 4 | `commonmemo.instrument(memory)`, then `ClaudeAgentOptions()` with no store: the default is ours and a run lands in the Log | pass |
 
 Cost: about $0.01 in total. Not run: OpenAI Agents, LangGraph, AutoGen and ADK, which need a model API key this environment does not have. Reproduce with `python scripts/live_adapters.py [1 2 3 4]`.
+
+## 2026-11-02: Multi-hop with extracted facts and a wiki ([#132](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/132), [#133](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/133))
+
+Does giving the answerer extracted facts (instead of, or beside, raw windows) lift multi-hop accuracy? 119 multi-hop
+questions over the ten LoCoMo conversations, the same questions as above. `scripts/multihop_wiki.py` extracts atomic
+facts per session (Haiku, 272 sessions, 7,502 facts, $0.76), then answers under each condition. Haiku answers and
+grades; $4.82 for 1,904 calls. Windows are pasted into the prompt (no tool calls), so these are context-size comparisons,
+not the shipped memory path.
+
+| Condition | Correct | Mean prompt chars | vs windows-8 (only / only, p) |
+|---|---|---|---|
+| windows-8 (keyword) | 44/119 | 8,475 | |
+| windows-24 (keyword) | 59/119 | 23,648 | +15 (22 / 7, p = 0.008) |
+| wiki-mech (40 best turns by keyword, grouped by session) | 42/119 | 8,100 | -2 (14 / 16, p = 0.86) |
+| facts-top-60 (60 best facts by keyword) | 46/119 | 5,187 | +2 (22 / 20, p = 0.88) |
+| facts-top-150 | 55/119 | 12,379 | +11 (24 / 13, p = 0.10) |
+| facts-flat (all of the conversation's facts) | 61/119 | 60,521 | +17 (29 / 12, p = 0.012) |
+| wiki-llm (the same facts as per-person pages) | 59/119 | 55,869 | +15 (27 / 12, p = 0.024) |
+| facts + 8 windows | 67/119 | 68,693 | +23 (35 / 12, p = 0.001) |
+
+Pairwise: facts-flat vs windows-24 22 / 20 (p = 0.88); facts + windows vs windows-24 24 / 16 (p = 0.27); wiki-llm vs
+facts-flat 13 / 15 (p = 0.85); facts-top-150 vs windows-24 16 / 20 (p = 0.62).
+
+**What this says**
+
+- The main lever is how much evidence the answerer sees. Going from 8 to 24 windows (2.8 times the prompt) is +15, as
+  large as handing over every extracted fact (+17, 7 times the prompt). Facts-flat and windows-24 are statistically
+  indistinguishable. This also explains most of the gap to the shipped path (61/119 with Haiku, which sees 8 pushed plus
+  8 recalled windows and can recall again): it sees more than 8.
+- Extraction adds something on top, not instead: facts + windows is best (67) but is not significantly better than
+  windows-24 (p = 0.27) at 2.9 times its prompt. Not shown to be worth a model call per session.
+- The wiki layout does not help. Per-person pages (59) are no better than the flat list (61). Mechanical wiki 42, no better
+  than 8 windows. As a recall path the wiki is not supported; it stays a browsing export (#133).
+- A retrieval-sized fact list is promising, not proven: 150 facts at 12k characters scores 55 (+11 over windows-8, p = 0.10)
+  but does not beat windows-24, and 60 facts scores 46.
+- Sonnet answering a 37-question subset (the run hit its $14 cap: Sonnet cost about $0.03 per call with these prompts)
+  gave the same order: windows-8 14, windows-24 21, wiki-mech 19, facts-flat 29, wiki-llm 25, facts + windows 27. The
+  subset is the first questions in file order, not a random sample.
+
+**Caveats:** one run per condition, no repeats; the pasted-prompt harness differs from the real memory path; a larger
+prompt costs more on every turn (windows-24 is about 3 times the context of windows-8); keyword ranking only for the
+top-N conditions.
+
+Rerun: `python scripts/multihop_wiki.py --rankings rankings.json --model haiku --extract-model haiku --budget 8`.
