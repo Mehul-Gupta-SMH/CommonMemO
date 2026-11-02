@@ -5,6 +5,31 @@ uses a scripted agent. These runs use a real one: the latest is a LoCoMo
 benchmark of memory against no memory and the whole conversation, the earlier
 one a set of scenarios through the hooks and MCP.
 
+## 2026-11-02: Embedder bake-off, answers ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
+
+Do the better windows give better answers? The rankings from the CI run above (keyword, potion-base-32M +
+keyword, all-MiniLM-L6-v2 + keyword) were answered and graded locally by `scripts/embed_answers.py`: Haiku
+answers from the 8 windows, Haiku grades against the gold answer. 12 questions a category (seed 7), 442
+questions with evidence, the same questions for every ranker. $2.77, 2652 Claude calls.
+
+| Ranker | Correct | multi-hop | temporal | open-domain | single-hop | vs keyword (only / only, p) |
+|---|---|---|---|---|---|---|
+| keyword | 241/442 | 44/119 | 70/119 | 36/84 | 91/120 | |
+| potion-base-32M + keyword | 254/442 | 42/119 | 75/119 | 39/84 | 98/120 | +13 (45 / 32, p = 0.17) |
+| all-MiniLM-L6-v2 + keyword | 258/442 | 49/119 | 75/119 | 38/84 | 96/120 | +17 (45 / 28, p = 0.06) |
+
+**What this says**
+
+- Both hybrids answer more questions than keyword, +13 and +17, over the +11 bar on the point estimate.
+- Neither gain is statistically significant on this sample (p = 0.17 and 0.06). Retrieval gains were significant; answers are not.
+- MiniLM clears the 5-point retrieval bar narrowly (+5.4); potion-32M does not (+4.7). MiniLM costs 100 times more per window and needs fastembed/ONNX.
+- Decision (ADR 0005): opt-in with potion-base-32M; keyword stays the default.
+
+**Caveats:** one sample of questions, Haiku is both answerer and grader, the 0.5 hybrid weight is untuned, English only.
+
+Rerun: download or regenerate `bakeoff-rankings.json` (workflow prints it between `RANKINGS-BEGIN` and `RANKINGS-END`), then
+`python scripts/embed_answers.py --rankings bakeoff-rankings.json --model haiku --judge-model haiku` (needs the Claude CLI).
+
 ## 2026-11-01: Embedder bake-off, retrieval only ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [ADR 0005](adr/0005-local-embeddings.md))
 
 Does a very small local embedder find the evidence better than keyword ranking? Four models,
@@ -45,7 +70,7 @@ Cost on the runner (load, per window embedded, per question):
 
 - An embedder on its own is worse than keyword ranking, by 12 to 20 points. Any embedder has to be a hybrid.
 - The hybrids add 4.2 to 5.4 points of all-evidence recall, with about three questions won for every one lost against keyword. The temporal and single-hop categories gain; multi-hop gains only with MiniLM and bge.
-- ADR 0005's bar for a default is at least 5 points **and** 11 more correct answers of 450. MiniLM and bge clear the first narrowly (+5.4 and +5.3); the potion models are under it (+4.2 and +4.7). The answer step has not been run.
+- ADR 0005's bar for a default is at least 5 points **and** 11 more correct answers of 450. MiniLM and bge clear the first narrowly (+5.4 and +5.3); the potion models are under it (+4.2 and +4.7). The answer step is in the next section up.
 - The potion models are about 100 times cheaper than MiniLM and 400 times cheaper than bge-small, and need only numpy.
 
 **Not measured:** answers (retrieval recall does not guarantee them), the hybrid weight, other languages (LoCoMo is English), cost on a laptop rather than a 2-vCPU runner, and the saved top-8 windows exist only for the best ranker in `bakeoff.json`.
