@@ -1322,3 +1322,17 @@ Paired sign test against 8 windows: 16 windows +43/-36 overall (p = 0.50); 24 wi
 
 Rerun: `python scripts/locomo_benchmark.py --conversation N --per-category 12 --conditions said,said-16,said-24 --model haiku`
 for N = 0 to 9.
+
+## 2026-11-02: Does a hypothetical answer find more evidence? (#138)
+
+HyDE: Haiku writes a one- or two-sentence plausible answer from the question alone, and the windows are ranked on the question, the hypothesis, or both. Retrieval only (`scripts/hyde_retrieval.py`): 1,531 evidence-labelled LoCoMo questions, all ten conversations, keyword ranking, windows of 6 turns. Cost $1.03 (1,531 Haiku calls). Share of questions with all their evidence in the top k windows:
+
+| k | question (baseline) | hypothesis only | question + hypothesis | q+h vs q (+/-, sign test) |
+|---|---|---|---|---|
+| 8 | 70.7% | 51.3% | 59.5% | +80/-251, p<0.001 |
+| 16 | 77.7% | 65.1% | 70.9% | +87/-192, p<0.001 |
+| 24 | 82.5% | 74.1% | 78.7% | +83/-141, p<0.001 |
+
+By category at k=8, question vs question + hypothesis: multi-hop 27.8% vs 19.9% (p=0.012), temporal 78.4% vs 65.6%, single-hop 86.1% vs 73.2%, open-domain 32.6% vs 32.6%. Multi-hop at k=24 is the closest (50.9% vs 48.0%, p=0.445). No cell beats the baseline significantly.
+
+**Verdict:** a hypothesis hurts keyword retrieval everywhere it is measurable: invented specifics dilute the question's own words, and a guess from the question alone cannot name what the conversation actually said. The 5-point bar for an answer run is not met (it is 11 points the wrong way), so no answer run was made and HyDE is not added.
