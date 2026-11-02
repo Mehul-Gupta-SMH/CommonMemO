@@ -35,11 +35,25 @@ Answers correct by how much of the evidence the answerer saw:
 - Multi-hop is mostly a retrieval problem. A multi-hop question needs 2.9 windows on average (97% need more than one),
   and the top 8 hold all of them for 28%. When the answerer sees all the evidence it is right 73% of the time, close to
   single-hop's 86%; with only some of it, 29%. Of 357 multi-hop answers, 216 had partial evidence.
-- A larger k helps multi-hop: +14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt. Single-hop and
-  temporal gain little (+5 to +11), so an adaptive k (more windows when the question needs several pieces) is the thing to try.
+- A larger k raises multi-hop retrieval (+14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt), but
+  it did not raise answers (below): Haiku with 24 windows got 43/119 against 44/119 with 8.
 - Embedders barely help here (potion-32M 28%, MiniLM 31% at k=8), so ranking is not the fix; coverage is.
 
-**Not measured:** answers at a larger k (the retrieval sweep only says the evidence is there; more text can also distract the
+**Answers at a larger k (run 2026-11-02, Haiku answers and grades, 119 multi-hop questions, $0.47):**
+
+| Windows | Correct | vs 8 windows (only / only, p) | Had all the evidence | Correct when it had all |
+|---|---|---|---|---|
+| 8 (keyword) | 44/119 | | 25 | 20 (80%) |
+| 16 | 42/119 | -2 (6 / 8, p = 0.79) | 47 | 24 (51%) |
+| 24 | 43/119 | -1 (6 / 7, p = 1.00) | 61 | 27 (44%) |
+
+More windows put all the evidence in front of the answerer for 2.4 times as many questions (25 to 61) and answers did not
+improve. Accuracy given all the evidence fell from 80% to 44%. The extra questions that reach "all evidence" at a larger
+k are harder ones (they needed more windows), so this is partly a selection effect, but the net result is flat: 2.8 times
+the prompt for no gain. The retrieval sweep above overstates what a bigger k buys. (Pooled "all / some / none" table, now
+including these runs: multi-hop 59% / 28% / 18%.)
+
+**Not measured:** embedder only says the evidence is there; more text can also distract the
 answerer), embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
 rows are pooled over three rankers and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
 
