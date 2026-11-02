@@ -1298,3 +1298,27 @@ prompt costs more on every turn (windows-24 is about 3 times the context of wind
 top-N conditions.
 
 Rerun: `python scripts/multihop_wiki.py --rankings rankings.json --model haiku --extract-model haiku --budget 8`.
+
+## 2026-11-02: A larger default number of windows on the real memory path (#135)
+
+`said` (8 windows pushed, 8 returned by `memory_recall`, the shipped default) against `said-16` and `said-24` (the same
+with 16 and 24), through the hooks and the MCP tools. All ten LoCoMo conversations, 450 questions, 12 per category,
+seed 7, disguised, extraction off. Haiku answers and grades. $4.12 for 1,350 answers and their grades.
+
+| Condition | Correct | Multi-hop | Temporal | Open-domain | Single-hop | $/question | Recalls/question |
+|---|---|---|---|---|---|---|---|
+| 8 windows (default) | 274/450 | 55/119 | 75/120 | 46/91 | 98/120 | 0.0020 | 0.96 |
+| 16 windows | 281/450 | 56/119 | 76/120 | 46/91 | 103/120 | 0.0024 | 0.91 |
+| 24 windows | 290/450 | 60/119 | 79/120 | 51/91 | 100/120 | 0.0029 | 0.90 |
+
+Paired sign test against 8 windows: 16 windows +43/-36 overall (p = 0.50); 24 windows +53/-37 (p = 0.11), multi-hop
++20/-15 (p = 0.50), temporal +14/-10, open-domain +10/-5, single-hop +9/-7. No category is significant.
+
+- 24 windows is ahead in every category and behind in none, but +16 of 450 (3.6 points) is not statistically solid.
+- The multi-hop gain seen with pasted prompts (59 against 44) mostly does not carry over: through the memory path the
+  model already re-searches about 0.9 times a question, so a larger push adds little for multi-hop (60 against 55).
+- 24 windows costs about 45% more per question ($0.0009).
+- **No change to the default.** A second seed or a larger sample would settle whether 24 is worth it.
+
+Rerun: `python scripts/locomo_benchmark.py --conversation N --per-category 12 --conditions said,said-16,said-24 --model haiku`
+for N = 0 to 9.
