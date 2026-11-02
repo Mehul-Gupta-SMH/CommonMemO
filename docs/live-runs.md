@@ -35,8 +35,9 @@ Answers correct by how much of the evidence the answerer saw:
 - Multi-hop is mostly a retrieval problem. A multi-hop question needs 2.9 windows on average (97% need more than one),
   and the top 8 hold all of them for 28%. When the answerer sees all the evidence it is right 73% of the time, close to
   single-hop's 86%; with only some of it, 29%. Of 357 multi-hop answers, 216 had partial evidence.
-- A larger k raises multi-hop retrieval (+14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt), but
-  it did not raise answers (below): Haiku with 24 windows got 43/119 against 44/119 with 8.
+- A larger k raises multi-hop retrieval (+14 points at 16 windows, +23 at 24, +27 at 32, at 2 to 4 times the prompt), and
+  it does raise answers: Haiku with 24 windows got 59/119 against 44/119 with 8 (see the facts-and-wiki section below; an
+  earlier 43/119 here was a harness bug, explained under "retracted").
 - Embedders barely help here (potion-32M 28%, MiniLM 31% at k=8), so ranking is not the fix; coverage is.
 
 **Answers at a larger k: retracted.** An earlier version of this section reported 42/119 at 16 windows and 43/119 at 24
