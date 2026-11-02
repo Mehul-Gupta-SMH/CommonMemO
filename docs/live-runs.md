@@ -53,9 +53,8 @@ k are harder ones (they needed more windows), so this is partly a selection effe
 the prompt for no gain. The retrieval sweep above overstates what a bigger k buys. (Pooled "all / some / none" table, now
 including these runs: multi-hop 59% / 28% / 18%.)
 
-**Not measured:** embedder only says the evidence is there; more text can also distract the
-answerer), embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
-rows are pooled over three rankers and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
+**Not measured:** embedder rankings at larger k, and any way to tell which questions need more windows. The "all / some / none"
+rows are pooled over rankers and window counts and are not a randomised comparison (questions whose evidence is easy to find are easy to answer).
 
 Rerun: `python scripts/multihop_diagnose.py --answers answers.jsonl` (the answers file from `embed_answers.py`).
 
