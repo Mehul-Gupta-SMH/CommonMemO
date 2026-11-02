@@ -72,16 +72,20 @@ CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "common
 USER = "locomo"
 CATEGORIES = {1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop"}
 CONDITIONS = ("none", "rag", "memory", "extracted", "said", "both", "full")
+WIDER = ("said-16", "said-24")
+"""`said` with 16 or 24 windows pushed and 16 or 24 returned by `memory_recall` instead of 8 (#135). Run on their own."""
 DATED = ("dated-off", "dated-stamp", "dated-resolve")
 """Message windows over a store whose messages carry the session's own date, with no date written into the
 text (#71): windows that say the day only, that stamp each message, that also resolve relative dates."""
 STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "both": "extracted",
+            **{c: "memory" for c in WIDER},
             **{c: "dated" for c in DATED}}
 """Which ingested store each memory condition reads; `said` and `both` add the user's past messages (#62)."""
 SAID_FLAGS = ["--messages", "8", "--recall-messages", "8"]
 NO_WINDOWS = ["--messages", "0", "--recall-messages", "0"]
 """Windows are on by default since #70; `memory` and `extracted` are the conditions without them."""
-FLAGS_OF = {"memory": NO_WINDOWS, "extracted": NO_WINDOWS, "said": SAID_FLAGS, "both": SAID_FLAGS, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
+FLAGS_OF = {"memory": NO_WINDOWS, "extracted": NO_WINDOWS, "said": SAID_FLAGS, "both": SAID_FLAGS,
+            **{c: ["--messages", c.split("-")[1], "--recall-messages", c.split("-")[1]] for c in WIDER}, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
 RAG_WINDOW, RAG_TOP = 6, 8
 """The simple alternative a developer would build: windows of 6 turns, the 8 best against the question."""
 CALL_BUDGET = "0.60"
@@ -335,7 +339,7 @@ def main() -> int:
     args = p.parse_args()
 
     conditions = [c for c in args.conditions.split(",") if c]
-    bad = set(conditions) - set(CONDITIONS) - set(DATED)
+    bad = set(conditions) - set(CONDITIONS) - set(DATED) - set(WIDER)
     if bad:
         p.error(f"unknown conditions {sorted(bad)}")
     data = load_data(args.data)
