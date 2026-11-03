@@ -340,9 +340,9 @@ it took memory from 18% to 61% correct on LoCoMo, below). It puts the user's own
 words, not a summary, into the prompt, so it is the one default you may want to turn off:
 
 ```python
-mem = Memory()  # messages=8, recall_messages=8
-# the turn's push gets the 8 windows of past messages the request is about, and
-# memory_recall returns 8 more: "[said] [session s1, 2026-10-24]  user: The guest room key is under the blue pot..."
+mem = Memory()  # messages=24, recall_messages=24
+# the turn's push gets the 24 windows of past messages the request is about, and
+# memory_recall returns 24 more: "[said] [session s1, 2026-10-24]  user: The guest room key is under the blue pot..."
 mem = Memory(policy=MemoryPolicy(messages=0, recall_messages=0))  # neither pushed nor recalled
 ```
 
@@ -660,7 +660,7 @@ everything, about $10.5 in all.
 | memory with recaps and facts only (`messages=0`, how it shipped before #70) | 39/222 | 32/228 | 71/450 (16%) | 0.0015 |
 | naive retrieval over the raw transcript (8 excerpts by shared words) | 118/222 | 109/228 | 227/450 (50%) | 0.0018 |
 | memory with `ModelExtractor` (facts extracted as sessions close) | 116/222 | 149/228 | 265/450 (59%) | 0.0029 |
-| memory that searches what was said (`messages=8, recall_messages=8`, now the default) | 136/222 | 140/228 | 276/450 (61%) | 0.0020 |
+| memory that searches what was said (`messages=8, recall_messages=8`, the default until #139) | 136/222 | 140/228 | 276/450 (61%) | 0.0020 |
 | both of those | **143/222** | **151/228** | **294/450 (65%)** | 0.0031 |
 | the whole conversation in the prompt | 113/222 | 115/228 | 228/450 (51%) | 0.0103 |
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Default change:** `MemoryPolicy(messages=24, recall_messages=24)`, was 8 and 8 (#139, from #135 and #137). On 900 LoCoMo questions with Haiku, 24 windows answered 571 correctly vs 535 for 8 (+108/-72, p=0.009), at about 45% more cost per question ($0.0020 to $0.0029). `MemoryPolicy(messages=8, recall_messages=8)` restores the old behaviour.
 - `commonmemo[embed]` (#129, ADR 0005): `commonmemo.embed.local_ranker()` is a `HybridRanker` (half shared words, half cosine) over the local Model2Vec model `potion-base-32M`, lazily imported, opt-in; windows keep their stored vectors. The model's revision and checksum are filled in by `.github/workflows/embed-pin.yml` before weights can be loaded.
 
 ## 0.0.2 — 2026-10-31
