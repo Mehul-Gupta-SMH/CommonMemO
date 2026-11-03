@@ -35,6 +35,11 @@ dependencies = []
 dev = [
     "pytest",
 ]
+# A small local embedder for meaning-based recall (#129, ADR 0005): `from commonmemo.embed import local_ranker`.
+embed = [
+    "model2vec>=0.6",
+    "numpy",
+]
 commonadk = [
     "commonadk>=0.0.2",
 ]

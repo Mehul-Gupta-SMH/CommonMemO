@@ -30,7 +30,7 @@ def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
-WINDOWS = "8"
+WINDOWS = "24"
 """`MemoryPolicy.messages` and `recall_messages`, as the option default (a test keeps them equal)."""
 
 

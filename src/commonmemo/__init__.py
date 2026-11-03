@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     )
     from .environment import EnvironmentResult
     from .facts import FactKey
-    from .ranking import EmbeddingRanker, KeywordRanker
+    from .ranking import EmbeddingRanker, HybridRanker, KeywordRanker
     from .history import Diff, History, MemoryView
     from .extraction import ExtractedFact, Extractor, ModelExtractor
     from .learning import Learner, ModelLearner
@@ -74,6 +74,7 @@ _EXPORTS = {
     "EnvironmentResult": ".environment",
     "FactKey": ".facts",
     "EmbeddingRanker": ".ranking",
+    "HybridRanker": ".ranking",
     "KeywordRanker": ".ranking",
     "Diff": ".history",
     "History": ".history",
@@ -132,6 +133,7 @@ __all__ = [
     "EnvironmentResult",
     "FactKey",
     "EmbeddingRanker",
+    "HybridRanker",
     "KeywordRanker",
     "WorldFact",
     "Feedback",

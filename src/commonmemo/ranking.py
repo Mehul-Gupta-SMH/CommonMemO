@@ -110,6 +110,26 @@ class EmbeddingRanker:
         return [max(0.0, cosine(q, v)) for v in rest]
 
 
+class HybridRanker(EmbeddingRanker):
+    """Meaning and shared words together (ADR 0005, #129): half the cosine, half the keyword score
+    divided by the best keyword score among the texts ranked. On LoCoMo this found 4 to 5 points more of
+    the evidence than either alone. It is an `EmbeddingRanker`, so windows keep their stored vectors;
+    their text is read only to count shared words."""
+
+    def __init__(self, embed: Embedder, *, threshold: float = 0.1, cache_size: int = 4096) -> None:
+        super().__init__(embed, threshold=threshold, cache_size=cache_size)
+
+    @staticmethod
+    def blend(query: str, texts: Sequence[str], cosines: Sequence[float]) -> list[float]:
+        wanted = terms(query)
+        shared = [len(wanted & terms(t)) / len(wanted) if wanted else 0.0 for t in texts]
+        top = max(shared, default=0.0)
+        return [0.5 * (k / top if top else 0.0) + 0.5 * c for k, c in zip(shared, cosines)]
+
+    async def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        return self.blend(query, texts, await super().score(query, texts))
+
+
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
@@ -141,4 +161,4 @@ async def rank(ranker: Ranker, query: Optional[str], items: Sequence[Any], text:
     return related, [i for i in items if id(i) not in chosen]
 
 
-__all__ = ["Embedder", "EmbeddingRanker", "KeywordRanker", "Ranker", "rank", "sync_embedder", "terms"]
+__all__ = ["Embedder", "EmbeddingRanker", "HybridRanker", "KeywordRanker", "Ranker", "rank", "sync_embedder", "terms"]

@@ -6,12 +6,12 @@ raw transcript that share the most words with a question was as good as
 extracted facts, and much better than the recaps alone; each found questions
 the other missed. So memory can also search the messages themselves:
 
-    mem = Memory(policy=MemoryPolicy(messages=4, recall_messages=6))  # the defaults are 8 and 8
+    mem = Memory(policy=MemoryPolicy(messages=4, recall_messages=6))  # the defaults are 24 and 24
 
 - `messages`: windows pushed with the turn (the request is the query);
 - `recall_messages`: windows `memory_recall` returns.
 
-Both default to 8 (#70): the benchmark says they are worth having, and a
+Both default to 24 (#70, #139; 8 before): the benchmark says they are worth having, and a
 search no longer slows with history. This puts a user's own past words into
 the prompt, which recaps and facts do not: `MemoryPolicy(messages=0,
 recall_messages=0)` (`--messages 0 --recall-messages 0`) turns it off.
@@ -62,7 +62,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
 from .dates import annotate, stamp
-from .ranking import EmbeddingRanker, KeywordRanker, cosine, terms
+from .ranking import EmbeddingRanker, HybridRanker, KeywordRanker, cosine, terms
 
 if TYPE_CHECKING:
     from .memory import Memory
@@ -206,6 +206,11 @@ async def _by_meaning(memory: "Memory", query: str, rows: list, *, user_id: str,
         have.update({wid: list(v) for wid, _, v in fresh})
     scored = [r for r in rows if r["wid"] in have]
     scores = _cosines(q, [have[r["wid"]] for r in scored])
+    if isinstance(ranker, HybridRanker) and scored:  # shared words count too: read the text to count them
+        said = {w.window: w.said for w in _windows(memory, scored, user_id=user_id)}
+        keep = [i for i, r in enumerate(scored) if r["id"] in said]
+        scored = [scored[i] for i in keep]
+        scores = ranker.blend(query, [said[r["id"]] for r in scored], [scores[i] for i in keep])
     ranked = sorted(((s, r) for s, r in zip(scores, scored) if s >= bar), key=lambda t: (-t[0], -t[1]["first_ts"], t[1]["id"]))
     shown = _windows(memory, [r for _, r in ranked[:limit]], user_id=user_id, dates=dates)
     score_of = {r["id"]: s for s, r in ranked[:limit]}

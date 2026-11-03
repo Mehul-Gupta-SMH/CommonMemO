@@ -171,7 +171,7 @@ def test_the_hooks_push_them_and_the_setup_carries_the_flags():
     command = hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "--messages 4" in command and "--recall-messages 6" in command
     # the default needs no flag; turning them off does
-    args.messages, args.recall_messages = 8, 0
+    args.messages, args.recall_messages = 24, 0
     command = hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "--messages" not in command and "--recall-messages 0" in command
 
