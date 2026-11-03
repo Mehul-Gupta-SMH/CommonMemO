@@ -23,9 +23,9 @@ from typing import Any, Optional
 from .ranking import HybridRanker, sync_embedder
 
 MODEL = "minishlab/potion-base-32M"
-REVISION = ""
-"""The commit of `MODEL` the checksum is for. Empty until pinned (`.github/workflows/embed-pin.yml` prints both)."""
-SHA256 = ""
+REVISION = "1e5a03f8eeb2c98b928fbbd846f22f816360919f"
+"""The commit of `MODEL` the checksum is for. Pinned by `.github/workflows/embed-pin.yml`, which prints both."""
+SHA256 = "99f6c33204c9231a7391871b7a3c91409b532c8f587a9ea44fc282303d8dec28"
 """SHA-256 of `model.safetensors` at `REVISION`."""
 
 

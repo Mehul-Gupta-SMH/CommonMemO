@@ -55,10 +55,13 @@ def test_local_ranker_with_a_given_model_needs_no_extra_or_network():
     assert asyncio.run(ranker.score("my sibling", ["my sister"]))[0] > 0.5
 
 
-def test_unpinned_build_refuses_to_load_weights(monkeypatch):
-    monkeypatch.setattr(embed_mod, "REVISION", "")
+def test_unpinned_build_refuses_to_load_weights():
     with pytest.raises(embed_mod.EmbedUnavailable, match="not pinned"):
-        embed_mod.load()
+        embed_mod.load(revision="", sha256="")
+
+
+def test_the_build_is_pinned():
+    assert len(embed_mod.REVISION) == 40 and len(embed_mod.SHA256) == 64
 
 
 def test_missing_extra_and_missing_weights_fail_with_a_message(tmp_path):
@@ -73,8 +76,8 @@ def test_a_checksum_mismatch_fails(tmp_path, monkeypatch):
         embed_mod.load(str(tmp_path), revision="r", sha256="0" * 64)
 
 
-@pytest.mark.skipif(not embed_mod.SHA256, reason="needs the pinned weights (commonmemo[embed] and network)")
 def test_real_weights_load_and_rank():
+    pytest.importorskip("model2vec")  # needs commonmemo[embed] and network (the embed-pin workflow runs it)
     ranker = embed_mod.local_ranker()
     s = asyncio.run(ranker.score("my brother is visiting", ["my sibling arrives Friday", "the dentist on Tuesday"]))
     assert s[0] > s[1]
