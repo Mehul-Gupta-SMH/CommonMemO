@@ -1350,3 +1350,24 @@ The same sweep as #135 with a different question sample (`--seed 8`, 12 per cate
 Pooled by category, 24 vs 8: multi-hop 117 vs 102 (+43/-28, p=0.10), temporal 156 vs 147 (+28/-19), open-domain 102 vs 97 (+17/-12), single-hop 196 vs 189 (+20/-13). No category is worse, none is significant alone. Cost per question $0.0020 (8) vs $0.0029 (24), about 45% more; 0.97 vs 0.90 recalls a question.
 
 **Verdict:** the pre-set rule (pooled p<0.05 and no category worse) is met, so 24 windows is proposed as the default, at the cost above. Caveats: the two samples were drawn separately from the same ten conversations and may share some questions, so the pooled test is a little optimistic; the gain is 4 points of answers, and the run is Haiku only. The default has not been changed; that is the owner's call.
+
+## 2026-11-05: Entity and alias expansion for retrieval ([#146](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/146), Part A)
+
+Once per conversation Haiku listed the 50 to 200 most frequent entities with every other name the conversation uses for them (53 to 113 entities each, ten calls, $0.16 in all, `scripts/alias_retrieval.py`). At query time no model is called: an entity named in the question brings its other names. Retrieval only, no answer run: 1,531 evidence-labelled LoCoMo questions, keyword ranking, windows of 6 turns. Share of questions with all their evidence in the top k windows.
+
+Two ways of using the aliases, in the order they were tried:
+
+1. **Add the aliases to the query** (as written in #146). 1,528 of 1,531 questions were expanded, because the speakers' own names are entities, and the extra words dilute the query: k=8 all 70.7% to 68.1% (+37/-76, p<0.001), multi-hop 27.8% to 25.3% (p=0.27). Worse.
+2. **Alias bonus** (chosen after seeing 1, so it is a second look at the same data, not a pre-registered test): skip the two speakers and any entity named in more than 10% of the conversation's questions, and add half the keyword score of the aliases alone to the question's own score. The 0.5 weight and the 10% cut were set once, not tuned.
+
+| k | category | n | question | alias bonus | change (+/-, sign test) |
+|---|---|---|---|---|---|
+| 8 | all | 1531 | 70.7% | 72.6% | +45/-15, p<0.001 |
+| 8 | multi-hop | 281 | 27.8% | 28.8% | +10/-7, p=0.63 |
+| 16 | all | 1531 | 77.7% | 79.9% | +42/-8, p<0.001 |
+| 16 | multi-hop | 281 | 42.0% | 45.2% | +12/-3, p=0.035 |
+| 24 | all | 1531 | 82.5% | 84.2% | +36/-10, p<0.001 |
+| 24 | multi-hop | 281 | 50.9% | 54.4% | +12/-2, p=0.013 |
+| 24 | single-hop | 841 | 93.7% | 95.0% | +15/-4, p=0.019 |
+
+**Verdict:** mixed, and not enough to ship. The issue's bar is +3 points of multi-hop all-evidence recall. The bonus clears it at k=16 (+3.2) and k=24 (+3.5, the default) but not at k=8 (+1.0, not significant); no category is significantly worse anywhere. Against that: the form that was specified is clearly harmful; the working form was found after looking at the results; the entity list was built from the whole conversation (a real memory would build it from history, once, which is a per-user model cost); and no answer run says the extra recall turns into correct answers (earlier recall gains of this size, #66, did not). Not added. If it is pursued, the next step is a pre-set run on a fresh question sample with answers (about $3 to $4), and Part B on crawled documents once #143 exists, where vocabulary mismatch is likelier than in chat.

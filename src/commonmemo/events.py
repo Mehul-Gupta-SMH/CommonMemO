@@ -366,6 +366,25 @@ class UsersUnlinked(MemoryEvent):
     link_id: str
 
 
+class PassageAdded(MemoryEvent):
+    """A chunk of a source document in an organisation's scope (ADR 0006): `text` as read from
+    `source` at `location`, with the hash of the chunk. Searched like message windows; never asserted
+    as a fact. Ends with `PassageRetracted(passage_id=<this id>)`."""
+
+    scope: str
+    source: str
+    location: str = ""
+    content_hash: str
+    text: str
+
+
+class PassageRetracted(MemoryEvent):
+    """The passage is no longer current: its source changed or went away. The event stays in the Log."""
+
+    passage_id: str
+    reason: Optional[str] = None
+
+
 class ProcedureEntry(MemoryEvent):
     """How a type of task is done (ADR 0003): one `template` (the shape of a
     good result), `rule` (a constraint it must follow), `procedure` (the
@@ -478,6 +497,8 @@ BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
     WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze, UsersLinked,
     UsersUnlinked,
+    PassageAdded,
+    PassageRetracted,
     ProcedureEntry, ProcedureConfirmed, ProcedureRejected, ProcedureRetired, ProcedureFollowed,
     DecisionRecorded, LessonLearned,
 )
@@ -522,6 +543,8 @@ __all__ = [
     "Unfreeze",
     "UsersLinked",
     "UsersUnlinked",
+    "PassageAdded",
+    "PassageRetracted",
     "Feedback",
     "Negative",
     "NegativeRevoked",

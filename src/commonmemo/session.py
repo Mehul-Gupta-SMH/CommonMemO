@@ -343,6 +343,8 @@ class Session:
     def scopes(self) -> list[str]:
         """The scopes this session can see, broadest first."""
         out = ["global"]
+        if self.memory.org:
+            out.append(self.memory.org_scope)
         if self.memory.project:
             out.append(self.memory.project_scope)
         if self.agent:

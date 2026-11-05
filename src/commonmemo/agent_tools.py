@@ -65,7 +65,7 @@ def recall_entries(session: "Session", query: str) -> tuple[list[tuple[str, str]
         world=related([*ctx.world, *ctx.world_turn], memory._world_text),
         lessons=related(ctx.lessons, lambda item: item.line()),
         learned=related(ctx.learned, lambda x: x.text),
-        recaps=ctx.recaps, said=ctx.said, policy=memory.policy, agent=session.agent,
+        recaps=ctx.recaps, said=ctx.said, passages=ctx.passages, policy=memory.policy, agent=session.agent,
     )
     decisions = (related(memory.decisions(user_id=session.user_id)[:50],
                          lambda d: f"{d.goal} {d.chosen} {d.outcome}")[:5] if session.user_id is not None else [])
@@ -77,6 +77,7 @@ def recall_entries(session: "Session", query: str) -> tuple[list[tuple[str, str]
     lines += [("decision", d.line()) for d in decisions]
     lines += [("past session", ctx.recap_line(e)) for e in found.recaps]
     lines += [("said", w.line()) for w in found.said]
+    lines += [("org document", p.line()) for p in found.passages]
     return lines, found, decisions
 
 
