@@ -444,8 +444,23 @@ class Projections(ABC):
 
     @abstractmethod
     def prune_windows(self, store: Store) -> int:
-        """Drop windows whose messages `prune` has removed from the Log, so their terms don't outlive
-        the text. Returns windows dropped."""
+        """Drop windows and passages whose events `prune` has removed from the Log, so their terms don't
+        outlive the text. Returns how many were dropped."""
+
+    # -- passages (passages.py, ADR 0006) ----------------------------
+
+    @abstractmethod
+    def passage_sources(self, scope: str, source: Optional[str] = None) -> list[Row]:
+        """Live passages of `scope` (of one `source`, or all): `id, source, location, content_hash, ts`, oldest first."""
+
+    @abstractmethod
+    def passage_candidates(self, scopes: Sequence[str], query_terms: Sequence[str], *, limit: int = 300) -> list[Row]:
+        """Live passages in `scopes` sharing terms with a query, most shared first, then newest:
+        `id, scope, source, location, ts, hits`. A passage's id is the id of its `PassageAdded` event."""
+
+    @abstractmethod
+    def recent_passages(self, scopes: Sequence[str], *, limit: int = 400) -> list[Row]:
+        """The newest live passages in `scopes`: `id, scope, source, location, ts`."""
 
 
 class InterfaceOnly:

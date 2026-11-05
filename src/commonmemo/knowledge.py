@@ -50,6 +50,8 @@ from .events import (
     Unfreeze,
     UsersLinked,
     UsersUnlinked,
+    PassageAdded,
+    PassageRetracted,
     WorldFact,
     WorldFactConfirmed,
     WorldFactRejected,
@@ -190,6 +192,15 @@ CREATE TABLE IF NOT EXISTS window_terms (
 CREATE TABLE IF NOT EXISTS window_vectors (
     wid INTEGER PRIMARY KEY, redaction TEXT NOT NULL, vec BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS passages (
+    id TEXT PRIMARY KEY, scope TEXT NOT NULL, source TEXT NOT NULL, location TEXT NOT NULL,
+    content_hash TEXT NOT NULL, ts REAL NOT NULL, live INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS passages_source ON passages (scope, source, live);
+CREATE TABLE IF NOT EXISTS passage_terms (
+    scope TEXT NOT NULL, term TEXT NOT NULL, pid TEXT NOT NULL,
+    PRIMARY KEY (scope, term, pid)
+);
 CREATE TABLE IF NOT EXISTS vector_probe (
     id INTEGER PRIMARY KEY, vec BLOB NOT NULL
 );
@@ -198,14 +209,14 @@ CREATE TABLE IF NOT EXISTS knowledge_meta (
 );
 """
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 """Bumped whenever a projection table changes shape. Projections are derived
 from the log, so a file with another version drops them and rebuilds."""
 
 _TABLES = ["tool_stats", "tool_errors", "tool_last", "world_facts", "feedback",
            "negatives", "tombstones", "checkpoints", "steps", "freezes", "user_links", "procedures", "procedure_runs",
            "decisions", "lessons_learned", "message_windows", "window_users", "window_terms",
-           "window_vectors", "vector_probe"]
+           "window_vectors", "vector_probe", "passages", "passage_terms"]
 
 
 def _world_record(r: Row) -> WorldRecord:
@@ -386,6 +397,52 @@ class Knowledge(Projections):
         c.executemany("INSERT INTO window_terms VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                       [(uid, t, wid) for t in sorted(terms(line))])
 
+    def _passage_added(self, e: PassageAdded) -> None:
+        if self._conn.execute("SELECT 1 FROM passages WHERE id = ?", (e.id,)).fetchone():
+            return
+        self._conn.execute("INSERT INTO passages VALUES (?, ?, ?, ?, ?, ?, 1)",
+                           (e.id, e.scope, e.source, e.location, e.content_hash, e.ts))
+        self._conn.executemany("INSERT INTO passage_terms VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                               [(e.scope, t, e.id) for t in sorted(terms(e.text))])
+
+    def _passage_retracted(self, e: PassageRetracted) -> None:
+        self._conn.execute("UPDATE passages SET live = 0 WHERE id = ?", (e.passage_id,))
+        self._conn.execute("DELETE FROM passage_terms WHERE pid = ?", (e.passage_id,))
+
+    def passage_sources(self, scope: str, source: Optional[str] = None) -> list[Row]:
+        """Live passages of `scope` (of one `source`, or all): `id, source, location, content_hash, ts`, oldest first."""
+        where, params = ["scope = ?", "live = 1"], [scope]
+        if source is not None:
+            where.append("source = ?")
+            params.append(source)
+        with self._lock:
+            return self._conn.execute(
+                f"SELECT id, source, location, content_hash, ts FROM passages WHERE {' AND '.join(where)} "
+                "ORDER BY ts, id", params).fetchall()
+
+    def passage_candidates(self, scopes: Sequence[str], query_terms: Sequence[str], *, limit: int = 300) -> list[Row]:
+        """Live passages in `scopes` sharing terms with a query, most shared first, then newest:
+        `id, scope, source, location, ts, hits`."""
+        if not query_terms or not scopes:
+            return []
+        with self._lock:
+            return self._conn.execute(
+                "SELECT p.id, p.scope, p.source, p.location, p.ts, COUNT(*) AS hits "
+                "FROM passage_terms t JOIN passages p ON p.id = t.pid "
+                f"WHERE t.scope IN ({','.join('?' * len(scopes))}) AND t.term IN ({','.join('?' * len(query_terms))}) "
+                "AND p.live = 1 GROUP BY p.id, p.scope, p.source, p.location, p.ts "
+                "ORDER BY hits DESC, p.ts DESC, p.id LIMIT ?", [*scopes, *query_terms, limit]).fetchall()
+
+    def recent_passages(self, scopes: Sequence[str], *, limit: int = 400) -> list[Row]:
+        """The newest live passages in `scopes`, for rankers that don't work on shared terms."""
+        if not scopes:
+            return []
+        with self._lock:
+            return self._conn.execute(
+                "SELECT id, scope, source, location, ts FROM passages "
+                f"WHERE scope IN ({','.join('?' * len(scopes))}) AND live = 1 ORDER BY ts DESC, id LIMIT ?",
+                [*scopes, limit]).fetchall()
+
     def _window_user(self, user_id: str, *, create: bool = False) -> Optional[int]:
         """The small integer a user's index rows carry in place of their id."""
         row = self._conn.execute("SELECT uid FROM window_users WHERE user_id = ?", (user_id,)).fetchone()
@@ -497,6 +554,18 @@ class Knowledge(Projections):
                                    (self._window_user(r["user_id"]), r["wid"]))
                 self._conn.execute("DELETE FROM window_vectors WHERE wid = ?", (r["wid"],))
                 dropped += self._conn.execute("DELETE FROM message_windows WHERE id = ?", (r["id"],)).rowcount
+            self._conn.commit()
+        with self._lock:
+            ids = [r["id"] for r in self._conn.execute("SELECT id FROM passages").fetchall()]
+        gone_p = []
+        for i in range(0, len(ids), 500):
+            chunk = ids[i: i + 500]
+            alive = {e.id for e in store.get_events(chunk)}
+            gone_p += [x for x in chunk if x not in alive]
+        with self._lock:
+            for pid in gone_p:
+                self._conn.execute("DELETE FROM passage_terms WHERE pid = ?", (pid,))
+                dropped += self._conn.execute("DELETE FROM passages WHERE id = ?", (pid,)).rowcount
             self._conn.commit()
         return dropped
 
@@ -1197,6 +1266,8 @@ _HANDLERS = {
     DecisionRecorded: Knowledge._decision,
     LessonLearned: Knowledge._lesson,
     Message: Knowledge._message,
+    PassageAdded: Knowledge._passage_added,
+    PassageRetracted: Knowledge._passage_retracted,
 }
 
 __all__ = [

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Org scope, slice 1** ([#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142), ADR 0006): `Memory(org="acme")` adds the `org:<name>` scope (precedence user > agent > project > org > global). `add_passages(source, text)` records an organisation's documents as passages (`PassageAdded`; the same text again does nothing, changed text replaces the old passages); `forget_source` retracts them (`PassageRetracted`, the events stay in the Log). Passages are searched like message windows, pushed with the turn by `MemoryPolicy(passages=N)` (0 by default) and returned by `memory_recall` (`recall_passages=8`), labelled with their source and framed as data, not instructions. `prune` drops their index rows. Schema version 9 (the projection rebuilds from the Log). No crawler yet (#143).
+
 ## 0.0.3 — 2026-11-04
 
 Release ([#144](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/144)): the 24-window default and the opt-in embedder.

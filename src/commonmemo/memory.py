@@ -77,6 +77,7 @@ from .reins import (
 )
 from .history import Diff, History, MemoryView, Point, as_of, diff
 from .resume import make_step
+from . import passages
 from .said import search as search_said
 from .runs import Run, current_run
 from .session import Session, current_session
@@ -120,6 +121,7 @@ class Memory:
         engine: Union[str, Engine] = "local",
         *,
         project: Optional[str] = None,
+        org: Optional[str] = None,
         policy: Optional[MemoryPolicy] = None,
         session_ttl: Optional[float] = None,
         world_fact_approval: bool = True,
@@ -147,12 +149,14 @@ class Memory:
         """Names this handle when it claims a side-effecting step."""
         self.project = project
         """Names the `project:<name>` scope for world facts and negatives."""
+        self.org = org
+        """Names the `org:<name>` scope: the organisation's documents and shared facts (ADR 0006)."""
         self.policy = policy or MemoryPolicy()
         """What is pushed per turn (see `MemoryPolicy`)."""
         self.policy_for_recall = MemoryPolicy(
             max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
             recaps_across_agents=self.policy.recaps_across_agents,
-            messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
+            passages=self.policy.recall_passages, messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
             message_dates=self.policy.message_dates,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
@@ -191,6 +195,26 @@ class Memory:
     @property
     def project_scope(self) -> str:
         return f"project:{self.project}" if self.project else "global"
+
+    @property
+    def org_scope(self) -> Optional[str]:
+        return f"org:{self.org}" if self.org else None
+
+    def add_passages(self, source: str, text: str, *, scope: Optional[str] = None) -> tuple[int, int]:
+        """Record `text` as the current content of the document `source` in the org's scope: `(added,
+        retracted)`. The same text again does nothing; changed text replaces the old passages (ADR 0006)."""
+        scope = scope or self.org_scope
+        if scope is None:
+            raise ValueError("no org set: pass Memory(org=...) or scope='org:<name>'")
+        return passages.add(self, source, text, scope=scope)
+
+    def forget_source(self, source: str, *, scope: Optional[str] = None, reason: str = "forgotten") -> int:
+        """Retract all passages of `source` (they stay in the Log, so this can be undone by adding the
+        text again). Returns how many."""
+        scope = scope or self.org_scope
+        if scope is None:
+            raise ValueError("no org set: pass Memory(org=...) or scope='org:<name>'")
+        return passages.forget(self, source, scope=scope, reason=reason)
 
     # -- sessions -----------------------------------------------------------
 
@@ -409,7 +433,7 @@ class Memory:
         """Long-term context without a session (user facts, recaps,
         negatives, world facts, lessons). Inside a session, prefer
         `Session.context`, which adds Working memory."""
-        scopes = ["global"] + ([self.project_scope] if self.project else []) \
+        scopes = ["global"] + ([self.org_scope] if self.org else []) + ([self.project_scope] if self.project else []) \
             + ([f"agent:{agent}"] if agent else []) + ([f"user:{user_id}"] if user_id else [])
         return await self._long_term(
             query, user_id=user_id, agent=agent, policy=replace(self.policy, recaps=recaps), scopes=scopes
@@ -476,9 +500,13 @@ class Memory:
             self, query, user_id=user_id, agent=agent, exclude_session=exclude_session,
             limit=policy.messages if said else 0, across_agents=policy.recaps_across_agents,
             threshold=policy.min_message_score, dates=policy.message_dates)
+        org_found, org_more = (await passages.search(
+            self, query, scopes=[self.org_scope], limit=policy.passages, threshold=policy.min_message_score)
+            if self.org and policy.passages > 0 else ([], 0))
         return MemoryContext(
             procedure=procedure,
             said=heard,
+            passages=org_found,
             negatives=negatives[: policy.max_negatives],
             facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
             world=world[: policy.max_world],
@@ -496,6 +524,7 @@ class Memory:
                 "negatives": len(negatives) - policy.max_negatives,
                 "lessons": max(0, len(lessons) - policy.max_lessons) + max(0, len(learned) - policy.max_lessons),
                 "messages": heard_more,
+                "passages": org_more,
             },
         )
 
@@ -684,14 +713,15 @@ class Memory:
 
     def world_facts(self, scopes: Optional[list[str]] = None, *, include_stale: bool = False) -> list[WorldRecord]:
         """Current world facts in `scopes` (default: global + the project)."""
-        scopes = scopes or (["global"] + ([self.project_scope] if self.project else []))
+        scopes = scopes or (["global"] + ([self.org_scope] if self.org else []) + ([self.project_scope] if self.project else []))
         return self.knowledge.world_facts(scopes, include_stale=include_stale)
 
     # -- procedural memory (ADR 0003) --------------------------------------------
 
     def _procedure_scopes(self, user_id: Optional[str]) -> list[str]:
         """Broadest first, so the more specific entry wins."""
-        return ["global"] + ([self.project_scope] if self.project else []) + ([f"user:{user_id}"] if user_id else [])
+        return ["global"] + ([self.org_scope] if self.org else []) + ([self.project_scope] if self.project else []) \
+            + ([f"user:{user_id}"] if user_id else [])
 
     def save_procedure(self, task: str, kind: str, name: str, body: str, *, use_when: str = "",
                        steps: Optional[Iterable[str]] = None, scope: Optional[str] = None,
@@ -973,7 +1003,7 @@ class Memory:
         Recaps and facts derived from them are kept (they carry their own
         provenance ids)."""
         n = self.store.prune(older_than=time.time() - older_than_days * 86400)
-        self.knowledge.prune_windows(self.store)  # windows index terms: they go with the messages
+        self.knowledge.prune_windows(self.store)  # windows and passages index terms: they go with their events
         return n
 
     async def aclose(self) -> None:
