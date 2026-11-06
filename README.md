@@ -56,6 +56,7 @@ python -m evals
 
 # Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
 commonmemo setup claude-code --user ada
+commonmemo crawl docs/ --org acme      # load a folder of documents into the organisation scope
 ```
 
 Nothing above needs an API key or spends money. Add what you use:

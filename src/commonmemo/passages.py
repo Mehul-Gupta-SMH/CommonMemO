@@ -82,18 +82,16 @@ def digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def add(memory: "Memory", source: str, text: str, *, scope: str, ts: Optional[float] = None) -> tuple[int, int]:
-    """Record `text` as the current content of `source`: `(added, retracted)`. The same chunks again add
-    nothing; a source that changed has its old passages retracted and the new ones added, in one write."""
+def plan(source: str, text: str, live: Sequence, *, scope: str, ts: float) -> list:
+    """The events that make `source` hold `text`, given its `live` passage rows: none when the chunks
+    are the same, retractions for chunks that went and additions for chunks that are new."""
     from .events import PassageRetracted
 
     pieces = chunk(text)
-    now = ts if ts is not None else time.time()
-    live = memory.knowledge.passage_sources(scope, source)
     have = [r["content_hash"] for r in live]
     want = [digest(p) for p in pieces]
     if have == want:
-        return 0, 0
+        return []
     wanted = set(want)
     events: list = [PassageRetracted(passage_id=r["id"], reason="source changed")
                     for r in live if r["content_hash"] not in wanted]
@@ -102,8 +100,16 @@ def add(memory: "Memory", source: str, text: str, *, scope: str, ts: Optional[fl
         if h in present:
             continue
         events.append(PassageAdded(scope=scope, source=source, location=f"part {n}", content_hash=h,
-                                   text=piece, ts=now))
+                                   text=piece, ts=ts))
         present.add(h)
+    return events
+
+
+def add(memory: "Memory", source: str, text: str, *, scope: str, ts: Optional[float] = None) -> tuple[int, int]:
+    """Record `text` as the current content of `source`: `(added, retracted)`. The same chunks again add
+    nothing; a source that changed has its old passages retracted and the new ones added, in one write."""
+    now = ts if ts is not None else time.time()
+    events = plan(source, text, memory.knowledge.passage_sources(scope, source), scope=scope, ts=now)
     memory._append_many(events)
     added = sum(isinstance(e, PassageAdded) for e in events)
     return added, len(events) - added

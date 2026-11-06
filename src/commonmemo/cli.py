@@ -84,6 +84,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("setup", help="print the hook config for claude-code, codex or opencode", add_help=False)
     sub.add_parser("show", help="show a user or a session, read-only", add_help=False)
     sub.add_parser("trace", help="show a session's turn traces", add_help=False)
+    sub.add_parser("crawl", help="load a folder's documents into the organisation's memory", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
     args, rest = parser.parse_known_args(argv)
     if args.command == "mcp":
@@ -94,11 +95,54 @@ def main(argv: Optional[list[str]] = None) -> int:
         from . import hooks
 
         return hooks.main(rest) if args.command == "hook" else hooks.setup_main(rest)
+    if args.command == "crawl":
+        return crawl_main(rest)
     if args.command == "inspect":
         from .inspector import main as inspect_main
 
         return inspect_main(rest)
     return show_main(rest) if args.command == "show" else trace_main(rest)
+
+
+def crawl_main(argv: Optional[list[str]] = None) -> int:
+    """`commonmemo crawl <path> --org acme [--dry-run]`: documents into the organisation's passages."""
+    import argparse
+    import sys
+
+    from .crawl import FolderSource
+
+    p = argparse.ArgumentParser(prog="commonmemo crawl", description="Load a folder or git checkout into memory.")
+    p.add_argument("path")
+    p.add_argument("--scope", help="where to write (default org:<--org>)")
+    p.add_argument("--include", action="append", default=[], help="glob of files to read (default: .md .txt .rst .adoc)")
+    p.add_argument("--exclude", action="append", default=[], help="glob of files to skip")
+    p.add_argument("--prefix", help="source prefix (default: the folder's name + '/')")
+    p.add_argument("--max-bytes", type=int, default=1_000_000)
+    p.add_argument("--dry-run", action="store_true", help="report what would change and write nothing")
+    memory_options(p, agent=None)
+    args = p.parse_args(argv)
+    scope = args.scope or (f"org:{args.org}" if args.org else None)
+    if scope is None:
+        p.error("give --org NAME (or --scope org:NAME)")
+    try:
+        source = FolderSource(args.path, include=args.include, exclude=args.exclude, max_bytes=args.max_bytes,
+                              prefix=args.prefix)
+    except NotADirectoryError as e:
+        p.error(str(e))
+    mem = _open(args)
+    try:
+        report = mem.crawl(source, scope=scope, dry_run=args.dry_run)
+    finally:
+        from .agent_tools import run_sync
+
+        run_sync(mem.aclose())
+    print(report.summary())
+    for reason, names in report.skipped.items():
+        for name in names[:10]:
+            print(f"  skipped ({reason}): {name}", file=sys.stderr)
+        if len(names) > 10:
+            print(f"  ... and {len(names) - 10} more {reason}", file=sys.stderr)
+    return 0
 
 
 def _open(args: argparse.Namespace) -> "Memory":

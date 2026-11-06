@@ -141,6 +141,18 @@ Where a hook's 253 ms went: 16 ms starting Python, about 230 ms importing the li
 
 Output is identical (a test compares them). Of the 48 ms, 17 is bare Python, about 10 is the round trip and the push, the rest is starting `commonmemo`. A turn with 8 tool calls spends about 0.4 s in hooks instead of about 2.2 s.
 
+## Crawling a folder (#143)
+
+`scripts/bench_crawl.py 10000`: 10,000 generated Markdown files (about 4 KB each, 40,000 passages), SQLite on local disk.
+
+| Run | Time |
+|---|---|
+| First crawl | 17.2 s |
+| Re-crawl, nothing changed (reads and hashes every file, writes nothing) | 4.9 s |
+| Re-crawl, 100 files (1%) edited | 11.0 s |
+
+The edited re-crawl costs about 6 s more than the unchanged one for 100 files, which is more than the work should need; it is probably the projection catch-up after the write, and has not been profiled.
+
 ## Follow-ups
 
 - [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.

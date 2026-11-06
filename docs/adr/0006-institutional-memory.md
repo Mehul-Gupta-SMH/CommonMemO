@@ -1,6 +1,6 @@
 # ADR 0006 — Institutional memory (the `org` scope)
 
-**Status:** Proposed (slice 1 built: passages, `Memory(org=)`, search and recall) · **Date:** 2026-11-04 · **Tracks:** [#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142) · **Related:** [#143](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/143) (crawlers), [#146](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/146) (entity/alias experiment)
+**Status:** Proposed (slice 1 built: passages, `Memory(org=)`, search and recall; folder crawler built, #143) · **Date:** 2026-11-04 · **Tracks:** [#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142) · **Related:** [#143](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/143) (crawlers), [#146](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/146) (entity/alias experiment)
 
 ## Context
 
