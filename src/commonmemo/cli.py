@@ -5,6 +5,7 @@
     commonmemo setup NAME [options]           # print the hook config for a harness (hooks.py)
     commonmemo show user ID | session ID      # what memory holds, read-only (views.py)
     commonmemo trace SESSION [--why KEY]      # what each push gave the agent, and why (traces.py)
+    commonmemo savings [SESSION]              # what memory pushed against re-sending the history (savings.py)
     commonmemo inspect [--port N]             # the same, in a local read-only web page (inspector.py)
 
 They share the memory options below: a flag wins over its `COMMONMEMO_*`
@@ -85,6 +86,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("show", help="show a user or a session, read-only", add_help=False)
     sub.add_parser("trace", help="show a session's turn traces", add_help=False)
     sub.add_parser("crawl", help="load a folder's documents into the organisation's memory", add_help=False)
+    sub.add_parser("savings", help="what memory pushed against re-sending the conversation", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
     args, rest = parser.parse_known_args(argv)
     if args.command == "mcp":
@@ -97,6 +99,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return hooks.main(rest) if args.command == "hook" else hooks.setup_main(rest)
     if args.command == "crawl":
         return crawl_main(rest)
+    if args.command == "savings":
+        return savings_main(rest)
     if args.command == "inspect":
         from .inspector import main as inspect_main
 
@@ -172,6 +176,26 @@ def show_main(argv: Optional[list[str]] = None) -> int:
                 return 1
             lines = session_lines(view)
         print("\n".join(lines))
+        return 0
+    finally:
+        run_sync(mem.aclose())
+
+
+def savings_main(argv: Optional[list[str]] = None) -> int:
+    """`commonmemo savings [SESSION] [--user U] [--price-per-mtok P]`: memory's pushes against the history."""
+    import argparse
+
+    from .agent_tools import run_sync
+
+    p = argparse.ArgumentParser(prog="commonmemo savings",
+                                description="What memory pushed against re-sending what was said, read-only.")
+    p.add_argument("session_id", nargs="?", help="one session (default: all, or the --user's)")
+    p.add_argument("--price-per-mtok", type=float, help="input price per million tokens, for a dollar figure")
+    args = memory_options(p, agent=None).parse_args(argv)
+    mem = _open(args)
+    try:
+        report = mem.savings(session_id=args.session_id, user_id=args.user)
+        print("\n".join(report.lines(args.price_per_mtok)))
         return 0
     finally:
         run_sync(mem.aclose())
