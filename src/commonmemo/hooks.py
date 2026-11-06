@@ -209,7 +209,7 @@ def run(argv: Optional[list[str]], stdin: IO[str], stdout: IO[str], stderr: IO[s
             raise ValueError("expected a hook payload with a session_id")
         memory = kept.get(key) if kept is not None else None
         if memory is None:
-            memory = Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
+            memory = Memory(args.store, args.engine, project=args.project, org=args.org, policy=policy_from(args))
             if kept is not None:
                 kept[key] = memory
         out = handle(payload, memory, harness=args.harness, user=args.user, agent=args.agent,
@@ -241,6 +241,11 @@ def _command(harness: str, args: argparse.Namespace) -> str:
         parts.append("--read-only")
     for flag in ("messages", "recall_messages"):
         if str(getattr(args, flag)) != WINDOWS:  # the default needs no flag; 0 turns it off
+            parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
+    if getattr(args, "org", None):
+        parts += ["--org", args.org]
+    for flag, default in (("passages", "0"), ("recall_passages", "8")):
+        if str(getattr(args, flag, default)) != default:
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if getattr(args, "message_dates", "off") != "off":
         parts += ["--message-dates", args.message_dates]

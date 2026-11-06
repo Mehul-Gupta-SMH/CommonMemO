@@ -49,6 +49,12 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
     p.add_argument("--recall-messages", type=int,
                    default=int(env("COMMONMEMO_RECALL_MESSAGES", WINDOWS)),
                    help="windows of past messages memory_recall returns (default 8; 0: none)")
+    p.add_argument("--org", default=env("COMMONMEMO_ORG"),
+                   help="the organisation whose documents and shared facts are in scope (org:<name>)")
+    p.add_argument("--passages", type=int, default=int(env("COMMONMEMO_PASSAGES", "0")),
+                   help="passages of the organisation's documents to push with each turn (default 0; needs --org)")
+    p.add_argument("--recall-passages", type=int, default=int(env("COMMONMEMO_RECALL_PASSAGES", "8")),
+                   help="passages memory_recall returns (default 8; needs --org)")
     p.add_argument("--message-dates", choices=("off", "stamp", "resolve"), default=env("COMMONMEMO_MESSAGE_DATES", "off"),
                    help="what windows say about when: off, stamp (dated messages), resolve (also relative dates)")
     return p
@@ -58,7 +64,9 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
     """The memory policy the command line asks for."""
     from .context import MemoryPolicy
 
-    return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages, message_dates=args.message_dates)
+    return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages, message_dates=args.message_dates,
+                        passages=getattr(args, "passages", 0),
+                        recall_passages=getattr(args, "recall_passages", 8))
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -96,7 +104,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 def _open(args: argparse.Namespace) -> "Memory":
     from .memory import Memory
 
-    return Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
+    return Memory(args.store, args.engine, project=args.project, org=args.org, policy=policy_from(args))
 
 
 def show_main(argv: Optional[list[str]] = None) -> int:

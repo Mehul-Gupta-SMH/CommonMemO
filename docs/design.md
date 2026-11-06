@@ -776,7 +776,7 @@ the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/is
 - [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
   an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
   `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, nineteen
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, twenty
   scenarios with and without memory against a scripted agent, run in CI; results
   in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
   public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are

@@ -51,7 +51,7 @@ commonmemo inspect --store sqlite:///demo.db --project shop --review --open
 commonmemo trace support-ada-2 --store sqlite:///demo.db
 commonmemo trace support-ada-2 --why refund_reply/rule/timeline --store sqlite:///demo.db
 
-# Does memory change what an agent does? 19 scenarios, with and without it.
+# Does memory change what an agent does? 20 scenarios, with and without it.
 python -m evals
 
 # Give Claude Code memory: print the hooks config to merge into .claude/settings.json.
@@ -626,8 +626,8 @@ that's what the suite measures.
 python -m evals                   # prints the report; docs/evals.md is the committed baseline
 ```
 
-All **19 of 19** pass with memory. In the **13** scenarios where a run
-without memory makes sense, memory turns a failure into a success in all 13.
+All **20 of 20** pass with memory. In the **14** scenarios where a run
+without memory makes sense, memory turns a failure into a success in all 14.
 The other 6 are safety checks with nothing to compare against:
 - a tool failure with a known fix is not repeated;
 - a user's "never" is respected, and the latest preference wins;

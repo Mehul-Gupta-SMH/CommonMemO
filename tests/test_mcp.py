@@ -173,3 +173,14 @@ def test_official_mcp_client(tmp_path, mode):
     [fact] = mem.store.events(session_id="s-sdk", kinds=["user_fact"])
     assert fact.source == "agent"
     asyncio.run(mem.aclose())
+
+
+def test_memory_recall_finds_org_documents_with_org_flag(tmp_path):
+    seed = Memory(f"sqlite:///{tmp_path / 'mem.db'}", org="acme")
+    seed.add_passages("handbook.md", "The expenses portal key is kept in the red binder.")
+    asyncio.run(seed.aclose())
+    msgs = [INIT, INITIALIZED, _call(2, "memory_recall", query="expenses portal key")]
+    with_org, _, _ = _serve(tmp_path, msgs, "--org", "acme")
+    without, _, _ = _serve(tmp_path, msgs)
+    assert "red binder" in json.dumps(with_org[2]) and "handbook.md" in json.dumps(with_org[2])
+    assert "red binder" not in json.dumps(without[2])

@@ -266,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(name)s: %(message)s")
-    memory = Memory(args.store, args.engine, project=args.project, policy=policy_from(args))
+    memory = Memory(args.store, args.engine, project=args.project, org=args.org, policy=policy_from(args))
     try:
         session = memory.session(args.session, user_id=args.user, agent=args.agent)
     except PermissionError as e:
