@@ -216,6 +216,13 @@ class Memory:
             raise ValueError("no org set: pass Memory(org=...) or scope='org:<name>'")
         return passages.forget(self, source, scope=scope, reason=reason)
 
+    def crawl(self, source, *, scope: Optional[str] = None, dry_run: bool = False):
+        """Fill the org's scope from a folder (or any `crawl.Source`): chunked, deduplicated by content,
+        incremental, and documents that are gone have their passages retracted. Returns a `CrawlReport`."""
+        from . import crawl as _crawl
+
+        return _crawl.crawl(self, source, scope=scope, dry_run=dry_run)
+
     # -- sessions -----------------------------------------------------------
 
     def session(

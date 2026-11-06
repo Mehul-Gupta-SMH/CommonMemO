@@ -243,6 +243,26 @@ def test_setup_claude_code_and_codex():
         assert (FIXTURES / "codex-schema" / f"{name}.command.input.json").exists(), event
 
 
+def test_setup_writes_the_org_flags_only_when_they_differ():
+    plain = json.loads(_setup("claude-code").stdout)["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert "--org" not in plain and "--passages" not in plain
+    org = json.loads(_setup("claude-code", "--org", "acme", "--passages", "4").stdout)["hooks"]["Stop"][0]["hooks"][0]
+    assert org["command"] == "commonmemo hook --harness claude-code --org acme --passages 4"
+
+
+def test_hook_pushes_an_org_passage(db):
+    seed = Memory(db, org="acme")
+    seed.add_passages("handbook.md", "The expenses portal key is kept in the red binder.")
+    close(seed)
+    data = payload("claude-code", "user-prompt-submit", prompt="Where is the expenses portal key?")
+    pushed, err = hook(db, "claude-code", data, "--org", "acme", "--passages", "3")
+    assert not err and "red binder" in context_of(pushed) and "handbook.md" in context_of(pushed)
+    plain, _ = hook(db, "claude-code", data, "--org", "acme")  # --passages defaults to 0: not pushed
+    assert plain is None or "red binder" not in context_of(plain)
+    other, _ = hook(db, "claude-code", data, "--passages", "3")  # no --org: not in scope
+    assert other is None or "red binder" not in context_of(other)
+
+
 def test_setup_opencode_prints_the_plugin():
     proc = _setup("opencode")
     assert "export const CommonMemo" in proc.stdout and ".opencode/plugin" in proc.stderr
