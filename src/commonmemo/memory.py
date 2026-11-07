@@ -987,6 +987,13 @@ class Memory:
 
         return traces(self, session_id=session_id, user_id=user_id, limit=limit)
 
+    def savings(self, *, session_id: Optional[str] = None, user_id: Optional[str] = None):
+        """What memory pushed against re-sending what was said, per harness and
+        session (see `savings.py`). Read-only, computed from the Log."""
+        from .savings import savings
+
+        return savings(self, session_id=session_id, user_id=user_id)
+
     def why(self, key: str, *, session_id: Optional[str] = None, user_id: Optional[str] = None) -> Optional[Why]:
         """Why the agent got `key` (a fact or world fact key, or an item id):
         the latest push of it in the session (or for the user), and the

@@ -434,6 +434,7 @@ was left out. The pushed text itself is kept only with
 
 ```bash
 commonmemo trace s2 --why refund_window   # why the agent got it: the events it came from
+commonmemo savings s2                 # what memory pushed against re-sending the conversation, per harness
 commonmemo show user ada                  # profile, constraints, what was forgotten, past sessions
 commonmemo inspect --open                 # the same, in a local read-only web page
 commonmemo inspect --review               # also approve and reject what waits for review
