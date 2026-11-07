@@ -88,7 +88,8 @@ class Savings:
 
 def _line(r: Row) -> str:
     pct = f"{r.saved_pct:.0f}% smaller" if r.saved_pct is not None else "no baseline"
-    return (f"{r.name}: {r.pushes} push{"" if r.pushes == 1 else "es"}, {r.pushed} chars pushed (~{r.tokens(r.pushed)} tokens) "
+    plural = "" if r.pushes == 1 else "es"
+    return (f"{r.name}: {r.pushes} push{plural}, {r.pushed} chars pushed (~{r.tokens(r.pushed)} tokens) "
             f"vs {r.resend} chars re-sent (~{r.tokens(r.resend)} tokens): {pct}")
 
 
