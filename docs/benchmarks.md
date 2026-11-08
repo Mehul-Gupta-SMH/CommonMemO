@@ -153,6 +153,14 @@ Output is identical (a test compares them). Of the 48 ms, 17 is bare Python, abo
 
 The edited re-crawl costs about 6 s more than the unchanged one for 100 files, which is more than the work should need; it is probably the projection catch-up after the write, and has not been profiled.
 
+## Memory against re-sending, on your own sessions (#158)
+
+`commonmemo savings` (read-only, from the Log) compares what memory pushed with the messages said earlier in the same session, split by harness. It is a measurement of **input size** on real sessions; it says nothing about answer quality.
+
+How it differs from the LoCoMo numbers in `docs/live-runs.md`: LoCoMo (Haiku, 450 questions) compared whole-conversation prompts with memory prompts and also scored the answers: whole conversation 228 correct at $0.0103 a question, 8 windows 276 at $0.0020 (81% cheaper), 24 windows (the default) 290 at $0.0029 (about 72% cheaper). `savings` has no answers to score, counts characters not tokens (4 to a token), and includes messages only in the baseline, so it understates re-sending.
+
+It has not yet been run on a real Claude Code session; the percentages above come from the benchmark, not from this report.
+
 ## Follow-ups
 
 - [#81](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/81): done, see above.

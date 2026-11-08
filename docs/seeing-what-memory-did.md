@@ -49,12 +49,20 @@ commonmemo show user ada               # profile with dates, constraints, what w
 commonmemo show session s2             # timeline, where a resume would start, turn traces
 commonmemo trace s2                    # just the turn traces
 commonmemo trace s2 --why refund_window
+commonmemo savings s2                # pushed vs re-sending what was said, per harness
 ```
 
 ```
 fact preferred_contact: pushed in a turn push to session s2
   from user_fact 93040ff3… in session s1, source explicit
 ```
+
+`savings` ([#158](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/158)) answers "what did memory cost against carrying the history over?":
+for each push at a session's start or turn it compares the characters pushed with
+the characters of the messages said earlier in that session, per harness (the
+event's `agent`) and per session. Recalls, pulls and refreshes count as cost only.
+It is an estimate (4 characters to a token), messages only in the baseline, and
+input size, not answer quality. `--price-per-mtok P` adds dollars at one input price.
 
 All take `--store` (or `COMMONMEMO_STORE`), like the other commands.
 

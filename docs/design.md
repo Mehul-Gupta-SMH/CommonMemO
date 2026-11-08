@@ -746,7 +746,7 @@ inspector first, OpenTelemetry as the first exporter. See
 
 ## Decision records
 
-- [ADR 0001 — storage](adr/0001-storage.md) (proposed): why the memory CommonMemo owns sits
+- [ADR 0001 — storage](adr/0001-storage.md) (accepted): why the memory CommonMemo owns sits
   in a relational, ACID-per-partition store (SQLite by default, Postgres shared, distributed
   SQL to scale, DynamoDB as the non-SQL backend), and two correctness gaps it found
   ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16), both fixed in [#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
@@ -757,64 +757,60 @@ inspector first, OpenTelemetry as the first exporter. See
   procedures and exemplars keyed by task type, written and learned ones in one place; the app
   names the task, matching by description is the fallback; learned and agent-written entries
   are proposals; full exemplars stay with their user until approved and scrubbed ([#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26)).
-- [ADR 0004 — memory history](adr/0004-history-analytics-and-reversion.md) (proposed): metrics from the
+- [ADR 0004 — memory history](adr/0004-history-analytics-and-reversion.md) (accepted): metrics from the
   Log, point-in-time reads, and reverting by appending compensating events, never deleting;
   freeze and budgets reuse proposals; `forget_user` always wins ([#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27)).
+- [ADR 0005 — local embeddings](adr/0005-local-embeddings.md) (accepted): an opt-in, pinned
+  `commonmemo[embed]` hybrid of keyword and vector ranking; keyword stays the default because the
+  answer gain was not significant ([#125](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/125), [#129](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/129)).
+- [ADR 0006 — institutional memory](adr/0006-institutional-memory.md) (proposed, on hold): an
+  `org:<name>` scope, passages from crawled documents, promotion to reviewed facts, removal by
+  source ([#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142)).
 
 ## Roadmap
 
 Tracked in GitHub issues, with the [roadmap issue (#14)](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/14) as
-the index. Nothing gets coded without an issue.
+the index; this section is a short mirror, and #14 has the detail and the numbers.
+Nothing gets coded without an issue.
 
-**Shipped:** the Log and Working tiers, `@mem.track`, `MemoryEvent`, the local
-engine and the CommonADK integration ([#1](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/1)); the Graphiti and Mem0 engines, the
-structured kinds and hybrid push/pull with agent tools, and the fixes for
-the two correctness bugs ([#15](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/15), [#16](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/16)) ([#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
+**Shipped** (by theme)
 
-**Next**
+- **Core:** the Log and Working tiers, `@mem.track`, the local, Graphiti and Mem0
+  engines, structured kinds, hybrid push/pull ([#1](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/1), [#2](https://github.com/Mehul-Gupta-SMH/CommonMemO/pull/2)).
+- **Trust and history:** world-fact trust (ADR 0002), procedural memory (ADR 0003),
+  history, revert, freeze and alerts (ADR 0004), `link_users`.
+- **What was said:** windows of a user's own past messages, on by default (24 pushed,
+  24 recalled), a small projection index, optional persistent vectors, opt-in local
+  embeddings (ADR 0005, `commonmemo[embed]`).
+- **Seeing it:** turn traces, `commonmemo show` / `trace`, the inspector with its
+  review screen, OpenTelemetry, and `commonmemo savings` ([#158](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/158)): what memory pushed
+  against re-sending the conversation, per harness.
+- **Connecting:** the MCP server, hooks for Claude Code, Codex and OpenCode (one session
+  continues across harnesses; a resident hook is opt-in), five framework adapters
+  (ADK, OpenAI Agents, LangGraph, AutoGen, Claude Agent SDK) and `instrument()`.
+- **Storage:** SQLite by default and Postgres shared (ADR 0001); `Store`, `Projections`
+  and `Engine` each have a contract suite; the workload is measured ([#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17)).
+- **Evidence:** deterministic evals (twenty scenarios, in CI), the LoCoMo benchmark on
+  ten conversations, a live Claude Code run, a cited related-work comparison.
+- **Releases on PyPI:** 0.0.1, 0.0.2, 0.0.3 (Alpha).
+- **Organisation scope, slice 1** (ADR 0006, proposed): `org:<name>`, passages, `forget_source`
+  and the folder crawler `commonmemo crawl`.
 
-- [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) — live run of the Graphiti and Mem0 engines against real backends and
-  an LLM (blocked on the environment: `OPENAI_API_KEY` and access to
-  `api.openai.com`)
-- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) — evaluation suite. **Deterministic mode shipped:** `evals/`, twenty
-  scenarios with and without memory against a scripted agent, run in CI; results
-  in [docs/evals.md](evals.md). Still to come: a live mode with a real model, and
-  public long-memory benchmarks (after #3). New memory kinds (#8, #10, #26) are
-  measured against it
-- [#12](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/12) — release v0.0.1 to PyPI
-- [#4](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/4) — MCP server exposing the memory tools. **Shipped:** `commonmemo mcp`, stdio,
-  stdlib-only; tools bound to one session, stable memory in the server instructions,
-  `memory://context` resource
-- [#5](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/5) — harness hook adapters (Claude Code, Codex, OpenCode), for automatic
-  capture and push, and one session continuing across harnesses. **Shipped:**
-  `commonmemo hook` / `commonmemo setup`; one handler for all three (OpenCode
-  through a JS shim); tested against recorded payloads and Codex's own schemas
-- [#26](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/26) — procedural memory (ADR 0003). **Phase 1 shipped:** templates, rules,
-  procedures and exemplars per task type, loaded from files or written by apps and agents;
-  versions, trust and review, push for the named or matched task, `memory_get_procedure`,
-  per-version outcomes. **Phase 2 shipped:** learning from runs with any model (decision
-  records, merged lessons, proposals), and procedures in `revert` (absorbs #9)
-- [#25](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/25) — seeing what memory did. **Shipped:** turn traces (`Memory.traces`,
-  `Memory.why`), `commonmemo show` / `trace`, the read-only `commonmemo inspect`,
-  and OpenTelemetry spans (`commonmemo.otel`). Still to come: provenance for
-  supersede history and the evaluation dashboard. **Review screen shipped**
-  ([#45](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/45)): `commonmemo inspect --review` approves and rejects world facts and
-  procedure entries
+**Next / open**
 
-**Planned**
+- [#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159) dream mode (design and measurement bar first, no code; two questions for the owner).
+- Run `commonmemo savings` on a real session, including one continued in Codex.
+- [#122](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/122) live runs of four more adapters and [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) the Graphiti and Mem0 engines (both blocked here: they need a model API key).
+- [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) live evaluation with larger models and LongMemEval.
+- Follow-ups from the related-work comparison: [#149](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/149), [#150](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/150), [#151](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/151), [#152](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/152).
 
-- [#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6) — framework-native adapters (ADK `BaseMemoryService`, OpenAI
-  `Session`, LangGraph `BaseStore`, CrewAI `StorageBackend`, AutoGen
-  `Memory`, Claude `SessionStore`)
-- [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) — task memory: open loops and commitments, for proactive follow-ups
-- [#27](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/27) — memory analytics and reins: velocity, delta, churn; point-in-time
-  reads, diff and snapshots; revert by time or cause; freeze and budgets; see ADR 0004
-- [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) — agent-relationship memory from multi-agent handoffs
-- [#17](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/17) — benchmark the memory workload
-- [#11](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/11) — storage interface for projections, Postgres, DynamoDB (see ADR 0001)
-- [#13](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/13) — hardening follow-ups (tool-result TTLs, tool preconditions, implicit
-  feedback, per-engine recap thresholds, step identity, bulk review of agent
-  writes, pruning projections)
+**On hold (owner, 2026-11-06):** the rest of organisation memory: promotion of passages to
+reviewed facts and procedures, inspector support, the default passage budget, other
+crawler sources ([#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142), [#143](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/143), [#146](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/146) Part B).
+
+**Planned:** [#38](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/38) conditional world facts, [#8](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/8) task memory, [#10](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/10) agent-relationship
+memory, [#13](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/13) hardening, [#52](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/52) log partitioning and other backends only if measured need,
+and the CrewAI adapter ([#6](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/6), deferred: its storage interface takes embedding vectors).
 
 **Waiting on CommonADK:** [#7](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/7), split context delivery once [CommonADK #30](https://github.com/Mehul-Gupta-SMH/CommonADK/issues/30)
 lands. CommonMemo makes no changes to CommonADK; anything it needs from

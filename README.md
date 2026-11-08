@@ -440,6 +440,14 @@ commonmemo inspect --open                 # the same, in a local read-only web p
 commonmemo inspect --review               # also approve and reject what waits for review
 ```
 
+`savings` compares what memory pushed into a session with the messages said earlier
+in that session, which is what carrying the history over to the next turn or to
+another harness would send, and splits it by harness. It reads the Log and stores
+nothing. It counts characters (4 to a token is an estimate), only messages are in
+the baseline, and it measures input size, not answer quality; the command prints
+these limits. `--price-per-mtok` turns tokens into dollars (no price table ships).
+For quality, see the benchmark below.
+
 ```python
 mem.traces(session_id="s2"); mem.why("refund_window", session_id="s2")
 from commonmemo.otel import instrument; instrument(mem)   # pushes as OpenTelemetry spans
