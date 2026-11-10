@@ -20,7 +20,7 @@ def test_ordinary_text_is_untouched():
 
 
 def test_masked_before_the_log(tmp_path):
-    mem = Memory(f"sqlite://{tmp_path}/m.db", policy=MemoryPolicy(mask_secrets=True))
+    mem = Memory(f"sqlite:///{tmp_path}/m.db", policy=MemoryPolicy(mask_secrets=True))
     with mem.session(user_id="u") as s:
         s.message("user", f"use {KEY} please")
         s.record(ToolInvoked(name="t", arguments={"env": f"TOKEN={AWS}"}, result=f"ok {KEY}"))
@@ -37,7 +37,7 @@ def test_off_by_default_for_the_library():
 
 
 def test_scan_reports_without_printing(tmp_path, capsys):
-    db = f"sqlite://{tmp_path}/m.db"
+    db = f"sqlite:///{tmp_path}/m.db"
     mem = Memory(db)
     with mem.session(user_id="u") as s:
         s.message("user", KEY)
