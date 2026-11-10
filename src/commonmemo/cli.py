@@ -91,6 +91,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("trace", help="show a session's turn traces", add_help=False)
     sub.add_parser("crawl", help="load a folder's documents into the organisation's memory", add_help=False)
     sub.add_parser("doctor", help="read-only health check of the Log", add_help=False)
+    sub.add_parser("export", help="write the Log to a JSON-lines file", add_help=False)
+    sub.add_parser("import", help="add the events of an export file the Log lacks", add_help=False)
     sub.add_parser("scan", help="report likely secrets already in the Log (never prints them)", add_help=False)
     sub.add_parser("savings", help="what memory pushed against re-sending the conversation", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
@@ -115,6 +117,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         opts = memory_options(argparse.ArgumentParser(prog="commonmemo doctor"), agent=None).parse_args(rest)
         return doctor_main(store_path(opts.store))
+    if args.command in ("export", "import"):
+        return transfer_main(args.command, rest)
     if args.command == "scan":
         return scan_main(rest)
     if args.command == "inspect":
@@ -212,6 +216,32 @@ def savings_main(argv: Optional[list[str]] = None) -> int:
     try:
         report = mem.savings(session_id=args.session_id, user_id=args.user)
         print("\n".join(report.lines(args.price_per_mtok)))
+        return 0
+    finally:
+        run_sync(mem.aclose())
+
+
+def transfer_main(command: str, argv: list[str]) -> int:
+    """`commonmemo export FILE` / `commonmemo import FILE` (--store picks the Log)."""
+    import argparse
+
+    from .agent_tools import run_sync
+    from .transfer import export_log, import_log
+
+    p = argparse.ArgumentParser(prog=f"commonmemo {command}")
+    p.add_argument("file")
+    args = memory_options(p, agent=None).parse_args(argv)
+    mem = _open(args)
+    try:
+        if command == "export":
+            print(f"{export_log(mem, args.file)} event(s) written to {args.file}")
+        else:
+            try:
+                added, there = import_log(mem, args.file)
+            except ValueError as e:
+                print(e)
+                return 1
+            print(f"{added} event(s) added, {there} already there")
         return 0
     finally:
         run_sync(mem.aclose())
