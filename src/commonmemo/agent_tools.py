@@ -56,12 +56,12 @@ def recall_entries(session: "Session", query: str) -> tuple[list[tuple[str, str]
         ctx = run_sync(session.context(query, policy=memory.policy_for_recall, local_only=True))
     bar = memory.policy_for_recall.min_recall_score
 
-    def related(items: list, text: Callable[[Any], str]) -> list:
+    def related(items: list, text: Callable[[Any], str], weight: Any = None) -> list:
         # Best first, by the memory's ranker: by meaning with an embedder (#21).
-        return run_sync(rank(memory.ranker, query, items, text, threshold=bar))[0]
+        return run_sync(rank(memory.ranker, query, items, text, threshold=bar, weight=weight))[0]
 
     found = MemoryContext(
-        facts=related(ctx.facts, lambda f: f"{f.key} {f.value}"),
+        facts=related(ctx.facts, lambda f: f"{f.key} {f.value}", memory.fact_weight(session.user_id, ctx.facts)),
         world=related([*ctx.world, *ctx.world_turn], memory._world_text),
         lessons=related(ctx.lessons, lambda item: item.line()),
         learned=related(ctx.learned, lambda x: x.text),

@@ -27,8 +27,8 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Sequence, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
-from .context import MemoryContext, MemoryPolicy
-from .facts import FactKey, FactRegistry, ImportResult
+from .context import EVENT_DECAY, RECENCY_FLOOR, MemoryContext, MemoryPolicy
+from .facts import FactKey, FactRegistry, ImportResult, parse_duration
 from .environment import EnvironmentResult, is_environment_key
 from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
 from .ranking import KeywordRanker, Ranker, rank
@@ -157,7 +157,7 @@ class Memory:
             max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
             recaps_across_agents=self.policy.recaps_across_agents,
             passages=self.policy.recall_passages, messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
-            message_dates=self.policy.message_dates,
+            message_dates=self.policy.message_dates, recency_half_life=self.policy.recency_half_life,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -515,7 +515,7 @@ class Memory:
             said=heard,
             passages=org_found,
             negatives=negatives[: policy.max_negatives],
-            facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
+            facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts, user_id),
             world=world[: policy.max_world],
             world_turn=world_turn,
             lessons=lessons[: policy.max_lessons],
@@ -554,12 +554,39 @@ class Memory:
         spec = self.fact_keys.get(w.key)
         return f"{w.key} {w.value} {spec.description if spec else ''}"
 
-    async def _pick_facts(self, query: Optional[str], facts: list[Fact], limit: int) -> list[Fact]:
+    def fact_weight(self, user_id: Optional[str], facts: list[Fact], *, now: Optional[float] = None) -> Optional[Callable[[Fact], float]]:
+        """How much each fact's age counts against it (#170), or None when recency is off.
+        `state` facts halve every `recency_half_life`, `event` facts three times as fast, `durable`
+        and unlabelled ones never; nothing drops below `RECENCY_FLOOR`."""
+        half = self.policy.recency_half_life
+        half = parse_duration(half) if isinstance(half, str) else half
+        if not half or user_id is None or not facts:
+            return None
+        lifespans: dict[str, str] = {}
+        for who in self.linked_users(user_id):
+            for e in self.store.events(user_id=who, kinds=[UserFact.kind]):
+                if e.lifespan:
+                    lifespans[e.id] = e.lifespan
+        at = time.time() if now is None else now
+
+        def weight(f: Fact) -> float:
+            life = next((lifespans[i] for i in f.source_event_ids if i in lifespans), "")
+            if life not in ("state", "event") or not f.valid_from:
+                return 1.0
+            rate = EVENT_DECAY if life == "event" else 1.0
+            return max(RECENCY_FLOOR, 0.5 ** (max(0.0, at - f.valid_from) * rate / half))
+
+        return weight
+
+    async def _pick_facts(self, query: Optional[str], facts: list[Fact], limit: int,
+                          user_id: Optional[str] = None) -> list[Fact]:
         """The `limit` facts to push: all of them if they fit; else the ones
-        related to the request first (#21), then the rest in order."""
+        related to the request first (#21), newer before older when
+        `recency_half_life` is set, then the rest in order."""
         if len(facts) <= limit:
             return facts
-        related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}")
+        related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}",
+                                   weight=self.fact_weight(user_id, facts))
         return (related + rest)[:limit]
 
     async def _profile(self, engine: Any, user_id: str) -> list[Fact]:

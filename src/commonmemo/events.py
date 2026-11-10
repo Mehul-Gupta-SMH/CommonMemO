@@ -157,6 +157,11 @@ class UserFact(MemoryEvent):
     source: str = "explicit"
     """Who stated it: `explicit` (the application), `agent` (an agent's
     `memory_remember` tool), or an integration's name."""
+    lifespan: str = ""
+    """How long the fact stays as true as when it was said (#170): `durable` (a name, an
+    allergy: never decays), `state` (a city, an employer: a newer statement replaces it, and
+    ranking prefers newer ones) or `event` (a dated happening: decays fastest). Empty, as for
+    every fact written before this field, means no decay."""
 
 
 class WorldFact(MemoryEvent):

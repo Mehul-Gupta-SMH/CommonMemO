@@ -147,15 +147,18 @@ def sync_embedder(embed_one: Callable[[str], Sequence[float]]) -> Embedder:
 
 
 async def rank(ranker: Ranker, query: Optional[str], items: Sequence[Any], text: Callable[[Any], str],
-               *, threshold: Optional[float] = None) -> tuple[list[Any], list[Any]]:
+               *, threshold: Optional[float] = None,
+               weight: Optional[Callable[[Any], float]] = None) -> tuple[list[Any], list[Any]]:
     """`(related, rest)`: the items scoring at least the threshold, best
     first, and the others in their original order. No query: nothing is
-    related and the order stays."""
+    related and the order stays. `weight(item)` (0 to 1) multiplies the order, not the test:
+    an old item that matches still counts as related, it just sorts below a newer match (#170)."""
     if not query or not items:
         return [], list(items)
     scores = await ranker.score(query, [text(i) for i in items])
     bar = ranker.threshold if threshold is None else threshold
-    related = [i for _, n, i in sorted(((s, n, i) for n, (s, i) in enumerate(zip(scores, items)) if s >= bar),
+    w = weight or (lambda _i: 1.0)
+    related = [i for _, n, i in sorted(((s * w(i), n, i) for n, (s, i) in enumerate(zip(scores, items)) if s >= bar),
                                        key=lambda t: (-t[0], t[1]))]
     chosen = {id(i) for i in related}
     return related, [i for i in items if id(i) not in chosen]

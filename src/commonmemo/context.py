@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from .engines.base import Recap, Fact
 from .events import MemoryEvent, Message, ToolInvoked, UserFact
@@ -102,6 +102,11 @@ class MemoryPolicy:
     `stamp` (the weekday, date and time of the first message, and a stamp on any message
     recorded at another time), or `resolve` (stamps, plus each relative date in a message,
     "Friday", "last week", "two days ago", followed by `[= what it means]`)."""
+    recency_half_life: Union[None, float, str] = None
+    """Seconds (or "90d") after which a `state` fact's rank halves; `event` facts halve three
+    times as fast; `durable` and unlabelled facts never do (#170). The weight has a floor
+    (`RECENCY_FLOOR`) and applies to order only, so an old fact that matches still appears.
+    Also shows the date a fact was stated. None turns it off."""
     lesson_merge_score: float = 0.8
     """A learned lesson this close to an earlier one (by the ranker) is
     merged with it: counted as seen again, not stored twice."""
@@ -128,6 +133,11 @@ def _line(event: MemoryEvent) -> str:
         return f"learned {event.key} = {event.value}"
     return f"{event.kind}: {event.payload}"
 
+
+RECENCY_FLOOR = 0.25
+"""The lowest weight age gives a fact (`MemoryPolicy.recency_half_life`)."""
+EVENT_DECAY = 3.0
+"""An `event` fact ages this many times faster than a `state` one."""
 
 _SOURCE_LABEL = {"explicit": "operator", "import": "config", "confirmed": "confirmed by an operator", "agent": "agent",
                  "tool": "tool result", "extracted": "extracted", "revert": "restored by a revert"}
@@ -212,6 +222,11 @@ class MemoryContext:
     def __bool__(self) -> bool:
         return bool(self.stable_text() or self.turn_text())
 
+    def _fact_line(self, f: Fact) -> str:
+        stated = f" (stated {time.strftime('%Y-%m-%d', time.localtime(f.valid_from))})" \
+            if self.policy.recency_half_life is not None and f.valid_from else ""
+        return f"- {f.key}: {f.value}{stated}"
+
     def stable_text(self) -> str:
         full = self._stable_full()
         return _clip(full, self.policy.max_chars_stable) if full else ""
@@ -225,7 +240,7 @@ class MemoryContext:
                             for n in self.negatives)
             )
         if self.facts:
-            sections.append("## About this user\n" + "\n".join(f"- {f.key}: {f.value}" for f in self.facts))
+            sections.append("## About this user\n" + "\n".join(self._fact_line(f) for f in self.facts))
         if self.world:
             sections.append("## Known facts\n" + "\n".join(f"- {world_line(w)}" for w in self.world))
         if self.lessons:
