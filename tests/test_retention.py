@@ -1,6 +1,8 @@
 import dataclasses
 import time
 
+import pytest
+
 from commonmemo import Memory, MemoryPolicy
 from commonmemo.events import Message, UserFact
 
@@ -34,6 +36,7 @@ def test_age_drops_raw_events_but_keeps_facts_and_recall(tmp_path):
     assert [e.value for e in mem.store.events(kinds=["user_fact"])].count("Lisbon") >= 1
 
 
+@pytest.mark.sqlite_only  # reads the SQLite windows table directly
 def test_size_bound_and_no_dangling_windows(tmp_path):
     url = f"sqlite:///{tmp_path}/m.db"
     mem = Memory(url)
