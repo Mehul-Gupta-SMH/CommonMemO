@@ -70,6 +70,7 @@ def test_forgotten_user_text_is_nowhere(steps, tmp_path_factory):
     assert secret not in blob
 
 
+@pytest.mark.sqlite_only
 def test_a_failed_append_leaves_log_and_projections_consistent(tmp_path, monkeypatch):
     path = tmp_path / "m.db"
     mem = Memory(f"sqlite:///{path}")

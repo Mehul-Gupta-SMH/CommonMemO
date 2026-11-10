@@ -1,8 +1,12 @@
 import sqlite3
 
+import pytest
+
 from commonmemo import Memory
 from commonmemo.cli import main
 from commonmemo.doctor import check
+
+pytestmark = pytest.mark.sqlite_only  # reads SQLite files directly
 
 
 def levels(path):

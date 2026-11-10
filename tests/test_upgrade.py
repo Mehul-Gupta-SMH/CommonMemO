@@ -8,6 +8,8 @@ import pytest
 from commonmemo import Memory
 from commonmemo.events import Message
 
+pytestmark = pytest.mark.sqlite_only  # the old releases only wrote SQLite files
+
 FIXTURES = Path(__file__).parent / "fixtures" / "upgrade"
 
 
