@@ -58,6 +58,14 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
                    help="passages memory_recall returns (default 8; needs --org)")
     p.add_argument("--message-dates", choices=("off", "stamp", "resolve"), default=env("COMMONMEMO_MESSAGE_DATES", "off"),
                    help="what windows say about when: off, stamp (dated messages), resolve (also relative dates)")
+    p.add_argument("--retain-days", type=float, default=float(env("COMMONMEMO_RETAIN_DAYS") or 0) or None,
+                   help="when a session closes, drop raw events (messages, tool calls, pushes) older than this; "
+                        "facts, procedures and recaps stay (default: keep everything)")
+    p.add_argument("--max-log-mb", type=float, default=float(env("COMMONMEMO_MAX_LOG_MB") or 0) or None,
+                   help="when a session closes, drop the oldest raw events until the Log's text is under this size")
+    p.add_argument("--no-mask-secrets", action="store_true", default=env("COMMONMEMO_MASK_SECRETS") == "0",
+                   help="keep likely secrets (API keys, tokens, private keys) in what is recorded; "
+                        "by default they are replaced by a marker before the event is written (best effort)")
     return p
 
 
@@ -67,7 +75,9 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
 
     return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages, message_dates=args.message_dates,
                         passages=getattr(args, "passages", 0),
-                        recall_passages=getattr(args, "recall_passages", 8))
+                        recall_passages=getattr(args, "recall_passages", 8),
+                        mask_secrets=not getattr(args, "no_mask_secrets", False),
+                        retain_days=getattr(args, "retain_days", None), max_log_mb=getattr(args, "max_log_mb", None))
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -86,6 +96,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("show", help="show a user or a session, read-only", add_help=False)
     sub.add_parser("trace", help="show a session's turn traces", add_help=False)
     sub.add_parser("crawl", help="load a folder's documents into the organisation's memory", add_help=False)
+    sub.add_parser("doctor", help="read-only health check of the Log", add_help=False)
+    sub.add_parser("export", help="write the Log to a JSON-lines file", add_help=False)
+    sub.add_parser("import", help="add the events of an export file the Log lacks", add_help=False)
+    sub.add_parser("scan", help="report likely secrets already in the Log (never prints them)", add_help=False)
     sub.add_parser("savings", help="what memory pushed against re-sending the conversation", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
     args, rest = parser.parse_known_args(argv)
@@ -101,6 +115,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         return crawl_main(rest)
     if args.command == "savings":
         return savings_main(rest)
+    if args.command == "doctor":
+        import argparse
+
+        from .doctor import main as doctor_main
+        from .stores import store_path
+
+        opts = memory_options(argparse.ArgumentParser(prog="commonmemo doctor"), agent=None).parse_args(rest)
+        return doctor_main(store_path(opts.store))
+    if args.command in ("export", "import"):
+        return transfer_main(args.command, rest)
+    if args.command == "scan":
+        return scan_main(rest)
     if args.command == "inspect":
         from .inspector import main as inspect_main
 
@@ -196,6 +222,59 @@ def savings_main(argv: Optional[list[str]] = None) -> int:
     try:
         report = mem.savings(session_id=args.session_id, user_id=args.user)
         print("\n".join(report.lines(args.price_per_mtok)))
+        return 0
+    finally:
+        run_sync(mem.aclose())
+
+
+def transfer_main(command: str, argv: list[str]) -> int:
+    """`commonmemo export FILE` / `commonmemo import FILE` (--store picks the Log)."""
+    import argparse
+
+    from .agent_tools import run_sync
+    from .transfer import export_log, import_log
+
+    p = argparse.ArgumentParser(prog=f"commonmemo {command}")
+    p.add_argument("file")
+    args = memory_options(p, agent=None).parse_args(argv)
+    mem = _open(args)
+    try:
+        if command == "export":
+            print(f"{export_log(mem, args.file)} event(s) written to {args.file}")
+        else:
+            try:
+                added, there = import_log(mem, args.file)
+            except ValueError as e:
+                print(e)
+                return 1
+            print(f"{added} event(s) added, {there} already there")
+        return 0
+    finally:
+        run_sync(mem.aclose())
+
+
+def scan_main(argv: Optional[list[str]] = None) -> int:
+    """`commonmemo scan`: likely secrets already in the Log. Reports where, never the value."""
+    import argparse
+
+    from .agent_tools import run_sync
+    from .secrets import mask_event
+
+    p = argparse.ArgumentParser(prog="commonmemo scan",
+                                description="Likely secrets already in the Log (best effort), read-only.")
+    args = memory_options(p, agent=None).parse_args(argv)
+    mem = _open(args)
+    try:
+        found = 0
+        for e in mem.store.events():
+            _, n = mask_event(e)
+            if n:
+                found += 1
+                print(f"{e.kind} {e.id} session={e.session_id} user={e.user_id}: {n} likely secret(s)")
+        print(f"{found} event(s) hold likely secrets." if found else "No likely secrets found.")
+        if found:
+            print("The Log is append-only: rotate the secret first. To drop what was said, "
+                  "forget the user (Memory.forget_user) or the session; new events are masked by default.")
         return 0
     finally:
         run_sync(mem.aclose())

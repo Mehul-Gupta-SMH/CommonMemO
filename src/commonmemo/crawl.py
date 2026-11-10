@@ -27,6 +27,8 @@ from .events import PassageAdded, PassageRetracted
 if TYPE_CHECKING:
     from .memory import Memory
 
+from .secrets import looks_secret as _looks_secret  # noqa: E402
+
 TEXT_SUFFIXES = (".md", ".markdown", ".txt", ".rst", ".adoc")
 """What a folder crawl reads when no include pattern is given."""
 
@@ -36,15 +38,6 @@ MAX_BYTES = 1_000_000
 BATCH = 200
 """Documents per write: one Log transaction and one projection catch-up each."""
 
-SECRET_PATTERNS = (
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
-    re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{24,}\b"),
-    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),
-    re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*['\"]?[A-Za-z0-9/+_\-]{16,}"),
-)
-"""A document that matches is skipped whole and reported by name, never stored."""
 
 
 @dataclass(frozen=True)
@@ -183,7 +176,8 @@ class FolderSource:
 
 
 def looks_secret(text: str) -> bool:
-    return any(p.search(text) for p in SECRET_PATTERNS)
+    """A document that matches is skipped whole and reported by name, never stored."""
+    return _looks_secret(text)
 
 
 def _gitignore(root: Path) -> list[str]:

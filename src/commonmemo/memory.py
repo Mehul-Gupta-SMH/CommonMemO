@@ -27,8 +27,8 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Sequence, TypeVar, Union, overload
 
 from .agent_tools import build_agent_tools
-from .context import MemoryContext, MemoryPolicy
-from .facts import FactKey, FactRegistry, ImportResult
+from .context import EVENT_DECAY, RECENCY_FLOOR, MemoryContext, MemoryPolicy
+from .facts import FactKey, FactRegistry, ImportResult, parse_duration
 from .environment import EnvironmentResult, is_environment_key
 from .engines import Engine, Fact, LocalEngine, Recap, engine_from_name
 from .ranking import KeywordRanker, Ranker, rank
@@ -41,6 +41,7 @@ from .events import (
     ProcedureRejected,
     ProcedureRetired,
     ToolInvoked,
+    RetentionApplied,
     UserFact,
     WorldFact,
     WorldFactConfirmed,
@@ -157,7 +158,7 @@ class Memory:
             max_facts=50, max_world=50, max_lessons=20, recaps=5, min_recap_score=0.0, recent=0,
             recaps_across_agents=self.policy.recaps_across_agents,
             passages=self.policy.recall_passages, messages=self.policy.recall_messages, min_message_score=self.policy.min_message_score,
-            message_dates=self.policy.message_dates,
+            message_dates=self.policy.message_dates, recency_half_life=self.policy.recency_half_life,
         )
         """What `memory_recall` searches: wider, with no relevance threshold."""
         self.session_ttl = session_ttl
@@ -280,6 +281,18 @@ class Memory:
             return session.record(event)
         return self._append(event)
 
+    secrets_masked = 0
+    """How many secrets this Memory has replaced since it opened (`MemoryPolicy.mask_secrets`)."""
+
+    def _screen(self, event: MemoryEvent) -> MemoryEvent:
+        if not self.policy.mask_secrets:
+            return event
+        from .secrets import mask_event
+
+        event, n = mask_event(event)
+        self.secrets_masked += n
+        return event
+
     def _append(self, event: MemoryEvent) -> MemoryEvent:
         """Log `event` (tagged with the active run, if it has no `run_id`),
         then bring the projections up to date with the log; return what was
@@ -289,6 +302,7 @@ class Memory:
         run_id = current_run()
         if run_id is not None and event.run_id is None:
             event = event.bind(run_id=run_id)
+        event = self._screen(event)
         self.store.append(event)
         self.knowledge.catch_up(self.store)
         after_write(self, event)
@@ -306,6 +320,7 @@ class Memory:
         events = [e.bind(run_id=run_id) if run_id is not None and e.run_id is None else e for e in events]
         if not events:
             return []
+        events = [self._screen(e) for e in events]
         self.store.append_many(events)
         self.knowledge.catch_up(self.store)
         for event in events:
@@ -515,7 +530,7 @@ class Memory:
             said=heard,
             passages=org_found,
             negatives=negatives[: policy.max_negatives],
-            facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts),
+            facts=facts if all_facts else await self._pick_facts(query, facts, policy.max_facts, user_id),
             world=world[: policy.max_world],
             world_turn=world_turn,
             lessons=lessons[: policy.max_lessons],
@@ -554,12 +569,39 @@ class Memory:
         spec = self.fact_keys.get(w.key)
         return f"{w.key} {w.value} {spec.description if spec else ''}"
 
-    async def _pick_facts(self, query: Optional[str], facts: list[Fact], limit: int) -> list[Fact]:
+    def fact_weight(self, user_id: Optional[str], facts: list[Fact], *, now: Optional[float] = None) -> Optional[Callable[[Fact], float]]:
+        """How much each fact's age counts against it (#170), or None when recency is off.
+        `state` facts halve every `recency_half_life`, `event` facts three times as fast, `durable`
+        and unlabelled ones never; nothing drops below `RECENCY_FLOOR`."""
+        half = self.policy.recency_half_life
+        half = parse_duration(half) if isinstance(half, str) else half
+        if not half or user_id is None or not facts:
+            return None
+        lifespans: dict[str, str] = {}
+        for who in self.linked_users(user_id):
+            for e in self.store.events(user_id=who, kinds=[UserFact.kind]):
+                if e.lifespan:
+                    lifespans[e.id] = e.lifespan
+        at = time.time() if now is None else now
+
+        def weight(f: Fact) -> float:
+            life = next((lifespans[i] for i in f.source_event_ids if i in lifespans), "")
+            if life not in ("state", "event") or not f.valid_from:
+                return 1.0
+            rate = EVENT_DECAY if life == "event" else 1.0
+            return max(RECENCY_FLOOR, 0.5 ** (max(0.0, at - f.valid_from) * rate / half))
+
+        return weight
+
+    async def _pick_facts(self, query: Optional[str], facts: list[Fact], limit: int,
+                          user_id: Optional[str] = None) -> list[Fact]:
         """The `limit` facts to push: all of them if they fit; else the ones
-        related to the request first (#21), then the rest in order."""
+        related to the request first (#21), newer before older when
+        `recency_half_life` is set, then the rest in order."""
         if len(facts) <= limit:
             return facts
-        related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}")
+        related, rest = await rank(self.ranker, query, facts, lambda f: f"{f.key} {f.value}",
+                                   weight=self.fact_weight(user_id, facts))
         return (related + rest)[:limit]
 
     async def _profile(self, engine: Any, user_id: str) -> list[Fact]:
@@ -1019,6 +1061,46 @@ class Memory:
         n = self.store.prune(older_than=time.time() - older_than_days * 86400)
         self.knowledge.prune_windows(self.store)  # windows and passages index terms: they go with their events
         return n
+
+    RAW_KINDS = ("message", "tool_invoked", "context_pushed", "step_started", "step_finished", "step_failed")
+    """The kinds retention drops. Everything else (facts, procedures, lessons, links, tombstones) is kept,
+    so a rebuild of the projections from the Log keeps what was learned."""
+
+    def apply_retention(self, *, retain_days: Optional[float] = None, max_log_mb: Optional[float] = None) -> int:
+        """Drop raw events by age and/or size (default: the policy's), record a `RetentionApplied` event,
+        and drop windows and passages that pointed at them. Returns events removed."""
+        retain_days = self.policy.retain_days if retain_days is None else retain_days
+        max_log_mb = self.policy.max_log_mb if max_log_mb is None else max_log_mb
+        if retain_days is None and max_log_mb is None:
+            return 0
+        before = self.store.log_bytes()
+        removed, cutoff, reason = 0, 0.0, []
+        if retain_days is not None:
+            cutoff = time.time() - retain_days * 86400
+            removed += self.store.prune(older_than=cutoff, kinds=self.RAW_KINDS)
+            reason.append(f"older than {retain_days:g} days")
+        if max_log_mb is not None:
+            limit = int(max_log_mb * 1_000_000)
+            while self.store.log_bytes() > limit:
+                raw = self.store.log_bytes(self.RAW_KINDS)
+                if raw == 0:
+                    break  # only kept kinds are left: nothing more may go
+                ts = self.store.nth_ts(self.RAW_KINDS, 0)
+                step = self.store.nth_ts(self.RAW_KINDS, 49)  # the oldest 50 at a time
+                edge = (step if step is not None else time.time() + 1) + 1e-6
+                if ts is None:
+                    break
+                n = self.store.prune(older_than=edge, kinds=self.RAW_KINDS)
+                removed += n
+                cutoff = max(cutoff, edge)
+                if n == 0:
+                    break
+            reason.append(f"over {max_log_mb:g} MB")
+        if removed:
+            self.knowledge.prune_windows(self.store)
+            self._append(RetentionApplied(removed=removed, older_than=cutoff, bytes_before=before,
+                                          bytes_after=self.store.log_bytes(), reason=" and ".join(reason)))
+        return removed
 
     async def aclose(self) -> None:
         await self.engine.aclose()

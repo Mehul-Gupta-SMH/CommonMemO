@@ -395,7 +395,7 @@ class Session:
                     valid_from=e.ts, source_event_ids=(e.id,),
                 )
             visible = self.memory._visible_facts(self.user_id, sorted(facts.values(), key=lambda f: f.key))
-            ctx.facts = await self.memory._pick_facts(query, visible, policy.max_facts)
+            ctx.facts = await self.memory._pick_facts(query, visible, policy.max_facts, self.user_id)
             ctx.more["facts"] = len(visible) - policy.max_facts
         # This user's (or, with no user, this session's) own unapproved world
         # facts: true for them as far as they told us, never for anyone else.
@@ -503,6 +503,12 @@ class Session:
                     await self.memory.distill(self.session_id)
                 except Exception:  # noqa: BLE001 -- learning is optional; closing must not fail
                     logging.getLogger("commonmemo").exception("commonmemo: learning from %s failed", self.session_id)
+        policy = self.memory.policy
+        if policy.retain_days is not None or policy.max_log_mb is not None:  # at close, never mid-turn
+            try:
+                self.memory.apply_retention()
+            except Exception:  # noqa: BLE001 -- housekeeping must not fail a close
+                logging.getLogger("commonmemo").exception("commonmemo: retention failed")
         return self.recaps
 
     async def __aenter__(self) -> "Session":

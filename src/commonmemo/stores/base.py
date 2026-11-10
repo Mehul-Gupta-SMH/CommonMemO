@@ -180,10 +180,19 @@ class Store(ABC):
         many rows were removed."""
 
     @abstractmethod
-    def prune(self, *, older_than: float) -> int:
+    def prune(self, *, older_than: float, kinds: Optional[Iterable[str]] = None) -> int:
         """Delete events older than `older_than` (epoch seconds) and expired
         sessions; return how many rows were removed. Daily counts of the
-        deleted events are kept first (see `event_counts`)."""
+        deleted events are kept first (see `event_counts`). With `kinds`, only
+        events of those kinds go."""
+
+    @abstractmethod
+    def log_bytes(self, kinds: Optional[Iterable[str]] = None) -> int:
+        """Size of the events' stored text, for `kinds` or all."""
+
+    @abstractmethod
+    def nth_ts(self, kinds: Iterable[str], n: int) -> Optional[float]:
+        """Timestamp of the `n`-th oldest event of `kinds` (0 is the oldest); None if fewer."""
 
     def close(self) -> None:
         """Release resources. Default: nothing to release."""
