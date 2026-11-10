@@ -41,6 +41,7 @@ from .events import (
     ProcedureRejected,
     ProcedureRetired,
     ToolInvoked,
+    RetentionApplied,
     UserFact,
     WorldFact,
     WorldFactConfirmed,
@@ -1060,6 +1061,46 @@ class Memory:
         n = self.store.prune(older_than=time.time() - older_than_days * 86400)
         self.knowledge.prune_windows(self.store)  # windows and passages index terms: they go with their events
         return n
+
+    RAW_KINDS = ("message", "tool_invoked", "context_pushed", "step_started", "step_finished", "step_failed")
+    """The kinds retention drops. Everything else (facts, procedures, lessons, links, tombstones) is kept,
+    so a rebuild of the projections from the Log keeps what was learned."""
+
+    def apply_retention(self, *, retain_days: Optional[float] = None, max_log_mb: Optional[float] = None) -> int:
+        """Drop raw events by age and/or size (default: the policy's), record a `RetentionApplied` event,
+        and drop windows and passages that pointed at them. Returns events removed."""
+        retain_days = self.policy.retain_days if retain_days is None else retain_days
+        max_log_mb = self.policy.max_log_mb if max_log_mb is None else max_log_mb
+        if retain_days is None and max_log_mb is None:
+            return 0
+        before = self.store.log_bytes()
+        removed, cutoff, reason = 0, 0.0, []
+        if retain_days is not None:
+            cutoff = time.time() - retain_days * 86400
+            removed += self.store.prune(older_than=cutoff, kinds=self.RAW_KINDS)
+            reason.append(f"older than {retain_days:g} days")
+        if max_log_mb is not None:
+            limit = int(max_log_mb * 1_000_000)
+            while self.store.log_bytes() > limit:
+                raw = self.store.log_bytes(self.RAW_KINDS)
+                if raw == 0:
+                    break  # only kept kinds are left: nothing more may go
+                ts = self.store.nth_ts(self.RAW_KINDS, 0)
+                step = self.store.nth_ts(self.RAW_KINDS, 49)  # the oldest 50 at a time
+                edge = (step if step is not None else time.time() + 1) + 1e-6
+                if ts is None:
+                    break
+                n = self.store.prune(older_than=edge, kinds=self.RAW_KINDS)
+                removed += n
+                cutoff = max(cutoff, edge)
+                if n == 0:
+                    break
+            reason.append(f"over {max_log_mb:g} MB")
+        if removed:
+            self.knowledge.prune_windows(self.store)
+            self._append(RetentionApplied(removed=removed, older_than=cutoff, bytes_before=before,
+                                          bytes_after=self.store.log_bytes(), reason=" and ".join(reason)))
+        return removed
 
     async def aclose(self) -> None:
         await self.engine.aclose()

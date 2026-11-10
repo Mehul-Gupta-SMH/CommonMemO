@@ -498,6 +498,18 @@ class ExternalEvent(MemoryEvent):
     data: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
+class RetentionApplied(MemoryEvent):
+    """Raw events (messages, tool calls, pushes, steps) older than `older_than` were dropped by the
+    retention policy; facts, procedures and the rest stay. The counts are what went and the Log's size (bytes of
+    event text) before and after."""
+
+    removed: int = 0
+    older_than: float = 0.0
+    bytes_before: int = 0
+    bytes_after: int = 0
+    reason: str = ""
+
+
 BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     Checkpoint, ContextPushed, StepStarted, StepFinished, StepFailed, NegativeRevoked, Forgotten, ExternalEvent,
     WorldFactConfirmed, WorldFactRejected, WorldFactRetracted, Snapshot, Reverted, Freeze, Unfreeze, UsersLinked,
@@ -505,7 +517,7 @@ BOOKKEEPING: tuple[type[MemoryEvent], ...] = (
     PassageAdded,
     PassageRetracted,
     ProcedureEntry, ProcedureConfirmed, ProcedureRejected, ProcedureRetired, ProcedureFollowed,
-    DecisionRecorded, LessonLearned,
+    DecisionRecorded, LessonLearned, RetentionApplied,
 )
 """Events that record mechanics, not content. They stay in the event log
 but are left out of episode text and of what engines extract facts from --
@@ -545,6 +557,7 @@ __all__ = [
     "Snapshot",
     "Reverted",
     "Freeze",
+    "RetentionApplied",
     "Unfreeze",
     "UsersLinked",
     "UsersUnlinked",

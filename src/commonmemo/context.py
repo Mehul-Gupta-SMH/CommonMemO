@@ -50,6 +50,11 @@ class MemoryPolicy:
     mask_secrets: bool = False
     """Replace likely secrets (API keys, tokens, private keys, `password=...`) with a marker before
     an event is written. Best effort. On by default for the hooks."""
+    retain_days: Optional[float] = None
+    """Drop raw events (messages, tool calls, pushes, steps) older than this many days when a session
+    closes. Facts, world facts, procedures, lessons and recaps are kept. Off by default."""
+    max_log_mb: Optional[float] = None
+    """Keep the raw events' text under this size, dropping the oldest first, when a session closes."""
     max_negatives: int = 20
     max_facts: int = 20
     max_world: int = 20

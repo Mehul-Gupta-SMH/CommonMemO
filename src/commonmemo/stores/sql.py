@@ -379,23 +379,42 @@ class SqlStore(Store):
             ).rowcount
         return n
 
-    def prune(self, *, older_than: float) -> int:
+    def log_bytes(self, kinds=None) -> int:
+        where, params = ("", ())
+        if kinds is not None:
+            kinds = list(kinds)
+            where, params = f" WHERE kind IN ({','.join('?' * len(kinds))})", tuple(kinds)
+        with self._lock:
+            return self._conn.execute(f"SELECT COALESCE(SUM(LENGTH(body)), 0) AS n FROM events{where}", params).fetchone()["n"]
+
+    def nth_ts(self, kinds, n):
+        kinds = list(kinds)
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT ts FROM events WHERE kind IN ({','.join('?' * len(kinds))}) ORDER BY ts LIMIT 1 OFFSET ?",
+                (*kinds, n)).fetchone()
+        return row["ts"] if row else None
+
+    def prune(self, *, older_than: float, kinds=None) -> int:
+        kinds = None if kinds is None else list(kinds)
+        marks = "" if kinds is None else f" AND kind IN ({','.join('?' * len(kinds))})"
+        extra = () if kinds is None else tuple(kinds)
         with self._lock, self._write():
-            self._rollup(older_than)  # keep daily counts of what is about to go
-            n = self._conn.execute("DELETE FROM events WHERE ts < ?", (older_than,)).rowcount
+            self._rollup(older_than, marks, extra)  # keep daily counts of what is about to go
+            n = self._conn.execute(f"DELETE FROM events WHERE ts < ?{marks}", (older_than, *extra)).rowcount
             n += self._conn.execute(
                 "DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?",
                 (time.time(),),
             ).rowcount
         return n
 
-    def _rollup(self, older_than: float) -> None:
+    def _rollup(self, older_than: float, marks: str = "", extra: tuple = ()) -> None:
         """Add daily counts of the events older than `older_than` to the
         rollups. Called with the lock held, in prune's transaction."""
         rows = self._conn.execute(
             f"SELECT {self._bucket.format('ts')} AS day, kind, {self._source} AS source, {self._scope} AS scope, "
-            "COUNT(*) AS n FROM events WHERE ts < ? GROUP BY 1, 2, 3, 4",
-            (_DAY, _DAY, older_than),
+            f"COUNT(*) AS n FROM events WHERE ts < ?{marks} GROUP BY 1, 2, 3, 4",
+            (_DAY, _DAY, older_than, *extra),
         ).fetchall()
         self._conn.executemany(
             "INSERT INTO event_rollups (day, kind, source, scope, n) VALUES (?, ?, ?, ?, ?) "

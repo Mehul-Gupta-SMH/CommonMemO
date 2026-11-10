@@ -184,13 +184,26 @@ class MemoryStore(Store):
                 del self._sessions[s]
             return len(claims) + gone + len(mine)
 
-    def prune(self, *, older_than: float) -> int:
+    def log_bytes(self, kinds=None) -> int:
+        import json
+
         with self._lock:
-            old = [e for _, e in self._log if e.ts < older_than]
+            return sum(len(json.dumps(e.to_dict())) for _, e in self._log if kinds is None or e.kind in set(kinds))
+
+    def nth_ts(self, kinds, n):
+        wanted = set(kinds)
+        with self._lock:
+            ts = sorted(e.ts for _, e in self._log if e.kind in wanted)
+        return ts[n] if n < len(ts) else None
+
+    def prune(self, *, older_than: float, kinds=None) -> int:
+        wanted = None if kinds is None else set(kinds)
+        with self._lock:
+            old = [e for _, e in self._log if e.ts < older_than and (wanted is None or e.kind in wanted)]
             for e in old:  # daily counts of what is about to go, as the SQL stores keep
                 k = (_bucket(e.ts, _DAY), e.kind, self._label(e, "source"), self._label(e, "scope"))
                 self._rollups[k] = self._rollups.get(k, 0) + 1
-            self._log = [(n, e) for n, e in self._log if e.ts >= older_than]
+            self._log = [(n, e) for n, e in self._log if not (e.ts < older_than and (wanted is None or e.kind in wanted))]
             self._ids = {e.id for _, e in self._log}
             now = time.time()
             expired = [s for s, r in self._sessions.items() if r.expires_at is not None and r.expires_at <= now]

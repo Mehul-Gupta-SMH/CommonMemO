@@ -58,6 +58,11 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
                    help="passages memory_recall returns (default 8; needs --org)")
     p.add_argument("--message-dates", choices=("off", "stamp", "resolve"), default=env("COMMONMEMO_MESSAGE_DATES", "off"),
                    help="what windows say about when: off, stamp (dated messages), resolve (also relative dates)")
+    p.add_argument("--retain-days", type=float, default=float(env("COMMONMEMO_RETAIN_DAYS") or 0) or None,
+                   help="when a session closes, drop raw events (messages, tool calls, pushes) older than this; "
+                        "facts, procedures and recaps stay (default: keep everything)")
+    p.add_argument("--max-log-mb", type=float, default=float(env("COMMONMEMO_MAX_LOG_MB") or 0) or None,
+                   help="when a session closes, drop the oldest raw events until the Log's text is under this size")
     p.add_argument("--no-mask-secrets", action="store_true", default=env("COMMONMEMO_MASK_SECRETS") == "0",
                    help="keep likely secrets (API keys, tokens, private keys) in what is recorded; "
                         "by default they are replaced by a marker before the event is written (best effort)")
@@ -71,7 +76,8 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
     return MemoryPolicy(messages=args.messages, recall_messages=args.recall_messages, message_dates=args.message_dates,
                         passages=getattr(args, "passages", 0),
                         recall_passages=getattr(args, "recall_passages", 8),
-                        mask_secrets=not getattr(args, "no_mask_secrets", False))
+                        mask_secrets=not getattr(args, "no_mask_secrets", False),
+                        retain_days=getattr(args, "retain_days", None), max_log_mb=getattr(args, "max_log_mb", None))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

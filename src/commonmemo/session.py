@@ -503,6 +503,12 @@ class Session:
                     await self.memory.distill(self.session_id)
                 except Exception:  # noqa: BLE001 -- learning is optional; closing must not fail
                     logging.getLogger("commonmemo").exception("commonmemo: learning from %s failed", self.session_id)
+        policy = self.memory.policy
+        if policy.retain_days is not None or policy.max_log_mb is not None:  # at close, never mid-turn
+            try:
+                self.memory.apply_retention()
+            except Exception:  # noqa: BLE001 -- housekeeping must not fail a close
+                logging.getLogger("commonmemo").exception("commonmemo: retention failed")
         return self.recaps
 
     async def __aenter__(self) -> "Session":
