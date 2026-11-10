@@ -1,0 +1,44 @@
+name: Drift
+
+# Weekly canary for the things that change without a commit here (#168):
+#   latest: the newest release of every SDK we adapt, not the pinned minimums,
+#           so a breaking SDK release shows up within a week.
+#   os:     the core suite on macOS and Windows (paths, file locking, line endings).
+# Not covered: the live Claude Code -> Codex handoff needs both CLIs signed in,
+#   so it stays a manual check before each release.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extras: ["dev,commonadk", "dev,adk", "dev,openai-agents", "dev,langgraph", "dev,autogen", "dev,claude-agent-sdk", "dev,graphiti", "dev,mem0", "dev,mcp,otel"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install --upgrade -e ".[${{ matrix.extras }}]"
+      - run: pip list
+      - run: pytest -q
+
+  os:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q

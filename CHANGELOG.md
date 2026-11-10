@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Drift canary (#168): a weekly workflow runs the suite against the newest release of each adapted SDK and on macOS and Windows. The live Claude Code to Codex handoff is not automated (it needs both CLIs signed in).
+
 - Retention (#169): `--retain-days` / `--max-log-mb` (or `COMMONMEMO_RETAIN_DAYS` / `COMMONMEMO_MAX_LOG_MB`) bound the Log when a session closes. Only raw events (messages, tool calls, pushes) age out; facts, world facts, procedures, lessons and recaps are kept, so a projection rebuild still has them. Each pass records a `RetentionApplied` event. Off by default.
 
 - **Export and import** ([#164](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/164)): `commonmemo export FILE` writes the Log as JSON lines (a header, one event per line, a closing count and SHA-256); `commonmemo import FILE` checks both before writing anything, skips events the target already has (same id, so repeating or overlapping is safe), registers the sessions so `forget_user` still finds them, and catches the projections up. Works between any two stores, so it is also the SQLite to Postgres path and back, and a backup. Imported sessions come in open. Not yet: filtering by user or time, encryption.
