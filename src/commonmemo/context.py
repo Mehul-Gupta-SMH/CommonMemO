@@ -47,6 +47,9 @@ class MemoryPolicy:
     """How much of each kind is pushed. Everything else stays reachable
     through the memory tools (`memory_recall`)."""
 
+    mask_secrets: bool = False
+    """Replace likely secrets (API keys, tokens, private keys, `password=...`) with a marker before
+    an event is written. Best effort. On by default for the hooks."""
     max_negatives: int = 20
     max_facts: int = 20
     max_world: int = 20

@@ -280,6 +280,18 @@ class Memory:
             return session.record(event)
         return self._append(event)
 
+    secrets_masked = 0
+    """How many secrets this Memory has replaced since it opened (`MemoryPolicy.mask_secrets`)."""
+
+    def _screen(self, event: MemoryEvent) -> MemoryEvent:
+        if not self.policy.mask_secrets:
+            return event
+        from .secrets import mask_event
+
+        event, n = mask_event(event)
+        self.secrets_masked += n
+        return event
+
     def _append(self, event: MemoryEvent) -> MemoryEvent:
         """Log `event` (tagged with the active run, if it has no `run_id`),
         then bring the projections up to date with the log; return what was
@@ -289,6 +301,7 @@ class Memory:
         run_id = current_run()
         if run_id is not None and event.run_id is None:
             event = event.bind(run_id=run_id)
+        event = self._screen(event)
         self.store.append(event)
         self.knowledge.catch_up(self.store)
         after_write(self, event)
@@ -306,6 +319,7 @@ class Memory:
         events = [e.bind(run_id=run_id) if run_id is not None and e.run_id is None else e for e in events]
         if not events:
             return []
+        events = [self._screen(e) for e in events]
         self.store.append_many(events)
         self.knowledge.catch_up(self.store)
         for event in events:

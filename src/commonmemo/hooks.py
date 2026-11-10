@@ -249,6 +249,8 @@ def _command(harness: str, args: argparse.Namespace) -> str:
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if getattr(args, "message_dates", "off") != "off":
         parts += ["--message-dates", args.message_dates]
+    if getattr(args, "no_mask_secrets", False):
+        parts.append("--no-mask-secrets")
     if args.recall_tool:
         parts.append("--recall-tool")
     if args.no_environment:
