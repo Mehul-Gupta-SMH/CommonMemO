@@ -48,8 +48,12 @@ def test_size_bound_and_no_dangling_windows(tmp_path):
     alive = {e.id for e in mem.store.events(kinds=["message"])}
     import json
 
-    rows = mem.knowledge._conn.execute("SELECT event_ids FROM message_windows").fetchall()
-    assert all(json.loads(r["event_ids"])[0] in alive for r in rows)
+    import sqlite3
+
+    con = sqlite3.connect(f"{tmp_path}/m.db")  # read the projection table directly: the Projections interface hides it
+    rows = con.execute("SELECT event_ids FROM message_windows").fetchall()
+    con.close()
+    assert all(json.loads(r[0])[0] in alive for r in rows)
 
 
 def test_off_by_default_and_runs_at_close(tmp_path):
