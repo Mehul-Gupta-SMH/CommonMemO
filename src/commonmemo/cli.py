@@ -90,6 +90,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("show", help="show a user or a session, read-only", add_help=False)
     sub.add_parser("trace", help="show a session's turn traces", add_help=False)
     sub.add_parser("crawl", help="load a folder's documents into the organisation's memory", add_help=False)
+    sub.add_parser("doctor", help="read-only health check of the Log", add_help=False)
     sub.add_parser("scan", help="report likely secrets already in the Log (never prints them)", add_help=False)
     sub.add_parser("savings", help="what memory pushed against re-sending the conversation", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
@@ -106,6 +107,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         return crawl_main(rest)
     if args.command == "savings":
         return savings_main(rest)
+    if args.command == "doctor":
+        import argparse
+
+        from .doctor import main as doctor_main
+        from .stores import store_path
+
+        opts = memory_options(argparse.ArgumentParser(prog="commonmemo doctor"), agent=None).parse_args(rest)
+        return doctor_main(store_path(opts.store))
     if args.command == "scan":
         return scan_main(rest)
     if args.command == "inspect":

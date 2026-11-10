@@ -8,6 +8,14 @@ from .memory import MemoryStore
 from .sql import PostgresStore, SQLiteStore, SqlStore
 
 
+def store_path(url: str) -> str:
+    """The SQLite file a store URL names (what `store_from_url` opens); other stores give the URL back."""
+    scheme, _, rest = url.partition("://")
+    if scheme == "sqlite":
+        return rest[1:] if rest.startswith("/") else rest
+    return url
+
+
 def store_from_url(url: str) -> Store:
     """Build a store from a URL: `sqlite:///path/to/mem.db`, `sqlite://:memory:`,
     or `postgresql://user@host:5432/db` (add `?schema=name` for a schema of
