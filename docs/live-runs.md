@@ -1395,4 +1395,37 @@ Exact agreement 29 of 38; on aggregation (LIST + COUNT) against the rest, 32 of 
 | `said-24` (saved) | 57 | $0.0037 |
 | `said-24` + the line | 66 | $0.0042 (+14%) |
 
-+18/-9, p = 0.12. Spend $0.50 for the run. **Not built:** the gain (9 questions, 7.6 points) clears the size bar and the cost bar but not the significance bar, and with 27% of multi-hop questions flipping on rerun this sample could only have shown it at about +22/-10. It is a hint, not a result; a second sample (about $0.50) would settle it. The line was not added to the code; to rerun, add it under the "What was said in earlier conversations" heading of `Context.turn_text` and run `scripts/locomo_benchmark.py --categories 1 --seed 8 --conditions said-24 --per-category 12` per conversation.
++18/-9, p = 0.12. Spend $0.50 for the run. **Not built (first sample):** the gain (9 questions, 7.6 points) cleared the size bar and the cost bar but not the significance bar, and with 27% of multi-hop questions flipping on rerun that sample could only have shown it at about +22/-10. The line was not added to the code; to rerun, add it under the "What was said in earlier conversations" heading of `Context.turn_text` and run `scripts/locomo_benchmark.py --categories 1 --seed 8 --conditions said-24 --per-category 12` per conversation.
+
+**Second sample, fresh questions** (seed 9, multi-hop only, 7 per conversation, 70 questions; both arms run because there were no saved answers, which is why the sample is smaller; bar scaled to about 5% net, stated on the issue before the run; Haiku answerer and judge; `--categories 1 --per-category 7 --seed 9 --conditions said-24`, with and without the line):
+
+| | right of 70 | cost / question |
+|---|---|---|
+| `said-24` | 43 | $0.0039 |
+| `said-24` + the line | 43 | $0.0036 (-6%) |
+
++5/-5, p = 1.0. Pooled with the first sample: +23/-14 over 189 questions, net 9, p = 0.19, cost about +5%. Neither the new sample nor the pool clears the bar, so the line is **not built**, and the first sample's +18/-9 should be read as noise. Spend $0.53 for the second sample.
+
+## 2026-11-11: A second judge on the saved LoCoMo answers ([#173](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/173))
+
+The 450-question sample (seed 8) was graded by Haiku. To see how much that grader decides the numbers, the saved `said` (8 windows) and `said-24` (24 windows) answers were graded again by a different, mid-tier model with the unchanged judge prompt (`judge()` in `scripts/locomo_benchmark.py`). Settings were fixed in the issue first. No new answers were generated.
+
+**Sample.** At about $0.0073 per judge call (the headless CLI's overhead dominates, far more than the $0.0007 Haiku figure) the $2 cap bought 286 judgements: 143 questions, both conditions each, drawn in a seeded random order (the first 30 questions are from conversation 0 only, because the first 60 calls ran in id order before the order was changed to a shuffle). None of the 286 calls failed or was unparseable. Spend $2.08, a little over the $2 cap.
+
+| | agreement with Haiku | Cohen's kappa |
+|---|---|---|
+| all 286 | 91.3% | 0.81 |
+| multi-hop (76) | 88.2% | 0.76 |
+| temporal (66) | 95.5% | 0.90 |
+| open-domain (58) | 94.8% | 0.88 |
+| single-hop (86) | 88.4% | 0.69 |
+
+The disagreement runs one way: the second judge marks 22 answers correct that Haiku marked wrong, and 3 the other way.
+
+| Same 143 questions | Haiku judge | second judge |
+|---|---|---|
+| `said` (8 windows) | 83 (58.0%) | 92 (64.3%) |
+| `said-24` (24 windows) | 88 (61.5%) | 98 (68.5%) |
+| `said-24` minus `said`, paired | +15/-10, p = 0.42 | +10/-4, p = 0.18 |
+
+Reading: Haiku is the stricter grader, by about 6 to 7 points on absolute accuracy, so the absolute accuracies in earlier sections are probably low by that much (this does not say which grader is right). Raw agreement is high (kappa 0.81). The direction of the 24-versus-8 window result is the same under both judges (+5 and +6 questions of 143) and neither is significant on this sample, which is smaller than the 450 where that comparison was made. Single-hop has the lowest kappa with 88.4% agreement because most of its answers are right under both judges, which lowers kappa for the same agreement. Not run: the larger answering model (about $7) and LongMemEval (the Hugging Face host is unreachable from the build environment).
