@@ -1371,3 +1371,61 @@ Two ways of using the aliases, in the order they were tried:
 | 24 | single-hop | 841 | 93.7% | 95.0% | +15/-4, p=0.019 |
 
 **Verdict:** mixed, and not enough to ship. The issue's bar is +3 points of multi-hop all-evidence recall. The bonus clears it at k=16 (+3.2) and k=24 (+3.5, the default) but not at k=8 (+1.0, not significant); no category is significantly worse anywhere. Against that: the form that was specified is clearly harmful; the working form was found after looking at the results; the entity list was built from the whole conversation (a real memory would build it from history, once, which is a per-user model cost); and no answer run says the extra recall turns into correct answers (earlier recall gains of this size, #66, did not). Not added. If it is pursued, the next step is a pre-set run on a fresh question sample with answers (about $3 to $4), and Part B on crawled documents once #143 exists, where vocabulary mismatch is likelier than in chat.
+
+## 2026-11-11: List and count answers, and the temporal "0 of 8" ([#174](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/174))
+
+**Diagnosis (no model calls).** From the saved `said-24` answers (Haiku, real memory path, 24 windows, two samples of 12 per category per conversation): 182 unique multi-hop questions, 90 right. For 95 of them every evidence window is among the keyword top 24 for the question (a floor, since `memory_recall` can add more); 57 of those are right and 38 wrong. The 38 were labelled against a rubric written beforehand: LIST (gold is 2+ items, answer omits or adds items), COUNT (a number that differs), INFER (needs a judgement), SINGLE (one lookup picked wrongly), JUDGE (the answer is equivalent to gold). Labeller A was a script on surface rules, labeller B a manual read.
+
+| Label | manual | script |
+|---|---|---|
+| LIST | 20 | 22 |
+| COUNT | 3 | 5 |
+| INFER | 2 | 0 |
+| SINGLE | 3 | 4 |
+| JUDGE | 10 | 7 |
+
+Exact agreement 29 of 38; on aggregation (LIST + COUNT) against the rest, 32 of 38. Aggregation is 23 to 27 of the 38, most of it a list that stops early. About a quarter look like grader false negatives. The same question run twice under the same condition flips right/wrong 22% of the time (48 of 219 questions that appear in both samples; multi-hop 15 of 56).
+
+**Temporal "0 of 8" is a harness artefact.** The #170 recency sample moves every session date to now (`shift_to_now`, 2026) and leaves the gold answers on the disguised 2033 and 2034 dates, so no answer in `recent-off` or `recent-on` could match. It says nothing about temporal questions. Over the pooled samples temporal is 156 of 240 (65%) at 24 windows. Nothing was fixed there; the sample would need its gold shifted too before it can be read.
+
+**Fix tried: one line under the pushed windows** ("If the question asks for every item, or a count, go through all of these windows and collect every match before answering."), off by default. Bar, set in the issue before the run: multi-hop net gain of at least 6 of 119 AND sign-test p < 0.05 AND cost per question up by at most 20%. Haiku, answerer and judge, the 119 multi-hop questions of the second sample, compared pairwise with the saved `said-24` answers for the same ids.
+
+| | right of 119 | cost / question (answer + judge) |
+|---|---|---|
+| `said-24` (saved) | 57 | $0.0037 |
+| `said-24` + the line | 66 | $0.0042 (+14%) |
+
++18/-9, p = 0.12. Spend $0.50 for the run. **Not built (first sample):** the gain (9 questions, 7.6 points) cleared the size bar and the cost bar but not the significance bar, and with 27% of multi-hop questions flipping on rerun that sample could only have shown it at about +22/-10. The line was not added to the code; to rerun, add it under the "What was said in earlier conversations" heading of `Context.turn_text` and run `scripts/locomo_benchmark.py --categories 1 --seed 8 --conditions said-24 --per-category 12` per conversation.
+
+**Second sample, fresh questions** (seed 9, multi-hop only, 7 per conversation, 70 questions; both arms run because there were no saved answers, which is why the sample is smaller; bar scaled to about 5% net, stated on the issue before the run; Haiku answerer and judge; `--categories 1 --per-category 7 --seed 9 --conditions said-24`, with and without the line):
+
+| | right of 70 | cost / question |
+|---|---|---|
+| `said-24` | 43 | $0.0039 |
+| `said-24` + the line | 43 | $0.0036 (-6%) |
+
++5/-5, p = 1.0. Pooled with the first sample: +23/-14 over 189 questions, net 9, p = 0.19, cost about +5%. Neither the new sample nor the pool clears the bar, so the line is **not built**, and the first sample's +18/-9 should be read as noise. Spend $0.53 for the second sample.
+
+## 2026-11-11: A second judge on the saved LoCoMo answers ([#173](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/173))
+
+The 450-question sample (seed 8) was graded by Haiku. To see how much that grader decides the numbers, the saved `said` (8 windows) and `said-24` (24 windows) answers were graded again by a different, mid-tier model with the unchanged judge prompt (`judge()` in `scripts/locomo_benchmark.py`). Settings were fixed in the issue first. No new answers were generated.
+
+**Sample.** At about $0.0073 per judge call (the headless CLI's overhead dominates, far more than the $0.0007 Haiku figure) the $2 cap bought 286 judgements: 143 questions, both conditions each, drawn in a seeded random order (the first 30 questions are from conversation 0 only, because the first 60 calls ran in id order before the order was changed to a shuffle). None of the 286 calls failed or was unparseable. Spend $2.08, a little over the $2 cap.
+
+| | agreement with Haiku | Cohen's kappa |
+|---|---|---|
+| all 286 | 91.3% | 0.81 |
+| multi-hop (76) | 88.2% | 0.76 |
+| temporal (66) | 95.5% | 0.90 |
+| open-domain (58) | 94.8% | 0.88 |
+| single-hop (86) | 88.4% | 0.69 |
+
+The disagreement runs one way: the second judge marks 22 answers correct that Haiku marked wrong, and 3 the other way.
+
+| Same 143 questions | Haiku judge | second judge |
+|---|---|---|
+| `said` (8 windows) | 83 (58.0%) | 92 (64.3%) |
+| `said-24` (24 windows) | 88 (61.5%) | 98 (68.5%) |
+| `said-24` minus `said`, paired | +15/-10, p = 0.42 | +10/-4, p = 0.18 |
+
+Reading: Haiku is the stricter grader, by about 6 to 7 points on absolute accuracy, so the absolute accuracies in earlier sections are probably low by that much (this does not say which grader is right). Raw agreement is high (kappa 0.81). The direction of the 24-versus-8 window result is the same under both judges (+5 and +6 questions of 143) and neither is significant on this sample, which is smaller than the 450 where that comparison was made. Single-hop has the lowest kappa with 88.4% agreement because most of its answers are right under both judges, which lowers kappa for the same agreement. Not run: the larger answering model (about $7) and LongMemEval (the Hugging Face host is unreachable from the build environment).

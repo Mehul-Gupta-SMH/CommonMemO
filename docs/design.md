@@ -545,6 +545,15 @@ commit in order across processes. This serializes the log's writes: about
 (`docs/benchmarks.md`, #17). Committing a turn's events together comes before
 partitioning the log by user or session.
 
+**Retention** ([#169](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/169)). The Log grows without
+bound unless you set `--retain-days` or `--max-log-mb` (env `COMMONMEMO_RETAIN_DAYS`, `COMMONMEMO_MAX_LOG_MB`),
+off by default; both run when a session closes. Only raw events age out: messages, tool calls, pushes and
+steps (`Memory.RAW_KINDS`). Facts, procedures, lessons, links, tombstones and recaps are kept for good, so what
+was learned survives and a rebuild of the projections from the pruned Log gives the same profile. What does shrink
+is what is built from raw events: message-window search only finds messages still in the Log. `--max-log-mb`
+drops the oldest raw events first and never splits a window. `commonmemo show log` and `commonmemo doctor` report
+how much of the Log is raw (the part retention can drop) and how much is kept.
+
 **Setup.** `CREATE ... IF NOT EXISTS` isn't safe when several processes
 start at once on Postgres (two can both find a table missing), so creating
 schemas and tables holds one database-wide advisory lock.

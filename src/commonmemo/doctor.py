@@ -38,6 +38,16 @@ def check(path: str) -> list[tuple[str, str, str]]:
             add("fail", "events table", str(e))
             return rows
         add("ok", "events", f"{n} in the Log" + (f", last {(time.time() - last) / 3600:.1f} h ago" if last else ""))
+        try:
+            from .memory import Memory
+
+            raw = Memory.RAW_KINDS
+            total, rawb = (con.execute(f"SELECT COALESCE(SUM(LENGTH(body)),0), COALESCE(SUM(CASE WHEN kind IN "
+                                       f"({','.join('?' * len(raw))}) THEN LENGTH(body) END),0) FROM events", raw).fetchone())
+            add("ok", "size", f"{total / 1e6:.1f} MB of event text, {rawb / 1e6:.1f} MB of it raw (messages, tool calls, "
+                              "pushes) and so what --retain-days / --max-log-mb can drop")
+        except sqlite3.Error:
+            pass
         meta = {}
         try:
             meta = {r["key"]: r["value"] for r in con.execute("SELECT key, value FROM knowledge_meta")}

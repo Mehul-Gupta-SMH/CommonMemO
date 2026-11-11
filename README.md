@@ -1,19 +1,30 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="CommonMemo — memory for any agent, on any framework: pushed when it matters, pulled when asked, never trusted blindly" width="100%">
+  <img src="docs/assets/banner.svg" alt="CommonMemo: one memory across coding harnesses, with an auditable, revertible history" width="100%">
 </p>
 
-**Memory for agents that works the same on every framework, and that you
-can audit, correct and roll back.**
+**One memory that follows you across coding harnesses, with a history you
+can audit and revert.**
 
-Agents forget everything between sessions, and the memory bolted onto them
-is usually a vector store that anything can write to and nobody can
-inspect. CommonMemo is one `Memory` handle in front of an append-only Log.
-It decides what goes into each turn and records why. Agent and
-model-learned writes wait for an operator's approval before they reach
-anyone else. Every change can be traced back to the events behind it, and
-undone. It runs the same under Google ADK, OpenAI Agents, Claude Agent SDK,
-CrewAI, AutoGen and LangGraph (through [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK)),
-over MCP, and inside Claude Code, Codex and OpenCode through their hooks.
+For people who run more than one coding agent (Claude Code, Codex, OpenCode)
+or build on an agent SDK, and want memory they can inspect instead of a
+vector store that anything can write to. CommonMemo is one `Memory` handle in
+front of an append-only Log. Two things set it apart:
+
+1. **One memory across harnesses.** The same store, user and (if you give
+   them the same session id) the same session continue from Claude Code to
+   Codex to OpenCode. Each event records which harness wrote it.
+2. **An auditable, revertible history.** Nothing in the Log is edited. Every
+   push into a turn is recorded with a **why** link to the events behind it.
+   Writes by agents and learners wait for an operator's approval, and a
+   revert appends compensating events instead of deleting, so it can be
+   undone too.
+
+What is and is not measured: the cross-harness continuation is covered by
+tests against recorded hook payloads (Claude Code and Codex) but has not yet
+been run live end to end ([#172](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/172)).
+Whether memory improves answers is reported with its limits in
+[Does it help?](#does-it-help-the-evaluation-suite) and
+[docs/benchmarks.md](docs/benchmarks.md).
 
 [![ci](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/CommonMemO/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/commonmemo)](https://pypi.org/project/commonmemo/)
@@ -33,7 +44,42 @@ Right: what waits for review, beside what it would replace.
 
 ---
 
-## Quickstart
+## Quickstart: start in one harness, continue in another
+
+```bash
+pip install commonmemo                 # core: stdlib only, offline, no API key
+
+# Same store, same user, same session id in both harnesses.
+commonmemo setup claude-code --user ada --session billing-fix   # merge into .claude/settings.json
+commonmemo setup codex --user ada --session billing-fix         # merge into .codex/hooks.json
+# ... work in Claude Code, stop, open Codex: it is told where the work stood.
+
+commonmemo show session billing-fix    # what memory holds; each event names its harness
+commonmemo trace billing-fix           # what each turn was given, and why
+```
+
+```python
+from commonmemo import Memory
+mem = Memory("sqlite:///.commonmemo/memory.db")   # the hooks' default store
+mem.revert(session_id="billing-fix", dry_run=True)   # plan the undo of what that session taught
+```
+
+Reverts cover world facts, negatives and procedures. See
+[See how memory changes, and undo it](#see-how-memory-changes-and-undo-it) and
+[Hooks](#hooks-automatic-capture-and-push-in-coding-harnesses).
+
+## Also included
+
+Beyond those two, with details further down:
+- engines (offline `local`, Graphiti, Mem0), world facts with lifetimes and procedural memory;
+- a review queue and a local web inspector;
+- an MCP server and adapters for Google ADK, OpenAI Agents, Claude Agent SDK, CrewAI, AutoGen and LangGraph (through [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK));
+- a document crawler, an optional learner, opt-in meaning-based recall, Postgres;
+- an evaluation suite and benchmark records ([docs/evals.md](docs/evals.md), [docs/benchmarks.md](docs/benchmarks.md)).
+
+---
+
+## Try the demo
 
 ```bash
 pip install commonmemo                # core: stdlib only, offline local engine
@@ -806,7 +852,7 @@ settings, so this is the source of truth until it is pasted across.
 Description:
 
 ```
-Framework-neutral memory for agents: pushed when it matters, pulled when asked, never trusted blindly. Traced, reviewable and revertible; works with CommonADK, MCP, Claude Code, Codex and OpenCode.
+One memory across coding harnesses (Claude Code, Codex, OpenCode) and agent SDKs, with an append-only, auditable, revertible history. Works with MCP and CommonADK.
 ```
 
 Topics:

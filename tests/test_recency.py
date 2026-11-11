@@ -110,3 +110,16 @@ def test_extracted_lifespan_is_written_and_old_events_replay():
     payload = json.loads(e.model_dump_json() if hasattr(e, "model_dump_json") else json.dumps(e.payload))
     payload.pop("lifespan", None)
     assert UserFact(**{k: v for k, v in payload.items() if k in ("key", "value", "source")}).lifespan == ""
+
+
+def test_the_flag_reaches_the_policy_and_the_hook_setup():
+    import argparse
+
+    from commonmemo.cli import policy_from
+    from commonmemo.hooks import hook_config
+
+    args = argparse.Namespace(store="sqlite:///.commonmemo/memory.db", engine="local", project=None, user="ada",
+                              agent=None, session=None, read_only=False, recall_tool=False, no_environment=False,
+                              messages=4, recall_messages=6, message_dates="off", recency_half_life="90d")
+    assert policy_from(args).recency_half_life == "90d"
+    assert "--recency-half-life 90d" in hook_config("claude-code", args)["hooks"]["SessionStart"][0]["hooks"][0]["command"]

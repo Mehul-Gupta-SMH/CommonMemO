@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import calendar
+import dataclasses
 import json
 import os
 import random
@@ -65,6 +66,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_claude_code as live  # noqa: E402  (reuses its child environment and redaction)
 
 from commonmemo import AlertPolicy, Memory, ModelExtractor  # noqa: E402
+from commonmemo.events import UserFact  # noqa: E402
 from commonmemo.ranking import KeywordRanker  # noqa: E402
 
 DATA_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
@@ -74,18 +76,23 @@ CATEGORIES = {1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop"}
 CONDITIONS = ("none", "rag", "memory", "extracted", "said", "both", "full")
 WIDER = ("said-16", "said-24")
 """`said` with 16 or 24 windows pushed and 16 or 24 returned by `memory_recall` instead of 8 (#135). Run on their own."""
+RECENT = ("recent-off", "recent-on")
+"""#170: the same extracted store (`said` windows), read with and without `--recency-half-life 90d`. Its messages
+and facts are recorded at their session's date, shifted so the last session is now (a real agent's would be).
+Run on their own."""
 DATED = ("dated-off", "dated-stamp", "dated-resolve")
 """Message windows over a store whose messages carry the session's own date, with no date written into the
 text (#71): windows that say the day only, that stamp each message, that also resolve relative dates."""
 STORE_OF = {"memory": "memory", "extracted": "extracted", "said": "memory", "both": "extracted",
             **{c: "memory" for c in WIDER},
-            **{c: "dated" for c in DATED}}
+            **{c: "dated" for c in DATED}, **{c: "recent" for c in RECENT}}
 """Which ingested store each memory condition reads; `said` and `both` add the user's past messages (#62)."""
 SAID_FLAGS = ["--messages", "8", "--recall-messages", "8"]
 NO_WINDOWS = ["--messages", "0", "--recall-messages", "0"]
 """Windows are on by default since #70; `memory` and `extracted` are the conditions without them."""
 FLAGS_OF = {"memory": NO_WINDOWS, "extracted": NO_WINDOWS, "said": SAID_FLAGS, "both": SAID_FLAGS,
-            **{c: ["--messages", c.split("-")[1], "--recall-messages", c.split("-")[1]] for c in WIDER}, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED}}
+            **{c: ["--messages", c.split("-")[1], "--recall-messages", c.split("-")[1]] for c in WIDER}, **{c: SAID_FLAGS + ["--message-dates", c.split("-")[1]] for c in DATED},
+            "recent-off": SAID_FLAGS, "recent-on": SAID_FLAGS + ["--recency-half-life", "90d"]}
 RAG_WINDOW, RAG_TOP = 6, 8
 """The simple alternative a developer would build: windows of 6 turns, the 8 best against the question."""
 CALL_BUDGET = "0.60"
@@ -245,21 +252,36 @@ def session_ts(date: str) -> float:
     return time.mktime((int(year), month_no, int(day), int(hour) % 12 + (12 if half.lower() == "pm" else 0), int(minute), 0, 0, 0, -1))
 
 
-def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor], dated: bool = False) -> dict[str, int]:
+def ingest(conv: dict[str, Any], db: Path, extract: Optional[ModelExtractor], dated: bool = False,
+           shift_to_now: bool = False) -> dict[str, int]:
     """Record the conversation, one closed memory session per LoCoMo session; with an
     extractor, closing a session also extracts its facts (the product feature). A store
     already in the working directory is reused, so a resumed or extended run asks about the same facts.
     `dated`: each message is recorded at its session's date and the date is not written into the text,
-    as when a real agent's messages are logged as they happen."""
+    as when a real agent's messages are logged as they happen. `shift_to_now` (#170) also moves every time
+    so the last session is now, and records extracted facts at their session's time, not at ingestion."""
     # A bulk ingestion looks like a write spike to the default alerts; that is not what is measured here.
     built = db.exists()
     mem = Memory(f"sqlite:///{db}", project="locomo", extractor=extract, alerts=AlertPolicy(enabled=False))
-    for n, date, turns in [] if built else sessions_of(conv):
+    all_sessions = sessions_of(conv)
+    shift = time.time() - session_ts(all_sessions[-1][1]) if shift_to_now else 0.0
+    current = {"ts": 0.0}
+    if shift_to_now:
+        append = mem._append
+
+        def stamped(event: Any, *a: Any, **k: Any) -> Any:
+            if isinstance(event, UserFact):
+                event = dataclasses.replace(event, ts=current["ts"])
+            return append(event, *a, **k)
+
+        mem._append = stamped  # type: ignore[method-assign]
+    for n, date, turns in [] if built else all_sessions:
+        current["ts"] = session_ts(date) + shift
         with mem.session(f"locomo-session-{n}", user_id=USER, agent="locomo") as s:
             for i, t in enumerate(turns):
                 role = "user" if t["speaker"] == conv["conversation"]["speaker_a"] else "assistant"
                 if dated:
-                    s.message(role, turn_text(t), ts=session_ts(date))
+                    s.message(role, turn_text(t), ts=session_ts(date) + shift)
                 else:
                     s.message(role, (f"On {date}. " if i == 0 else "") + turn_text(t))
     stats = {"sessions": len(sessions_of(conv)), "facts": len(mem.store.events(kinds=["user_fact"])),
@@ -324,9 +346,10 @@ def main() -> int:
     p.add_argument("--conversation", type=int, default=0, help="which of the 10 conversations")
     p.add_argument("--per-category", type=int, default=8, help="questions per category (1 to 4)")
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--categories", default="1,2,3,4", help="which categories to ask (default all four; 1 is multi-hop)")
     p.add_argument("--no-disguise", action="store_true", help="use the data as published (the model may have seen it)")
     p.add_argument("--conditions", default=",".join(CONDITIONS),
-                   help=f"also {', '.join(DATED)} (#71: dated windows, run on their own)")
+                   help=f"also {', '.join(DATED + RECENT)} (#71: dated windows, run on their own)")
     p.add_argument("--model", default=None, help="answering/extraction model for claude --model (default: the CLI's); "
                                                  "e.g. haiku for the smallest")
     p.add_argument("--judge-model", default="haiku", help="model that grades the answers")
@@ -339,14 +362,15 @@ def main() -> int:
     args = p.parse_args()
 
     conditions = [c for c in args.conditions.split(",") if c]
-    bad = set(conditions) - set(CONDITIONS) - set(DATED) - set(WIDER)
+    bad = set(conditions) - set(CONDITIONS) - set(DATED) - set(WIDER) - set(RECENT)
     if bad:
         p.error(f"unknown conditions {sorted(bad)}")
     data = load_data(args.data)
     conv = data[args.conversation]
     if not args.no_disguise:
         conv = disguise(conv, args.conversation)
-    questions = sample(conv, args.conversation, args.per_category, args.seed)
+    questions = [q for q in sample(conv, args.conversation, args.per_category, args.seed)
+                 if str(q["category"]) in args.categories.split(",")]
     work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="commonmemo-locomo-"))
     work.mkdir(parents=True, exist_ok=True)
     version = subprocess.run(["claude", "--version"], capture_output=True, text=True, check=False).stdout.strip()
@@ -363,6 +387,9 @@ def main() -> int:
     if "dated" in wanted:
         dbs["dated"] = work / "dated.db"
         ingest_stats["dated"] = ingest(conv, dbs["dated"], None, dated=True)
+    if "recent" in wanted:
+        dbs["recent"] = work / "recent.db"
+        ingest_stats["recent"] = ingest(conv, dbs["recent"], None if args.ingest_only else extractor(args.model), dated=True, shift_to_now=True)
     if "extracted" in wanted:
         dbs["extracted"] = work / "extracted.db"
         ingest_stats["extracted"] = ingest(conv, dbs["extracted"], None if args.ingest_only else extractor(args.model))
