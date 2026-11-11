@@ -1371,3 +1371,28 @@ Two ways of using the aliases, in the order they were tried:
 | 24 | single-hop | 841 | 93.7% | 95.0% | +15/-4, p=0.019 |
 
 **Verdict:** mixed, and not enough to ship. The issue's bar is +3 points of multi-hop all-evidence recall. The bonus clears it at k=16 (+3.2) and k=24 (+3.5, the default) but not at k=8 (+1.0, not significant); no category is significantly worse anywhere. Against that: the form that was specified is clearly harmful; the working form was found after looking at the results; the entity list was built from the whole conversation (a real memory would build it from history, once, which is a per-user model cost); and no answer run says the extra recall turns into correct answers (earlier recall gains of this size, #66, did not). Not added. If it is pursued, the next step is a pre-set run on a fresh question sample with answers (about $3 to $4), and Part B on crawled documents once #143 exists, where vocabulary mismatch is likelier than in chat.
+
+## 2026-11-11: List and count answers, and the temporal "0 of 8" ([#174](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/174))
+
+**Diagnosis (no model calls).** From the saved `said-24` answers (Haiku, real memory path, 24 windows, two samples of 12 per category per conversation): 182 unique multi-hop questions, 90 right. For 95 of them every evidence window is among the keyword top 24 for the question (a floor, since `memory_recall` can add more); 57 of those are right and 38 wrong. The 38 were labelled against a rubric written beforehand: LIST (gold is 2+ items, answer omits or adds items), COUNT (a number that differs), INFER (needs a judgement), SINGLE (one lookup picked wrongly), JUDGE (the answer is equivalent to gold). Labeller A was a script on surface rules, labeller B a manual read.
+
+| Label | manual | script |
+|---|---|---|
+| LIST | 20 | 22 |
+| COUNT | 3 | 5 |
+| INFER | 2 | 0 |
+| SINGLE | 3 | 4 |
+| JUDGE | 10 | 7 |
+
+Exact agreement 29 of 38; on aggregation (LIST + COUNT) against the rest, 32 of 38. Aggregation is 23 to 27 of the 38, most of it a list that stops early. About a quarter look like grader false negatives. The same question run twice under the same condition flips right/wrong 22% of the time (48 of 219 questions that appear in both samples; multi-hop 15 of 56).
+
+**Temporal "0 of 8" is a harness artefact.** The #170 recency sample moves every session date to now (`shift_to_now`, 2026) and leaves the gold answers on the disguised 2033 and 2034 dates, so no answer in `recent-off` or `recent-on` could match. It says nothing about temporal questions. Over the pooled samples temporal is 156 of 240 (65%) at 24 windows. Nothing was fixed there; the sample would need its gold shifted too before it can be read.
+
+**Fix tried: one line under the pushed windows** ("If the question asks for every item, or a count, go through all of these windows and collect every match before answering."), off by default. Bar, set in the issue before the run: multi-hop net gain of at least 6 of 119 AND sign-test p < 0.05 AND cost per question up by at most 20%. Haiku, answerer and judge, the 119 multi-hop questions of the second sample, compared pairwise with the saved `said-24` answers for the same ids.
+
+| | right of 119 | cost / question (answer + judge) |
+|---|---|---|
+| `said-24` (saved) | 57 | $0.0037 |
+| `said-24` + the line | 66 | $0.0042 (+14%) |
+
++18/-9, p = 0.12. Spend $0.50 for the run. **Not built:** the gain (9 questions, 7.6 points) clears the size bar and the cost bar but not the significance bar, and with 27% of multi-hop questions flipping on rerun this sample could only have shown it at about +22/-10. It is a hint, not a result; a second sample (about $0.50) would settle it. The line was not added to the code; to rerun, add it under the "What was said in earlier conversations" heading of `Context.turn_text` and run `scripts/locomo_benchmark.py --categories 1 --seed 8 --conditions said-24 --per-category 12` per conversation.

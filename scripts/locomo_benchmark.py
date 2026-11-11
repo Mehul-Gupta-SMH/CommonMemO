@@ -346,6 +346,7 @@ def main() -> int:
     p.add_argument("--conversation", type=int, default=0, help="which of the 10 conversations")
     p.add_argument("--per-category", type=int, default=8, help="questions per category (1 to 4)")
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--categories", default="1,2,3,4", help="which categories to ask (default all four; 1 is multi-hop)")
     p.add_argument("--no-disguise", action="store_true", help="use the data as published (the model may have seen it)")
     p.add_argument("--conditions", default=",".join(CONDITIONS),
                    help=f"also {', '.join(DATED + RECENT)} (#71: dated windows, run on their own)")
@@ -368,7 +369,8 @@ def main() -> int:
     conv = data[args.conversation]
     if not args.no_disguise:
         conv = disguise(conv, args.conversation)
-    questions = sample(conv, args.conversation, args.per_category, args.seed)
+    questions = [q for q in sample(conv, args.conversation, args.per_category, args.seed)
+                 if str(q["category"]) in args.categories.split(",")]
     work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="commonmemo-locomo-"))
     work.mkdir(parents=True, exist_ok=True)
     version = subprocess.run(["claude", "--version"], capture_output=True, text=True, check=False).stdout.strip()
