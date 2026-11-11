@@ -63,6 +63,9 @@ def memory_options(p: argparse.ArgumentParser, *, agent: Optional[str]) -> argpa
                         "facts, procedures and recaps stay (default: keep everything)")
     p.add_argument("--max-log-mb", type=float, default=float(env("COMMONMEMO_MAX_LOG_MB") or 0) or None,
                    help="when a session closes, drop the oldest raw events until the Log's text is under this size")
+    p.add_argument("--recency-half-life", default=env("COMMONMEMO_RECENCY_HALF_LIFE") or None,
+                   help="rank state facts lower as they age, halving every this long (\"90d\"); event facts age three "
+                        "times as fast, durable facts never (default: off)")
     p.add_argument("--no-mask-secrets", action="store_true", default=env("COMMONMEMO_MASK_SECRETS") == "0",
                    help="keep likely secrets (API keys, tokens, private keys) in what is recorded; "
                         "by default they are replaced by a marker before the event is written (best effort)")
@@ -77,7 +80,8 @@ def policy_from(args: argparse.Namespace) -> "MemoryPolicy":
                         passages=getattr(args, "passages", 0),
                         recall_passages=getattr(args, "recall_passages", 8),
                         mask_secrets=not getattr(args, "no_mask_secrets", False),
-                        retain_days=getattr(args, "retain_days", None), max_log_mb=getattr(args, "max_log_mb", None))
+                        retain_days=getattr(args, "retain_days", None), max_log_mb=getattr(args, "max_log_mb", None),
+                        recency_half_life=getattr(args, "recency_half_life", None))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `--recency-half-life` (env `COMMONMEMO_RECENCY_HALF_LIFE`) turns on recency weighting (#170) from the command line and the hook setup.
 - Drift canary (#168): a weekly workflow runs the suite against the newest release of each adapted SDK and on macOS and Windows. The live Claude Code to Codex handoff is not automated (it needs both CLIs signed in).
 
 - Retention (#169): `--retain-days` / `--max-log-mb` (or `COMMONMEMO_RETAIN_DAYS` / `COMMONMEMO_MAX_LOG_MB`) bound the Log when a session closes. Only raw events (messages, tool calls, pushes) age out; facts, world facts, procedures, lessons and recaps are kept, so a projection rebuild still has them. Each pass records a `RetentionApplied` event. Off by default.

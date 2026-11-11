@@ -249,7 +249,7 @@ def _command(harness: str, args: argparse.Namespace) -> str:
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if getattr(args, "message_dates", "off") != "off":
         parts += ["--message-dates", args.message_dates]
-    for flag in ("retain_days", "max_log_mb"):
+    for flag in ("retain_days", "max_log_mb", "recency_half_life"):
         if getattr(args, flag, None):
             parts += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     if getattr(args, "no_mask_secrets", False):
