@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "commonmemo"
 version = "0.0.3"
-description = "Framework-neutral memory for agents and workflows: event, session, episodic and user memory behind one handle."
+description = "One memory across coding harnesses (Claude Code, Codex, OpenCode) with an append-only, auditable, revertible history."
 dynamic = ["readme"]
 license = "Apache-2.0"
 keywords = ["agents", "memory", "llm", "mcp", "claude-code", "codex", "rag", "event-log", "postgres", "sqlite"]
