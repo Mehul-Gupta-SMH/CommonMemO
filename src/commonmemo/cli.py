@@ -192,12 +192,19 @@ def show_main(argv: Optional[list[str]] = None) -> int:
     import argparse
 
     p = argparse.ArgumentParser(prog="commonmemo show", description="Show what memory holds, read-only.")
-    p.add_argument("what", choices=("user", "session"))
-    p.add_argument("id")
+    p.add_argument("what", choices=("user", "session", "log"))
+    p.add_argument("id", nargs="?")
     args = memory_options(p, agent=None).parse_args(argv)
     mem = _open(args)
     try:
-        if args.what == "user":
+        if args.what != "log" and not args.id:
+            p.error(f"show {args.what} needs an id")
+        if args.what == "log":
+            total, raw = mem.store.log_bytes(), mem.store.log_bytes(mem.RAW_KINDS)
+            lines = [f"{total / 1e6:.2f} MB of event text; {raw / 1e6:.2f} MB raw (messages, tool calls, pushes), "
+                     f"{(total - raw) / 1e6:.2f} MB kept for good (facts, procedures, lessons, recaps)",
+                     "only the raw part ages out: --retain-days / --max-log-mb"]
+        elif args.what == "user":
             lines = user_lines(user_view(mem, args.id))
         else:
             view = session_view(mem, args.id)

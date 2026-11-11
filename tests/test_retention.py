@@ -67,3 +67,19 @@ def test_off_by_default_and_runs_at_close(tmp_path):
     fill(mem2, 20)  # each close applies the policy
     assert mem2.store.log_bytes(Memory.RAW_KINDS) < 8_000
     assert isinstance(mem2.store.events(kinds=["message"])[0], Message)
+
+
+@pytest.mark.sqlite_only
+def test_show_log_and_doctor_report_the_raw_share(tmp_path, capsys):
+    from commonmemo.cli import show_main
+    from commonmemo.doctor import check
+
+    db = tmp_path / "m.db"
+    mem = Memory(f"sqlite:///{db}", project="p")
+    with mem.session("s", user_id="u") as s:
+        s.message("user", "x" * 1000)
+    import asyncio
+    asyncio.run(mem.aclose())
+    assert show_main(["--store", f"sqlite:///{db}", "log"]) == 0
+    assert "raw" in capsys.readouterr().out
+    assert any(name == "size" and "raw" in detail for _, name, detail in check(str(db)))

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `commonmemo show log` and a `size` row in `commonmemo doctor` report how much of the Log is raw (what `--retain-days` and `--max-log-mb` can drop) and how much is kept (#169). The design doc says that only raw events age out.
 - `--recency-half-life` (env `COMMONMEMO_RECENCY_HALF_LIFE`) turns on recency weighting (#170) from the command line and the hook setup.
 - Drift canary (#168): a weekly workflow runs the suite against the newest release of each adapted SDK and on macOS and Windows. The live Claude Code to Codex handoff is not automated (it needs both CLIs signed in).
 
