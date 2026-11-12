@@ -1429,3 +1429,30 @@ The disagreement runs one way: the second judge marks 22 answers correct that Ha
 | `said-24` minus `said`, paired | +15/-10, p = 0.42 | +10/-4, p = 0.18 |
 
 Reading: Haiku is the stricter grader, by about 6 to 7 points on absolute accuracy, so the absolute accuracies in earlier sections are probably low by that much (this does not say which grader is right). Raw agreement is high (kappa 0.81). The direction of the 24-versus-8 window result is the same under both judges (+5 and +6 questions of 143) and neither is significant on this sample, which is smaller than the 450 where that comparison was made. Single-hop has the lowest kappa with 88.4% agreement because most of its answers are right under both judges, which lowers kappa for the same agreement. Not run: the larger answering model (about $7) and LongMemEval (the Hugging Face host is unreachable from the build environment).
+
+## 2026-11-12: LongMemEval ([#173](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/173))
+
+[LongMemEval](https://github.com/xiaowu0162/LongMemEval) (Wu et al., 2024), the `longmemeval_s` file of the cleaned release: each of 500 questions has its own chat history of about 50 sessions (about 115k tokens). `scripts/longmemeval_benchmark.py` asks the same question in three conditions, each in its own headless `claude -p` session: `none` (only today's date), `rag` (windows of 6 turns, the 8 sharing the most words with the question, pasted in, no tools) and `memory` (CommonMemo as shipped: 24 windows pushed and returned by `memory_recall`, every session recorded and closed, read-only, extraction off). Settings were fixed in the issue before any answer was generated. Haiku answers and grades. Seed 7, 20 questions of each of the six types (120), abstention questions left out; years disguised (2022/2023/2024 to 2033/2034/2052, same weekdays), which does not defeat recognition of the public question set. $1.50 for 360 answers and grades (cap $5).
+
+| Condition | Correct | Knowledge update | Multi-session | Single-session assistant | Single-session preference | Single-session user | Temporal | $/question (answer + grade) |
+|---|---|---|---|---|---|---|---|---|
+| none | 6/120 | 0/20 | 1/20 | 4/20 | 0/20 | 1/20 | 0/20 | 0.0013 |
+| rag (8 windows) | 88/120 | 19/20 | 10/20 | 18/20 | 7/20 | 17/20 | 17/20 | 0.0071 |
+| memory (24 windows, as shipped) | 85/120 | 17/20 | 16/20 | 11/20 | 5/20 | 18/20 | 18/20 | 0.0042 |
+
+Paired exact sign tests (bar set in the issue: p < 0.05):
+
+- memory vs none: +80/-1, p < 0.001. Memory beats guessing in every type; single-session assistant (+8/-1, p = 0.04) and preference (+5/-0, p = 0.06, not significant) are the weakest.
+- memory vs rag: +17/-20 overall, p = 0.74: **no difference overall.** By type: multi-session +8/-2 (p = 0.11, in memory's favour, not significant), single-session assistant +0/-7 (p = 0.016, rag better), the other four within 1 to 3 questions either way.
+- rag vs none: +84/-2, p < 0.001.
+
+Reading, and what it does not say:
+
+- Memory, as shipped, answers about as many of these questions as pasting 8 keyword-ranked windows, at about 60% of the cost per question, with about 0.93 `memory_recall` calls per question. Neither is near a ceiling (no whole-history condition was run: about 115k tokens a question, roughly $0.12 each, did not fit the cap).
+- The one type where memory is clearly worse is questions about what the assistant said (11 against 18). A likely cause, not tested here: windows cut each message to 400 characters (`LINE_CHARS`), and the assistant's long replies hold the detail in their later part, while `rag` pastes whole turns. Changing that is a separate experiment; no default was changed.
+- Memory's best type is multi-session (16 against 10 for rag), the one that needs several sessions, but with 20 questions that gap is not significant.
+- The `none` row is near zero because LongMemEval questions are about the user's own life; guessing does not work, unlike on LoCoMo.
+
+**Limits.** 120 questions, 20 a type: only large per-type gaps can reach significance. One seed, one sample. Haiku answering and grading (an earlier check found Haiku the stricter grader by about 6 to 7 points, so absolute accuracies are probably low; the comparison between conditions uses one grader). The judge prompt is the LoCoMo one with an off-by-one allowance for counts of days, weeks and months, "latest value" for knowledge updates and a rubric reading for preference questions, not the benchmark's own type-specific prompts, so numbers are not comparable with published LongMemEval scores. The disguise only moves years. Memory used its default key-word ranker; no embeddings. Single store per question, extraction off.
+
+Rerun (the data is downloaded by hand from huggingface.co/datasets/xiaowu0162/longmemeval-cleaned): `python scripts/longmemeval_benchmark.py --data longmemeval_s_cleaned.json --per-type 20 --seed 7 --budget 5`
