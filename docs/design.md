@@ -775,6 +775,9 @@ inspector first, OpenTelemetry as the first exporter. See
 - [ADR 0006 — institutional memory](adr/0006-institutional-memory.md) (proposed, on hold): an
   `org:<name>` scope, passages from crawled documents, promotion to reviewed facts, removal by
   source ([#142](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/142)).
+- [ADR 0007 — journal mode for the SQLite store](adr/0007-sqlite-wal.md) (draft, recommendation only):
+  two to four concurrent writers record about 2.7 times as many messages a second in WAL, and wait
+  less; no default changed ([#177](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/177)).
 
 ## Roadmap
 
