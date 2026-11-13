@@ -1456,3 +1456,47 @@ Reading, and what it does not say:
 **Limits.** 120 questions, 20 a type: only large per-type gaps can reach significance. One seed, one sample. Haiku answering and grading (an earlier check found Haiku the stricter grader by about 6 to 7 points, so absolute accuracies are probably low; the comparison between conditions uses one grader). The judge prompt is the LoCoMo one with an off-by-one allowance for counts of days, weeks and months, "latest value" for knowledge updates and a rubric reading for preference questions, not the benchmark's own type-specific prompts, so numbers are not comparable with published LongMemEval scores. The disguise only moves years. Memory used its default key-word ranker; no embeddings. Single store per question, extraction off.
 
 Rerun (the data is downloaded by hand from huggingface.co/datasets/xiaowu0162/longmemeval-cleaned): `python scripts/longmemeval_benchmark.py --data longmemeval_s_cleaned.json --per-type 20 --seed 7 --budget 5`
+
+### 2026-11-13: LongMemEval follow-ups ([#173](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/173))
+
+**Paired cost and a confidence interval for the seed-7 run (no new spend).** From the saved per-question results (120 questions, answer plus grade):
+
+- Cost per question: memory $0.0042, rag $0.0071. Memory was cheaper on 115 of 120 questions; mean paired difference -$0.0029 (bootstrap 95% interval -$0.0033 to -$0.0026, 10,000 resamples), so memory cost 59% of rag. Memory's cost includes its `memory_recall` round trips (0.93 a question); the cost of recording the history is not in this number (it makes no model calls).
+- Accuracy difference, memory minus rag: -2.5 points (85/120 = 70.8% against 88/120 = 73.3%); paired bootstrap 95% interval -12.5 to +7.5 points; the one-sided 95% lower bound is about -10.8 points (a normal approximation gives -8.3).
+- **What non-inferiority could be claimed at n = 120:** only at a margin of about 11 points or wider (a margin of 10 points is borderline and fails on the bootstrap bound); not at 5 points, which would need about 4 times as many questions at this paired spread (SD of the paired difference 0.55). "About as accurate, at about 60% of the cost" is supported; "not worse than rag by more than 5 points" is not.
+
+**Single-session-assistant with longer window lines (one-off, 20 questions, memory condition only).** Bar stated in the issue before the run: memory must not be significantly worse than rag on this type (sign test p >= 0.05), and the cost change against the 400-character memory run is reported. Setting: the line limit (`LINE_CHARS`) raised from 400 to 1200 through the new opt-in `COMMONMEMO_LINE_CHARS` (script flag `--line-chars`; default unchanged at 400).
+
+| Single-session assistant, same 20 questions | Correct | $/question (answer + grade) | `memory_recall` calls per question |
+|---|---|---|---|
+| rag (8 windows) | 18/20 | 0.0068 | n/a |
+| memory, 400 characters (shipped) | 11/20 | 0.0037 | 0.80 |
+| memory, 1200 characters | 16/20 | 0.0029 | 1.75 |
+
+Memory at 1200 against rag: +2/-4, p = 0.69, **the bar is met**. Against memory at 400: +5/-0, p = 0.0625 (not significant by itself). Cost went down by 20%, not up, which was not expected; the answers needed fewer turns, an observation and not a tested cause. Spend $0.06. Reading: the clipped line explains most of the gap on this type, and the default is not changed here. 20 questions can only show large differences; this was one pre-set variant, not a tuned one, and the same questions had shown the gap that motivated it (a selection effect that favours the variant slightly).
+
+**Second seed (seed 8, same settings, 120 questions) and pooled.** Spend $1.53 (cap $1.60), no errors.
+
+| Seed 8 | Correct | $/question |
+|---|---|---|
+| none | 7/120 | 0.0013 |
+| rag | 85/120 | 0.0072 |
+| memory | 87/120 | 0.0043 |
+
+Seed 8 alone, memory vs rag: +24/-22, p = 0.88; single-session assistant +1/-11, p = 0.0063 (rag better); no other type significant. Memory vs none: p < 0.001 overall and in every type.
+
+The two samples share 42 of 120 questions (the preference pool has only 30 eligible questions), so the pooled test counts each question once (seed-7 row kept): 198 distinct questions.
+
+| Pooled, 198 questions | memory vs rag (+/-, p) | memory vs none (+/-, p) |
+|---|---|---|
+| overall | +31/-35, p = 0.71 | +134/-2, p < 0.001 |
+| knowledge update (33) | +3/-6, p = 0.51 | +26/-0 |
+| multi-session (38) | +12/-4, p = 0.077 | +27/-1 |
+| single-session assistant (31) | **+1/-14, p = 0.001** | +12/-1, p = 0.003 |
+| single-session preference (25) | +5/-6, p = 1.0 | +7/-0, p = 0.016 |
+| single-session user (35) | +5/-1, p = 0.22 | +32/-0 |
+| temporal reasoning (36) | +5/-4, p = 1.0 | +30/-0 |
+
+Pooled accuracy: none 10/198, rag 146/198 (73.7%), memory 142/198 (71.7%); difference -2.0 points, bootstrap 95% interval -10.1 to +6.1. Cost per question: memory $0.0042, rag $0.0071. Reading: the seed-7 conclusions hold. Memory and rag are indistinguishable overall (about 60% of the cost for memory); memory is reliably worse on questions about what the assistant said, which the 1200-character result above suggests is the clipped line; memory's lead on multi-session questions (+12/-4) is consistent in direction on both seeds but still not significant at p < 0.05 (p = 0.077). Per-type pooled samples are 25 to 38 questions; the six per-type tests are not corrected for multiple comparisons, and only the single-session-assistant result would survive such a correction.
+
+**Secret masking on text that is not secrets (offline, [#177](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/177)).** `scripts/mask_false_positives.py` counts what `commonmemo.secrets.mask` rewrites: LoCoMo (10 conversations, 5,882 messages) 0; the repo's docs, README, changelog, source and examples (82 files) 0; LongMemEval (246,750 messages, 50 sessions of chat a question, many messages repeat across questions) 10 rewrites, about 0.004% of messages. Four are `apiKey = '...'` placeholders in pasted code (`your_api_key_here`, `YOUR_GOOGLE_MAPS_API_KEY`), one is an identifier (`token = ...().make_token`), one is a URL query `token=` value, three are one `access_token = "gho_..."` string in a pasted config file (a real token shape; whether it was live is unknown), and one is the text `-----BEGIN PRIVATE KEY-----` mentioned in prose (the marker alone matches). So 7 to 10 of the 10 are false positives by eye, and the rewrite loses only the value. The rate is low on conversational text; code-heavy text (the test fixtures excluded here on purpose) would be higher. This does not measure missed secrets (false negatives).

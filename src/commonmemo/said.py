@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, replace
@@ -70,8 +71,15 @@ if TYPE_CHECKING:
 WINDOW = 6
 """Consecutive messages of a session per window."""
 
-LINE_CHARS = 400
-"""Each message is cut to this in a window."""
+def _line_chars() -> int:
+    try:
+        return max(1, int(os.environ.get("COMMONMEMO_LINE_CHARS", "") or 400))
+    except ValueError:
+        return 400
+
+
+LINE_CHARS = _line_chars()
+"""Each message is cut to this in a window: 400 unless `COMMONMEMO_LINE_CHARS` says otherwise (an opt-in for experiments)."""
 
 CANDIDATES = 300
 """Windows the index hands to the ranker."""
@@ -124,7 +132,8 @@ class Said:
         return f"[session {self.session_id}, {when}]\n" + self.text()
 
 
-def _clip(text: str, n: int = LINE_CHARS) -> str:
+def _clip(text: str, n: Optional[int] = None) -> str:
+    n = n or LINE_CHARS
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1] + "…"
 
