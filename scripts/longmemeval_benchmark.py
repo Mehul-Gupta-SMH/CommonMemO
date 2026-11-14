@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import random
 import re
 import subprocess
@@ -40,6 +41,7 @@ from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import locomo_benchmark as lb  # noqa: E402  (reuses ingest, project, ask, rag_windows)
+from commonmemo import said  # noqa: E402
 
 CONDITIONS = ("none", "rag", "memory")
 YEARS = {"2022": "2033", "2023": "2034", "2024": "2052"}
@@ -124,12 +126,19 @@ def main() -> int:
     p.add_argument("--work", default=None, help="working dir; reuse it to resume")
     p.add_argument("--out", default="longmemeval-results.json")
     p.add_argument("--ingest-only", action="store_true")
+    p.add_argument("--types", default="", help="comma-separated question types to keep (default: all six)")
+    p.add_argument("--line-chars", type=int, default=0,
+                   help="characters kept of each message in a window (COMMONMEMO_LINE_CHARS; 0 leaves the default, 400)")
     args = p.parse_args()
+    if args.line_chars:
+        os.environ["COMMONMEMO_LINE_CHARS"] = str(args.line_chars)  # for the MCP server and hooks the questions start
+        said.LINE_CHARS = args.line_chars  # for the ingest in this process
     conditions = [c for c in args.conditions.split(",") if c]
     if set(conditions) - set(CONDITIONS):
         p.error("unknown conditions")
     data = json.loads(Path(args.data).read_text(encoding="utf-8"))
-    items = [disguise(x) for x in sample(data, args.per_type, args.seed)]
+    keep = {t for t in args.types.split(",") if t}
+    items = [disguise(x) for x in sample(data, args.per_type, args.seed) if not keep or x["question_type"] in keep]
     work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="commonmemo-lme-"))
     work.mkdir(parents=True, exist_ok=True)
     version = subprocess.run(["claude", "--version"], capture_output=True, text=True, check=False).stdout.strip()
@@ -143,6 +152,11 @@ def main() -> int:
             lb.ingest(as_conv(it), db, None)
             if not args.ingest_only:
                 projects[qid] = lb.project(work, qid, db, [])
+                if args.line_chars:
+                    mcp = projects[qid] / ".mcp.json"
+                    cfg = json.loads(mcp.read_text())
+                    cfg["mcpServers"]["memory"]["env"]["COMMONMEMO_LINE_CHARS"] = str(args.line_chars)
+                    mcp.write_text(json.dumps(cfg, indent=2))
     if args.ingest_only:
         print("ingested", len(items), file=sys.stderr)
         return 0

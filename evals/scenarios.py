@@ -511,6 +511,22 @@ def org_documents(with_memory: bool) -> Outcome:
                        f"gone after forget_source {gone}; a memory without an org sees it: {other_sees}", chars)
 
 
+def pasted_secret(with_memory: bool) -> Outcome:
+    """Here `with_memory` is secret masking: on (as the hooks ship it) against off (the library default)."""
+    secret = "sk-" + "Zq7Lm2Xv9TrB4nKd8WcY1hPe5Gj3"
+    mem = Memory(policy=MemoryPolicy(mask_secrets=with_memory))
+    with mem.session(user_id="ada") as s:
+        s.message("user", f"My deploy key is {secret}, use it for the staging push. Also my staging notes are in the wiki.")
+        s.message("assistant", "Noted, I will use the staging deploy key.")
+    with mem.session(user_id="ada") as s:
+        prompt, chars = prompt_for(s, "Which deploy key did I give you for the staging push?", with_memory=True)
+        recalled = {t.__name__: t for t in build_agent_tools(s)}["memory_recall"]("deploy key staging push")
+        log = json.dumps([e.__dict__ if hasattr(e, "__dict__") else str(e) for e in s.events()], default=str)
+    leaked = [where for where, text in (("Log", log), ("push", prompt), ("recall", recalled)) if secret in text]
+    return Outcome(not leaked, "the pasted key appears in the " + ", ".join(leaked) if leaked
+                   else "the pasted key appears in the Log, the push and recall: nowhere", chars)
+
+
 SCENARIOS = [
     Scenario("known tool failure", "a tool failure that has a known fix is not repeated", known_tool_failure),
     Scenario("negatives", "a user's \"never\" is respected in a later session", negatives_respected),
@@ -543,6 +559,8 @@ SCENARIOS = [
              detail_in_what_was_said),
     Scenario("organisation documents", "a detail only an org document holds is found, labelled as data, and removable by source",
              org_documents),
+    Scenario("pasted secret", "a secret a user pastes is masked: not in the Log, the push or recall (off: it is, a control)",
+             pasted_secret),
     Scenario("detect, freeze, revert", "a burst of bad writes is detected, frozen and undone",
              detect_freeze_revert, baseline=False),
 ]
