@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from .facts import FactKey
     from .ranking import EmbeddingRanker, HybridRanker, KeywordRanker
     from .history import Diff, History, MemoryView
+    from .dream import Dream
     from .extraction import ExtractedFact, Extractor, ModelExtractor
     from .learning import Learner, ModelLearner
     from .memory import Memory
@@ -79,6 +80,7 @@ _EXPORTS = {
     "Diff": ".history",
     "History": ".history",
     "MemoryView": ".history",
+    "Dream": ".dream",
     "ExtractedFact": ".extraction",
     "Extractor": ".extraction",
     "ModelExtractor": ".extraction",
@@ -144,6 +146,7 @@ __all__ = [
     "ProcedureFollowed",
     "TaskProcedures",
     "ExtractedFact",
+    "Dream",
     "Extractor",
     "Learner",
     "ModelExtractor",
