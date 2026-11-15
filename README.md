@@ -64,7 +64,7 @@ mem = Memory("sqlite:///.commonmemo/memory.db")   # the hooks' default store
 mem.revert(session_id="billing-fix", dry_run=True)   # plan the undo of what that session taught
 ```
 
-Reverts cover world facts, negatives and procedures. See
+Reverts cover world facts, negatives and procedures, and the user facts of a `dream:` run (below). See
 [See how memory changes, and undo it](#see-how-memory-changes-and-undo-it) and
 [Hooks](#hooks-automatic-capture-and-push-in-coding-harnesses).
 
@@ -367,6 +367,34 @@ and a failing model never fails the close. On a LoCoMo conversation it is the
 difference between 23 and 38 correct answers out of 48
 ([docs/live-runs.md](docs/live-runs.md)).
 
+#### Dream: the same extraction, in a batch you run (opt-in)
+
+A harness whose hooks never gave memory a model has closed sessions nobody extracted
+from. `commonmemo dream` ([#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159))
+reads the sessions closed since the last pass, across harnesses, with the same extractor
+(no new extraction logic). Nothing runs it for you: no timer, no cron, no background process.
+
+```bash
+commonmemo dream                          # dry run: what it would read, and the estimated cost; writes nothing
+commonmemo dream --budget 0.25 --apply    # write, stopping before the pass would spend more than $0.25
+commonmemo dream --since 1200 --model haiku --apply
+```
+
+```python
+report = await mem.dream(complete=my_model, budget=0.25, apply=True)
+mem.revert(run_id=report.run_id)          # one pass is one run id: "dream:<timestamp>"
+```
+
+Each session is read once (a `Checkpoint` in the Log marks it, bound to its user so `forget_user`
+removes it), so a re-run does only new work; sessions already extracted at close are skipped. A
+budget stop prints the position and session it stopped before, and the next pass picks up there.
+The cost figure is an estimate (4 characters a token, at `--price-in`/`--price-out`); the CLI also
+sums what `claude -p` reports it billed and prints both. A pass drops a fact for a key a newer
+session has since restated, and a value the user forgot is redacted and never extracted again.
+Only facts are extracted (no lessons or procedures yet), so nothing is queued for review.
+Local engine only; the Graphiti and Mem0 engines extract for themselves. Exit codes: 0 done,
+3 stopped by the budget, 1 a session failed.
+
 ### One person, several ids
 
 `user_id` is whatever string your app supplies. CommonMemo never decides two ids are the same person, and never from a name: two people given the same id share one memory, so make ids unique. When you know one person has two ids (a harness login and an app account), say so:
@@ -481,6 +509,7 @@ was left out. The pushed text itself is kept only with
 ```bash
 commonmemo trace s2 --why refund_window   # why the agent got it: the events it came from
 commonmemo savings s2                 # what memory pushed against re-sending the conversation, per harness
+commonmemo dream --budget 0.25            # dry run: facts the closed sessions would yield, and what it would cost
 commonmemo show user ada                  # profile, constraints, what was forgotten, past sessions
 commonmemo inspect --open                 # the same, in a local read-only web page
 commonmemo inspect --review               # also approve and reject what waits for review

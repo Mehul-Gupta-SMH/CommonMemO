@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Dream, v1** ([#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159), ADR 0008 draft): `mem.dream(...)` and `commonmemo dream [--since POSITION] [--budget USD] [--model M] [--apply]` extract facts from sessions closed since the last pass, across harnesses, once per session, with the existing `ModelExtractor`. A dry run by default (prices the prompts, asks the model nothing, writes nothing); `--apply` writes under `run_id="dream:<timestamp>"`; a budget stops the pass and names the position; no timer or background process; opt-in. `mem.revert(run_id="dream:...")` now also undoes the user facts of a dream run (previous value restored, or forgotten); a key a later statement replaced is left alone. `extract()` gained `run_id=`, `write=` and `not_before=`. Local engine only. Facts only: no lessons, procedures or review items.
+
 - `commonmemo show log` and a `size` row in `commonmemo doctor` report how much of the Log is raw (what `--retain-days` and `--max-log-mb` can drop) and how much is kept (#169). The design doc says that only raw events age out.
 - `--recency-half-life` (env `COMMONMEMO_RECENCY_HALF_LIFE`) turns on recency weighting (#170) from the command line and the hook setup.
 - Drift canary (#168): a weekly workflow runs the suite against the newest release of each adapted SDK and on macOS and Windows. The live Claude Code to Codex handoff is not automated (it needs both CLIs signed in).
