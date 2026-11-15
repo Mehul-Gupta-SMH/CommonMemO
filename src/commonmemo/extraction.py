@@ -41,8 +41,10 @@ function from a prompt to text, sync or async.
   each. An extractor that fails is logged and never fails the close.
 
 Extracted facts are a model's claims about what a user said, written at once
-into that user's own profile. They aren't covered by `revert`; correct one
-with `forget` or by stating the fact again. The Graphiti and Mem0 engines
+into that user's own profile. The close path's writes aren't covered by `revert`
+(correct one with `forget` or by stating the fact again); a batch pass is:
+`mem.dream()` (`dream.py`, #159) extracts from sessions nobody extracted at close
+and tags its writes `dream:<timestamp>`, which `mem.revert(run_id=...)` undoes. The Graphiti and Mem0 engines
 extract facts themselves; use this for the local engine.
 """
 
@@ -199,13 +201,19 @@ def parse(text: str) -> list[ExtractedFact]:
 
 
 async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extractor] = None,
-                  force: bool = False) -> list[ExtractedFact]:
+                  force: bool = False, run_id: Optional[str] = None, write: bool = True,
+                  not_before: Optional[float] = None) -> list[ExtractedFact]:
     """Run the extractor on a finished session and write its facts to the
-    user's profile. Once per session unless `force`. Returns what was written."""
+    user's profile. Once per session unless `force`. Returns what was written.
+
+    `run_id` tags the writes (default `extract:<session>`; `dream` passes its own so a pass reverts
+    as a unit), `write=False` returns what would be written and writes nothing, and `not_before`
+    drops a fact for a key whose current value was stated after that time (a batch run over an old
+    session must not replace what a newer session said)."""
     extractor = extractor or memory.extractor
     if extractor is None:
         raise ValueError("commonmemo: no extractor: Memory(extractor=ModelExtractor(complete)), or pass extractor=")
-    run_id = f"extract:{session_id}"
+    run_id = run_id or f"extract:{session_id}"
     if not force and memory.store.events(run_id=run_id, limit=1):
         return []
     ep = episode(memory, session_id)
@@ -214,6 +222,7 @@ async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extr
     record = memory.store.get_session(session_id)
     profile = memory._visible_facts(ep.user_id, await memory.engine.user_profile(ep.user_id))
     known = {f.key: f.value for f in profile}
+    stated_at = {f.key: f.valid_from for f in profile}
     date = time.strftime("%Y-%m-%d", time.localtime(record.opened_at)) if record and record.opened_at else ""
     facts = await extractor.extract(Sitting(ep, known, date))
 
@@ -223,6 +232,11 @@ async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extr
     written: list[ExtractedFact] = []
     for fact in facts[:MAX_FACTS]:
         if (pattern and pattern.search(fact.value)) or known.get(fact.key) == fact.value:
+            continue
+        if not_before is not None and stated_at.get(fact.key, 0.0) > not_before:
+            continue
+        if not write:
+            written.append(fact)
             continue
         memory._append(UserFact(key=fact.key, value=fact.value, source=SOURCE, lifespan=fact.lifespan).bind(**envelope))
         known[fact.key] = fact.value

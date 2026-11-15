@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Optional
 
 from .events import (
     MemoryEvent,
+    Forgotten,
     Negative,
     NegativeRevoked,
     ProcedureEntry,
@@ -66,6 +67,15 @@ log = logging.getLogger("commonmemo.alerts")
 REVERTIBLE = ("world_fact", "negative", "procedure")
 """Kinds a revert restores. Tool memory and feedback are observations, and
 Recaps and the UserProfile live in the engine (ADR 0004)."""
+
+USER_FACT = "user_fact"
+"""Accepted by `kinds=` beside `REVERTIBLE`, and only by cause. A user's profile is their own, so a revert
+leaves it alone unless asked, except for the run a dream pass tagged `dream:<timestamp>` (#159), which is
+undone as a unit: that run is the only unattended writer of user facts. See `plan_user_fact_revert`."""
+
+
+def default_kinds(run_id: Optional[str]) -> tuple[str, ...]:
+    return REVERTIBLE + ((USER_FACT,) if run_id and run_id.startswith("dream:") else ())
 
 
 # -- revert --------------------------------------------------------------------
@@ -123,15 +133,17 @@ class RevertResult:
 
 def plan_revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = None,
                 source: Optional[str] = None, session_id: Optional[str] = None,
-                kinds: Iterable[str] = REVERTIBLE, scope: Optional[str] = None) -> tuple[str, list[MemoryEvent]]:
+                kinds: Optional[Iterable[str]] = None, scope: Optional[str] = None) -> tuple[str, list[MemoryEvent]]:
     """`(description, compensating events)` for a revert; nothing is written."""
     by_cause = run_id is not None or source is not None or session_id is not None
     if by_cause == (to is not None):
         raise ValueError("commonmemo: revert either to= a point, or by cause (run_id=, source=, session_id=)")
-    kinds = tuple(kinds)
-    unknown = set(kinds) - set(REVERTIBLE)
+    kinds = default_kinds(run_id) if kinds is None else tuple(kinds)
+    unknown = set(kinds) - set(REVERTIBLE) - {USER_FACT}
     if unknown:
-        raise ValueError(f"commonmemo: can't revert {sorted(unknown)}; revertible kinds are {REVERTIBLE}")
+        raise ValueError(f"commonmemo: can't revert {sorted(unknown)}; revertible kinds are {REVERTIBLE + (USER_FACT,)}")
+    if USER_FACT in kinds and not by_cause:
+        raise ValueError("commonmemo: user facts are reverted by cause (run_id=, source=, session_id=), not to a point")
 
     now = time.time()
     current = _replay(memory, memory.store)
@@ -190,15 +202,42 @@ def plan_revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = N
             if p.event_id not in target_pending and in_scope(p.scope):
                 events.append(ProcedureRejected(entry_id=p.event_id, reason=f"reverted {what}"))
 
+    if USER_FACT in kinds:
+        events += plan_user_fact_revert(memory, skip, scope)
+
     current.close()
     target.close()
     return what, events
 
 
+def plan_user_fact_revert(memory: "Memory", skip: set[str], scope: Optional[str] = None) -> list[MemoryEvent]:
+    """Compensating events for the user facts among `skip` (event ids). Where the left-out fact is the one
+    now current, the key goes back to the value before it (written again as `source="revert"`, in the
+    same session so the engine's profile follows), or is forgotten when it had none. A key a later
+    statement has already replaced is left alone. The Log is untouched; so is any fact the run did not write."""
+    out: list[MemoryEvent] = []
+    mine = [e for e in memory.store.events(kinds=[UserFact.kind]) if e.id in skip and e.user_id]
+    for who, key in sorted({(e.user_id, e.key) for e in mine}):
+        if scope is not None and scope != f"user:{who}":
+            continue
+        stated = sorted(memory.store.events(user_id=who, kinds=[UserFact.kind]), key=lambda e: e.ts)
+        same = [e for e in stated if e.key == key]
+        if not same or same[-1].id not in skip:
+            continue
+        last = same[-1]
+        before = [e for e in same if e.id not in skip]
+        if before:
+            out.append(UserFact(key=key, value=before[-1].value, source="revert", lifespan=before[-1].lifespan)
+                       .bind(user_id=who, session_id=last.session_id))
+        else:
+            out.append(Forgotten(key=key).bind(user_id=who, session_id=last.session_id))
+    return out
+
+
 def revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = None, source: Optional[str] = None,
-           session_id: Optional[str] = None, kinds: Iterable[str] = REVERTIBLE, scope: Optional[str] = None,
+           session_id: Optional[str] = None, kinds: Optional[Iterable[str]] = None, scope: Optional[str] = None,
            reason: Optional[str] = None, dry_run: bool = False) -> RevertResult:
-    kinds = tuple(kinds)
+    kinds = default_kinds(run_id) if kinds is None else tuple(kinds)
     what, planned = plan_revert(memory, to=to, run_id=run_id, source=source, session_id=session_id,
                                 kinds=kinds, scope=scope)
     revert_id = uuid.uuid4().hex
@@ -210,6 +249,12 @@ def revert(memory: "Memory", *, to: Point = None, run_id: Optional[str] = None, 
         memory._append_outside_session(e)
     memory._append_outside_session(Reverted(id=revert_id, target=what, kinds=kinds, scope=scope, reason=reason,
                                             changes=len(events), run_id=tag))
+    touched = {e.session_id for e in events if isinstance(e, UserFact) and e.session_id}
+    if touched:  # the engine's profile is built when a session is ingested, so hand it the corrected session
+        from .agent_tools import run_sync
+        from .dream import reingest
+
+        run_sync(reingest(memory, sorted(touched)))
     return RevertResult(revert_id, events)
 
 
