@@ -242,3 +242,93 @@ def test_dream_is_refused_on_an_engine_that_extracts_for_itself():
 def test_a_dream_with_no_model_is_refused():
     with pytest.raises(ValueError, match="needs a model"):
         run(mem().dream())
+
+
+# -- a session that yields nothing is still a session that was read ---------------------------------------
+
+
+def test_a_session_the_model_found_nothing_in_is_marked_done_and_not_paid_for_twice():
+    m, model = mem(), Model(reply())
+    talk(m, "s1", text="ok thanks")
+    first = run(m.dream(complete=model, apply=True))
+    assert first.facts == {"s1": []} and len(model.prompts) == 1
+    again = run(m.dream(complete=model, apply=True))
+    assert again.planned == [] and len(model.prompts) == 1, "the empty session was read a second time"
+    assert again.skipped == {"already dreamt or extracted": 1}
+
+
+def test_a_close_time_extraction_that_found_nothing_is_not_read_again():
+    """The close path writes no `extract:` fact when it finds none, so it leaves a mark instead;
+    without it dream cannot tell "read, nothing there" from "never read" and pays for the session again."""
+    from commonmemo import ModelExtractor
+
+    at_close = Model(reply())
+    m = Memory(extractor=ModelExtractor(at_close))
+    talk(m, "s1", text="ok thanks")
+    assert len(at_close.prompts) == 1 and facts_of(m) == []
+    [mark] = [e for e in m.store.events(kinds=[Checkpoint.kind]) if e.label == "extract"]
+    assert (mark.run_id, mark.user_id, mark.session_id, mark.data["session"]) == ("extract:s1", "ada", None, "s1")
+    model = Model(reply(("sister", "Lena visits Friday.")))
+    report = run(m.dream(complete=model, apply=True))
+    assert report.planned == [] and model.prompts == [] and report.skipped == {"already dreamt or extracted": 1}
+    assert run(m.extract("s1")) == [] and len(at_close.prompts) == 1, "mem.extract asked the model again"
+
+
+def test_the_mark_of_an_empty_close_time_extraction_goes_with_the_user():
+    from commonmemo import ModelExtractor
+
+    m = Memory(extractor=ModelExtractor(Model(reply())))
+    talk(m, "s1", text="ok thanks")
+    run(m.forget_user("ada"))
+    assert m.store.events(kinds=[Checkpoint.kind]) == []
+
+
+# -- a pass is a bulk write a person asked for: reported, not alerted on -------------------------------------
+
+
+def _watched(**kw):
+    from commonmemo import AlertPolicy
+
+    seen = []
+    return Memory(alerts=AlertPolicy(on_alert=seen.append, velocity_min=20, check_every=0, **kw)), seen
+
+
+def _many(n, tag="k"):
+    return reply(*[(f"{tag}{i}", f"value number {i}") for i in range(n)])
+
+
+def test_a_dream_pass_raises_no_velocity_alert_and_reports_the_count_and_the_run_id():
+    m, seen = _watched()
+    talk(m, "s1")
+    report = run(m.dream(complete=Model(_many(25)), apply=True))
+    assert report.count == 25, "fewer writes than the alert's floor would pass this test for nothing"
+    assert [a for a in seen if a.kind == "velocity"] == [] and [a for a in m.alerts() if a.kind == "velocity"] == []
+    assert m.freezes() == []
+    assert f'wrote 25 fact(s) in one batch; mem.revert(run_id="{report.run_id}") takes them back' in report.lines()
+
+
+def test_a_burst_from_any_other_writer_still_alerts_after_a_dream_pass():
+    """Only the pass's own events are left out. The same source, minutes later, under another run id,
+    is counted in full, and the alert's figure is the burst's and not the burst plus the pass."""
+    m, seen = _watched()
+    talk(m, "s1")
+    run(m.dream(complete=Model(_many(25)), apply=True))
+    assert seen == []
+    for i in range(25):
+        m._append(UserFact(key=f"b{i}", value="v", source="extracted").bind(user_id="ada", run_id="extract:other"))
+    spikes = [a for a in seen if a.kind == "velocity"]
+    assert spikes and spikes[-1].subject == "extracted" and spikes[-1].message.startswith("25 writes")
+
+
+def test_a_dream_run_id_does_not_excuse_another_source():
+    m, seen = _watched()
+    for i in range(25):
+        m._append(UserFact(key=f"b{i}", value="v", source="agent").bind(user_id="ada", run_id="dream:20260101T000000"))
+    assert any(a.kind == "velocity" and a.subject == "agent" for a in seen)
+
+
+def test_a_dry_run_and_a_pass_that_wrote_nothing_print_no_batch_line():
+    m = mem()
+    talk(m, "s1")
+    assert not any("in one batch" in line for line in run(m.dream(complete=Model())).lines())
+    assert not any("in one batch" in line for line in run(m.dream(complete=Model(reply()), apply=True)).lines())

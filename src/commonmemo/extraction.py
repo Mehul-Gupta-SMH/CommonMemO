@@ -38,7 +38,10 @@ function from a prompt to text, sync or async.
   `MemoryPolicy(recency_half_life=...)` state and event facts rank lower as they age.
   A reply without a label leaves it empty, which never decays.
 - **Once per session** (`run_id="extract:<session>"`), at most `max_facts`
-  each. An extractor that fails is logged and never fails the close.
+  each. An extractor that fails is logged and never fails the close. A run that
+  wrote nothing leaves a `Checkpoint(label="extract")` under the same run id (bound
+  to the user, to no session), so "read, nothing found" is on the Log too: the
+  session isn't read again by a later `mem.extract` or by `mem.dream()`.
 
 Extracted facts are a model's claims about what a user said, written at once
 into that user's own profile. The close path's writes aren't covered by `revert`
@@ -58,7 +61,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Mapping, Optional, Protocol, runtime_checkable
 
-from .events import UserFact
+from .events import Checkpoint, UserFact
 from .learning import Complete, Episode, episode
 
 if TYPE_CHECKING:
@@ -70,6 +73,9 @@ MAX_FACTS = 25
 """The most facts written per session."""
 
 SOURCE = "extracted"
+
+DONE_LABEL = "extract"
+"""The label of the Checkpoint a run that wrote nothing leaves, so the session counts as read."""
 
 
 @dataclass(frozen=True)
@@ -213,6 +219,7 @@ async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extr
     extractor = extractor or memory.extractor
     if extractor is None:
         raise ValueError("commonmemo: no extractor: Memory(extractor=ModelExtractor(complete)), or pass extractor=")
+    own = run_id is None  # the close path or `mem.extract`; a batch caller (dream) keeps its own done-marks
     run_id = run_id or f"extract:{session_id}"
     if not force and memory.store.events(run_id=run_id, limit=1):
         return []
@@ -241,7 +248,12 @@ async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extr
         memory._append(UserFact(key=fact.key, value=fact.value, source=SOURCE, lifespan=fact.lifespan).bind(**envelope))
         known[fact.key] = fact.value
         written.append(fact)
+    if own and write and not written and not memory.store.events(run_id=run_id, limit=1):
+        # Nothing written leaves no `extract:` fact, and without a mark the session reads as never extracted:
+        # asked again here, and paid for again by a dream pass. Bound to no session, so no resume state changes.
+        memory._append(Checkpoint(label=DONE_LABEL, data={"session": session_id, "facts": 0})
+                       .bind(user_id=ep.user_id, run_id=run_id))
     return written
 
 
-__all__ = ["ExtractedFact", "LIFESPANS", "Extractor", "ModelExtractor", "PROMPT", "Sitting", "extract", "parse"]
+__all__ = ["DONE_LABEL", "ExtractedFact", "LIFESPANS", "Extractor", "ModelExtractor", "PROMPT", "Sitting", "extract", "parse"]

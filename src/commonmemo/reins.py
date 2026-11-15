@@ -31,7 +31,9 @@ everything waits for review.
 `AlertPolicy.check_every` seconds, memory checks for velocity spikes, churn
 and a review backlog. Alerts are logged to `commonmemo.alerts` and passed to
 `AlertPolicy.on_alert`. `AlertPolicy(auto_freeze=True)` also freezes the
-source of a velocity spike; it is off by default.
+source of a velocity spike; it is off by default. The facts of a dream pass
+(`run_id="dream:..."`, #159) are not counted as velocity: a person started that
+bulk write, and its report gives the count and the run id to revert.
 """
 
 from __future__ import annotations
@@ -319,6 +321,8 @@ class AlertPolicy:
 
 
 _WATCHED = (WorldFact.kind, UserFact.kind, Negative.kind)
+_BATCH_SOURCE = "extracted"
+"""The source a dream pass writes under (`extraction.SOURCE`)."""
 
 
 def check_alerts(memory: "Memory", *, now: Optional[float] = None) -> list[Alert]:
@@ -334,6 +338,14 @@ def check_alerts(memory: "Memory", *, now: Optional[float] = None) -> list[Alert
 
     recent = by_source(now - p.window, now)
     earlier = by_source(now - p.window - p.baseline, now - p.window)
+    if recent.get(_BATCH_SOURCE, 0) >= p.velocity_min:  # the only case the scan can change
+        # A dream pass (#159) is a bulk write a person started, reported and revertible as one run, so its
+        # facts are neither a spike nor part of the usual rate. Only those events are left out: an extracted
+        # user fact under a `dream:` run id. Any other write from the same source still counts.
+        for e in memory.store.events(kinds=[UserFact.kind], since=now - p.window - p.baseline):
+            if e.source == _BATCH_SOURCE and (e.run_id or "").startswith("dream:") and e.ts < now:
+                side = recent if e.ts >= now - p.window else earlier
+                side[_BATCH_SOURCE] = max(side.get(_BATCH_SOURCE, 0) - 1, 0)
     windows = max(1.0, p.baseline / p.window)
     for src, n in sorted(recent.items()):
         rate = earlier.get(src, 0) / windows

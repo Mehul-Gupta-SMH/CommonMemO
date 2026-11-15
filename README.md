@@ -386,12 +386,15 @@ mem.revert(run_id=report.run_id)          # one pass is one run id: "dream:<time
 ```
 
 Each session is read once (a `Checkpoint` in the Log marks it, bound to its user so `forget_user`
-removes it), so a re-run does only new work; sessions already extracted at close are skipped. A
+removes it), whether or not it yielded a fact, so a re-run does only new work; sessions the close path
+already read are skipped, including those it found nothing in. A
 budget stop prints the position and session it stopped before, and the next pass picks up there.
 The cost figure is an estimate (4 characters a token, at `--price-in`/`--price-out`); the CLI also
 sums what `claude -p` reports it billed and prints both. A pass drops a fact for a key a newer
 session has since restated, and a value the user forgot is redacted and never extracted again.
 Only facts are extracted (no lessons or procedures yet), so nothing is queued for review.
+A pass does not raise the velocity alert (you started it; other writers are counted as before): the
+report prints the number of facts written and the run id that reverts them.
 Local engine only; the Graphiti and Mem0 engines extract for themselves. Exit codes: 0 done,
 3 stopped by the budget, 1 a session failed.
 

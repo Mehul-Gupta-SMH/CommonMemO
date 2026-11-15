@@ -19,9 +19,11 @@ it drops are the extractor's.
   unit. A user's facts are otherwise outside `revert` (a profile is theirs); a `dream:`
   run id is the exception, because it is the one unattended writer of them.
 - **Once per session.** Each processed session gets a `Checkpoint(label="dream")` in the
-  Log, bound to its user (so `forget_user` removes it) and to no session. A re-run skips
-  those, and the sessions the close path already extracted (`extract:<session>`), so a
-  second pass does only new work. The marker is the Log's, not the pass's: a pass that
+  Log, bound to its user (so `forget_user` removes it) and to no session, whether or not
+  the model found a fact in it. A re-run skips those, and the sessions the close path
+  already read: an `extract:<session>` fact, or the `Checkpoint(label="extract")` it leaves
+  when it found nothing. So a second pass does only new work. (A session whose close-time
+  extraction found nothing before that mark existed has no trace of it, and is read once.) The marker is the Log's, not the pass's: a pass that
   stops on its budget leaves the rest to the next one, and `since` is a log position that
   narrows the walk further.
 - **A spend cap stops the run and says where.** Before each session the next prompt's
@@ -35,6 +37,9 @@ it drops are the extractor's.
 - **The profile follows.** The local engine builds a user's profile when it ingests a
   session, so a pass re-ingests each session it wrote to. Other engines extract facts
   themselves and are refused.
+- **No velocity alert.** A pass is a bulk write a person asked for, so its facts are left out
+  of the per-source velocity alert (`reins.check_alerts`); the report says how many facts the
+  pass wrote and the run id that takes them back. Every other writer is counted as before.
 
 Only facts are extracted: no lessons, procedures or review items (the learner is a later
 step), so nothing here is queued for review.
@@ -50,7 +55,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Optional
 
 from .events import Checkpoint, UserFact
-from .extraction import ExtractedFact, Extractor, ModelExtractor, Sitting, extract
+from .extraction import DONE_LABEL, ExtractedFact, Extractor, ModelExtractor, Sitting, extract
 from .learning import episode
 
 if TYPE_CHECKING:
@@ -123,6 +128,9 @@ class Dream:
             for f in got or []:
                 out.append(f"      {f.key}: {f.value}")
         out.append(f"estimated cost ${self.estimated:.4f}" + (f" of a ${self.budget:.4f} budget" if self.budget is not None else ""))
+        if self.applied and self.count:
+            # In place of a velocity alert, which a pass does not raise: the size of the bulk write and its undo.
+            out.append(f"wrote {self.count} fact(s) in one batch; mem.revert(run_id=\"{self.run_id}\") takes them back")
         if self.applied:
             out.append(f"metered ${self.spent:.4f} over {self.calls} call(s)"
                        + (f"; the model function reported ${self.reported:.4f}" if self.reported is not None else ""))
@@ -169,8 +177,10 @@ class _Meter:
 
 
 def done_sessions(memory: "Memory") -> set[str]:
-    """Sessions a dream pass has processed (its Checkpoints) or the close path extracted."""
-    done = {e.data.get("session") for e in memory.store.events(kinds=[Checkpoint.kind]) if e.label == LABEL}
+    """Sessions a dream pass has processed (its Checkpoints) or the close path read: a fact it wrote, or
+    the mark it leaves when it wrote none."""
+    done = {e.data.get("session") for e in memory.store.events(kinds=[Checkpoint.kind])
+            if e.label == LABEL or (e.label == DONE_LABEL and (e.run_id or "").startswith("extract:"))}
     done |= {e.session_id for e in memory.store.events(kinds=[UserFact.kind])
              if e.run_id and e.run_id.startswith("extract:") and e.session_id}
     return {s for s in done if s}

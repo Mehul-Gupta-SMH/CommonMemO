@@ -378,12 +378,16 @@ about what a user said, written at once to that user's own profile: it is not
 covered by `revert`, and a correction is `forget` or stating the fact again.
 **Dream** (`dream.py`, [#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159), ADR 0008 draft): the same extractor run as a batch the user starts
 (`mem.dream()`, `commonmemo dream`). It walks sessions closed since the last pass, skipping those with a `dream`
-Checkpoint or an `extract:<session>` run; dry run by default (prompts are priced, nothing is sent or written); `--apply`
+Checkpoint or an `extract:<session>` run (a fact, or the mark of an empty one); dry run by default (prompts are priced, nothing is sent or written); `--apply`
 writes under `run_id="dream:<timestamp>"`, re-ingests each session so the local engine's profile follows, and
 `revert(run_id="dream:...")` undoes user facts too (the one exception to "a profile is the user's own"). A spend cap
 stops it and names the position. A key restated after the session closed is not overwritten. No lessons, procedures
 or review items yet.
-A bulk first ingestion can trip the default velocity alert (`UserFact` is
+A session read with no fact to show for it is still done: a pass marks it, and the close path leaves a
+`Checkpoint(label="extract")` when it wrote nothing. A pass is left out of the velocity alert (a person started it);
+its report prints the number of facts written and the run id that reverts them. A user's own facts need no review;
+world facts and procedures, when a pass can produce them, will be pending proposals.
+A bulk first ingestion through the close path can trip the default velocity alert (`UserFact` is
 watched); that is a warning in the log, not a block.
 
 **What was said** (`said.py`, [#62](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/62)). Recaps, facts and lessons are
