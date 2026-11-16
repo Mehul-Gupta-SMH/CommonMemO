@@ -98,6 +98,7 @@ def _clip(value: Any, max_chars: int) -> str:
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from .dream import Dream
     from .extraction import ExtractedFact, Extractor
     from .learning import Learned, Learner
     from .traces import TurnTrace, Why
@@ -887,6 +888,19 @@ class Memory:
 
         return await extract(self, session_id, extractor=extractor, force=force)
 
+    async def dream(self, *, since: int = 0, budget: Optional[float] = None, apply: bool = False,
+                    complete: Optional[Callable] = None, extractor: Optional["Extractor"] = None,
+                    price_in: float = 1.0, price_out: float = 5.0) -> "Dream":
+        """Extract facts from the sessions closed since the last pass, once each (see `dream.py`, #159).
+        A dry run unless `apply`: it prices the prompts and writes nothing. Writes go under
+        `run_id="dream:<timestamp>"` (`mem.revert(run_id=...)` undoes the pass), `budget` is dollars
+        and stops the pass with the position it reached, `since` is a log position. The prices are
+        dollars per million tokens."""
+        from .dream import dream
+
+        return await dream(self, since=since, budget=budget, apply=apply, complete=complete, extractor=extractor,
+                           price_in=price_in, price_out=price_out)
+
     async def distill(self, session_id: str, *, learner: Optional["Learner"] = None,
                       force: bool = False) -> "Learned":
         """Learn from a finished session: decision records, lessons merged
@@ -965,7 +979,7 @@ class Memory:
     # -- reins (ADR 0004, phase 2) ---------------------------------------------
 
     def revert(self, *, to: Point = None, run_id: Optional[str] = None, source: Optional[str] = None,
-               session_id: Optional[str] = None, kinds: Iterable[str] = REVERTIBLE, scope: Optional[str] = None,
+               session_id: Optional[str] = None, kinds: Optional[Iterable[str]] = None, scope: Optional[str] = None,
                reason: Optional[str] = None, dry_run: bool = False) -> RevertResult:
         """Bring world facts, negatives and procedures back: `to=` a point (log position,
         time or snapshot), or undo a cause (`run_id=`, `source=`,

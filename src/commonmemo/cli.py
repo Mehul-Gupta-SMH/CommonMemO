@@ -7,6 +7,8 @@
     commonmemo trace SESSION [--why KEY]      # what each push gave the agent, and why (traces.py)
     commonmemo savings [SESSION]              # what memory pushed against re-sending the history (savings.py)
     commonmemo inspect [--port N]             # the same, in a local read-only web page (inspector.py)
+    commonmemo dream [--since N] [--budget USD] [--model M] [--apply]
+                                              # extract facts from the sessions closed since the last pass (dream.py)
 
 They share the memory options below: a flag wins over its `COMMONMEMO_*`
 environment variable, which wins over the default.
@@ -106,6 +108,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("scan", help="report likely secrets already in the Log (never prints them)", add_help=False)
     sub.add_parser("savings", help="what memory pushed against re-sending the conversation", add_help=False)
     sub.add_parser("inspect", help="open a local read-only web inspector", add_help=False)
+    sub.add_parser("dream", help="extract facts from closed sessions in one reversible batch (dry run unless --apply)",
+                   add_help=False)
     args, rest = parser.parse_known_args(argv)
     if args.command == "mcp":
         from .mcp import main as mcp_main
@@ -131,6 +135,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return transfer_main(args.command, rest)
     if args.command == "scan":
         return scan_main(rest)
+    if args.command == "dream":
+        return dream_main(rest)
     if args.command == "inspect":
         from .inspector import main as inspect_main
 
@@ -214,6 +220,39 @@ def show_main(argv: Optional[list[str]] = None) -> int:
             lines = session_lines(view)
         print("\n".join(lines))
         return 0
+    finally:
+        run_sync(mem.aclose())
+
+
+def dream_main(argv: Optional[list[str]] = None) -> int:
+    """`commonmemo dream [--since N] [--budget USD] [--model M] [--apply]`: a dry run unless `--apply`.
+    Exit 0 when the pass finished (or planned), 3 when the budget stopped it, 1 when a session failed."""
+    import argparse
+
+    from .agent_tools import run_sync
+    from .dream import PRICE_IN, PRICE_OUT, ClaudeComplete
+
+    p = argparse.ArgumentParser(prog="commonmemo dream", description=(
+        "Extract facts from the sessions closed since the last pass, once each, under one run id "
+        "(`mem.revert(run_id=...)` undoes it). Prints what it would write and the estimated cost; --apply writes."))
+    p.add_argument("--since", type=int, default=0, help="only sessions with an event at or after this log position")
+    p.add_argument("--budget", type=float, help="stop before the pass would spend more than this many dollars")
+    p.add_argument("--model", default="haiku", help="model for the headless `claude -p` (default haiku)")
+    p.add_argument("--apply", action="store_true", help="write the facts (default: a dry run that asks the model nothing)")
+    p.add_argument("--price-in", type=float, default=PRICE_IN, help="dollars per million input tokens, for the estimate")
+    p.add_argument("--price-out", type=float, default=PRICE_OUT, help="dollars per million output tokens")
+    args = memory_options(p, agent=None).parse_args(argv)
+    mem = _open(args)
+    try:
+        try:
+            report = run_sync(mem.dream(since=args.since, budget=args.budget, apply=args.apply,
+                                        complete=ClaudeComplete(args.model), price_in=args.price_in,
+                                        price_out=args.price_out))
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 1
+        print("\n".join(report.lines()))
+        return 3 if report.stopped_before is not None else 1 if report.failed else 0
     finally:
         run_sync(mem.aclose())
 
