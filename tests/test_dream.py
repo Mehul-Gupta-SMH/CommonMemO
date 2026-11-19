@@ -51,6 +51,17 @@ def profile(m, user="ada"):
     return {f.key: f.value for f in m._visible_facts(user, run(m.engine.user_profile(user)))}
 
 
+class _Fixed:
+    """An extractor that returns the same facts whatever it is shown."""
+
+    def __init__(self, *facts):
+        from commonmemo.extraction import ExtractedFact
+        self.facts = [ExtractedFact(k, v, "") for k, v in facts]
+
+    async def extract(self, sitting):
+        return list(self.facts)
+
+
 def facts_of(m):
     return m.store.events(kinds=[UserFact.kind])
 
@@ -210,6 +221,57 @@ def test_a_batch_pass_does_not_overwrite_what_a_newer_session_said():
         s.message("user", "I live in Rome now.")
     run(m.dream(complete=Model(reply(("home_city", "Ada lives in Paris.")), reply()), apply=True))
     assert profile(m)["home_city"] == "Rome"
+
+
+def test_within_one_pass_a_later_session_beats_an_earlier_one_for_the_same_key():
+    """A pass compared `not_before` with the write time of the current value, and a pass writes
+    everything after every session it reads has closed, so the second session's update was always
+    dropped and the oldest value kept, with both sessions marked done."""
+    m = mem()
+    talk(m, "first", text="I live in Lisbon now.")
+    talk(m, "second", text="I live in Oslo now.")
+    report = run(m.dream(complete=Model(reply(("home_city", "Ada lives in Lisbon.")),
+                                        reply(("home_city", "Ada lives in Oslo."))), apply=True))
+    assert profile(m)["home_city"] == "Ada lives in Oslo."
+    assert report.dropped_count == 0 and report.count == 2
+
+
+def test_within_one_pass_an_earlier_session_never_replaces_a_later_one():
+    """The order of the walk is the log's, but the rule must not depend on it: a value that came from a
+    session closed after this one still wins, and the skipped fact is counted with its reason."""
+    from commonmemo.dream import reingest
+    from commonmemo.extraction import extract
+
+    m = mem()
+    talk(m, "first", text="I live in Lisbon now.")
+    talk(m, "second", text="I live in Oslo now.")
+    stated, dropped = {}, []
+    run(extract(m, "second", extractor=_Fixed(("home_city", "Ada lives in Oslo.")), force=True, run_id="dream:t",
+                not_before=m.store.get_session("second").closed_at, stated=stated, dropped=dropped))
+    run(reingest(m, ["second"]))
+    run(extract(m, "first", extractor=_Fixed(("home_city", "Ada lives in Lisbon.")), force=True, run_id="dream:t",
+                not_before=m.store.get_session("first").closed_at, stated=stated, dropped=dropped))
+    assert profile(m)["home_city"] == "Ada lives in Oslo."
+    assert [(f.value, why) for f, why in dropped] == [("Ada lives in Lisbon.", "kept newer value")]
+
+
+def test_a_dropped_fact_is_counted_and_named_in_the_report():
+    m = mem()
+    talk(m, "old", text="I live in Paris.")
+    with m.session("new", user_id="ada", agent="claude-code") as s:
+        s.record(UserFact(key="home_city", value="Rome", source="explicit"))
+        s.message("user", "I live in Rome now.")
+    report = run(m.dream(complete=Model(reply(("home_city", "Ada lives in Paris.")), reply()), apply=True))
+    assert report.dropped_count == 1 and report.dropped_by_reason() == {"kept newer value": 1}
+    text = "\n".join(report.lines())
+    assert "dropped 1 fact(s)" in text and "kept newer value" in text and "home_city" in text
+
+
+def test_a_clean_pass_reports_no_dropped_facts_line():
+    m = mem()
+    talk(m, "s1")
+    report = run(m.dream(complete=Model(reply(("sister", "Lena visits Friday."))), apply=True))
+    assert report.dropped_count == 0 and "dropped" not in "\n".join(report.lines())
 
 
 def test_one_failing_session_does_not_cost_the_others_and_is_retried():

@@ -821,7 +821,7 @@ Nothing gets coded without an issue.
 
 **Next / open**
 
-- [#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159) dream mode: v1 (fact extraction only, `commonmemo dream`) is built and measured on a LoCoMo slice; the learner (lessons, procedures) is the next step and has its own bar.
+- [#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159) dream mode: v1 (fact extraction only, `commonmemo dream`) is built and measured on a LoCoMo slice (cost and volume, then whether the facts are true to their sessions: `docs/live-runs.md`, 2026-11-16); the learner (lessons, procedures) is the next step and has its own bar.
 - Run `commonmemo savings` on a real session, including one continued in Codex.
 - [#122](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/122) live runs of four more adapters and [#3](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/3) the Graphiti and Mem0 engines (both blocked here: they need a model API key).
 - [#18](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/18) live evaluation with larger models and LongMemEval.

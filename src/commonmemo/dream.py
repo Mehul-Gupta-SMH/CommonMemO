@@ -33,7 +33,8 @@ it drops are the extractor's.
   in dollars is trusted over it, and the report prints both.
 - **Not a rewrite of the past.** A batch pass over an old session must not replace what a
   newer session said, so a fact for a key whose current value was stated after the session
-  closed is dropped. A value the user forgot is not extracted again (the extractor's rule).
+  closed is dropped, and the report counts it with the reason. Within one pass the value's time is
+  the close time of the session it came from, not when the pass wrote it (#185). A value the user forgot is not extracted again (the extractor's rule).
 - **The profile follows.** The local engine builds a user's profile when it ingests a
   session, so a pass re-ingests each session it wrote to. Other engines extract facts
   themselves and are refused.
@@ -95,6 +96,9 @@ class Dream:
     planned: list[Planned] = field(default_factory=list)
     """The sessions this pass would do (dry run) or did, in log order."""
     facts: dict[str, list[ExtractedFact]] = field(default_factory=dict)
+    dropped: dict[str, list[tuple[ExtractedFact, str]]] = field(default_factory=dict)
+    """Facts the extractor returned and a pass did not write, by session, each with the reason: "kept newer
+    value" (a value from a session closed later), "forgotten value", or "unchanged"."""
     failed: dict[str, str] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
     """Sessions not considered, by reason: open, no user, extracted at close, already dreamt, nothing to read."""
@@ -112,6 +116,20 @@ class Dream:
     @property
     def count(self) -> int:
         return sum(len(v) for v in self.facts.values())
+
+    @property
+    def dropped_count(self) -> int:
+        """Facts skipped because they would have replaced a newer value or restated a forgotten one; an
+        unchanged value is not a loss and is not counted."""
+        return sum(1 for v in self.dropped.values() for _, why in v if why != "unchanged")
+
+    def dropped_by_reason(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for v in self.dropped.values():
+            for _, why in v:
+                if why != "unchanged":
+                    out[why] = out.get(why, 0) + 1
+        return out
 
     def lines(self) -> list[str]:
         done = len(self.facts) + len(self.failed) if self.applied else 0
@@ -131,6 +149,14 @@ class Dream:
         if self.applied and self.count:
             # In place of a velocity alert, which a pass does not raise: the size of the bulk write and its undo.
             out.append(f"wrote {self.count} fact(s) in one batch; mem.revert(run_id=\"{self.run_id}\") takes them back")
+        if self.dropped_count:
+            # Silent before #185: a skipped update is a fact the user said and the profile does not hold.
+            by = ", ".join(f"{n} {why}" for why, n in sorted(self.dropped_by_reason().items()))
+            out.append(f"dropped {self.dropped_count} fact(s): {by}")
+            for sid, items in self.dropped.items():
+                for f, why in items:
+                    if why != "unchanged":
+                        out.append(f"      {sid}  {f.key}: {f.value}  ({why})")
         if self.applied:
             out.append(f"metered ${self.spent:.4f} over {self.calls} call(s)"
                        + (f"; the model function reported ${self.reported:.4f}" if self.reported is not None else ""))
@@ -294,6 +320,7 @@ async def dream(memory: "Memory", *, since: int = 0, budget: Optional[float] = N
         queue.append(planned)
 
     spent = 0.0
+    stated: dict = {}  # key -> (value, closed_at of the session it came from), for this pass's own writes
     for planned in queue:
         if budget is not None and spent + planned.cost > budget:
             report.stopped_before = planned
@@ -304,14 +331,17 @@ async def dream(memory: "Memory", *, since: int = 0, budget: Optional[float] = N
         if not apply:
             continue
         record = memory.store.get_session(planned.session_id)
+        skipped: list = []
         try:
             facts = await extract(memory, planned.session_id, extractor=extractor, force=True, run_id=report.run_id,
-                                  not_before=record.closed_at if record else None)
+                                  not_before=record.closed_at if record else None, stated=stated, dropped=skipped)
         except Exception as e:  # noqa: BLE001 -- one bad session must not cost the others; it is retried next pass
             log.exception("commonmemo: dream failed on %s", planned.session_id)
             report.failed[planned.session_id] = f"{type(e).__name__}: {e}"[:200]
             continue
         report.facts[planned.session_id] = facts
+        if skipped:
+            report.dropped[planned.session_id] = skipped
         report.position = planned.position
         if facts:
             await reingest(memory, [planned.session_id])

@@ -208,14 +208,21 @@ def parse(text: str) -> list[ExtractedFact]:
 
 async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extractor] = None,
                   force: bool = False, run_id: Optional[str] = None, write: bool = True,
-                  not_before: Optional[float] = None) -> list[ExtractedFact]:
+                  not_before: Optional[float] = None, stated: Optional[dict] = None,
+                  dropped: Optional[list] = None) -> list[ExtractedFact]:
     """Run the extractor on a finished session and write its facts to the
     user's profile. Once per session unless `force`. Returns what was written.
 
     `run_id` tags the writes (default `extract:<session>`; `dream` passes its own so a pass reverts
     as a unit), `write=False` returns what would be written and writes nothing, and `not_before`
     drops a fact for a key whose current value was stated after that time (a batch run over an old
-    session must not replace what a newer session said)."""
+    session must not replace what a newer session said).
+
+    A batch pass writes after every session it reads has closed, so for a value the pass itself wrote the
+    write time says nothing about when it was stated. `stated` is the pass's own map, key -> (value, closed_at
+    of the session it came from), and is read and updated here instead: without it, a pass's first value for a
+    key looked newer than every later session and the update was dropped (#185). `dropped` collects
+    (fact, reason) for what was skipped, so a caller can count it rather than lose it silently."""
     extractor = extractor or memory.extractor
     if extractor is None:
         raise ValueError("commonmemo: no extractor: Memory(extractor=ModelExtractor(complete)), or pass extractor=")
@@ -238,15 +245,23 @@ async def extract(memory: "Memory", session_id: str, *, extractor: Optional[Extr
     envelope = {"session_id": session_id, "user_id": ep.user_id, "agent": ep.agent, "run_id": run_id}
     written: list[ExtractedFact] = []
     for fact in facts[:MAX_FACTS]:
-        if (pattern and pattern.search(fact.value)) or known.get(fact.key) == fact.value:
-            continue
-        if not_before is not None and stated_at.get(fact.key, 0.0) > not_before:
+        why = ("forgotten value" if pattern and pattern.search(fact.value) else
+               "unchanged" if known.get(fact.key) == fact.value else None)
+        if why is None and not_before is not None:
+            mine = stated.get(fact.key) if stated is not None else None
+            at = mine[1] if mine and mine[0] == known.get(fact.key) else stated_at.get(fact.key, 0.0)
+            why = "kept newer value" if at > not_before else None
+        if why:
+            if dropped is not None:
+                dropped.append((fact, why))
             continue
         if not write:
             written.append(fact)
             continue
         memory._append(UserFact(key=fact.key, value=fact.value, source=SOURCE, lifespan=fact.lifespan).bind(**envelope))
         known[fact.key] = fact.value
+        if stated is not None and not_before is not None:
+            stated[fact.key] = (fact.value, not_before)
         written.append(fact)
     if own and write and not written and not memory.store.events(run_id=run_id, limit=1):
         # Nothing written leaves no `extract:` fact, and without a mark the session reads as never extracted:

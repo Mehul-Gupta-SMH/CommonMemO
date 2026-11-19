@@ -150,3 +150,29 @@ def test_long_sessions_go_in_chunks_and_later_chunks_see_earlier_facts():
 def test_without_an_extractor_extract_says_so():
     with pytest.raises(ValueError, match="no extractor"):
         run(Memory().extract("s1"))
+
+
+def test_without_not_before_the_extractor_still_supersedes_and_a_newer_pre_existing_value_is_kept_with_it():
+    """The close path passes no `not_before`: its value replaces the old one, as before. A batch caller that
+    passes one keeps a value written after the session closed, and says what it skipped."""
+    from commonmemo.dream import reingest
+    from commonmemo.extraction import extract
+
+    m = Memory()
+    for sid, text in (("a", "I live in Paris."), ("b", "I live in Rome.")):
+        s = m.session(sid, user_id="ada", agent="t")
+        s.message("user", text)
+        run(s.aclose())
+    closed_a = m.store.get_session("a").closed_at
+    first = Model(reply(("home_city", "Paris")))
+    run(extract(m, "a", extractor=ModelExtractor(first)))
+    run(reingest(m, ["a"]))
+    assert profile(m)["home_city"] == "Paris"
+    run(extract(m, "b", extractor=ModelExtractor(Model(reply(("home_city", "Rome"))))))
+    run(reingest(m, ["b"]))
+    assert profile(m)["home_city"] == "Rome"  # unchanged behaviour: the newer statement wins
+    dropped = []
+    got = run(extract(m, "a", extractor=ModelExtractor(Model(reply(("home_city", "Berlin")))), force=True,
+                      run_id="dream:t", not_before=closed_a, dropped=dropped))
+    assert got == [] and profile(m)["home_city"] == "Rome"  # written after session a closed: kept
+    assert [(f.value, why) for f, why in dropped] == [("Berlin", "kept newer value")]

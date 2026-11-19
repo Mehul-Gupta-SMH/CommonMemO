@@ -44,6 +44,22 @@ cross-session facts and lessons or procedures, measured separately; version 1 on
   same; only a second model call would tell). Such a session is read once by the next pass, marked, and not read
   after that. The cost is one extra read per such session, not a repeated one. Not measured: how many exist in
   any real log.
+- **A value is dated by the session it came from, not by when the pass wrote it (#185).** `not_before` keeps a
+  batch pass from replacing what a newer session said, by comparing the session's close time with the key's
+  current value. That value's `valid_from` is its write time, and a pass writes after every session it reads has
+  closed, so within one pass the first value for a key looked newer than every later session and each update was
+  dropped, the oldest value kept and both sessions marked done (found by the fact check, 2026-11-16). The pass
+  now keeps a map of key to (value, close time of the source session) for its own writes and compares against
+  that, only while the profile still holds that value; any other value is compared by write time as before. So
+  a later session beats an earlier one within a pass, and a value written after the session closed (a newer
+  session, an explicit statement) still wins. Ties resolve to the later session in the walk. Alternative
+  considered: sort the queue by close time; rejected because the walk is already by log position and the
+  comparison must hold in any order, which a map does and an ordering does not. `forget_user`, `revert` and the
+  done-set are unchanged.
+- **Skipped facts are counted, not silent (#185).** `extract(dropped=)` collects each skipped fact with its
+  reason (`kept newer value`, `forgotten value`, `unchanged`); the report prints the number and each fact, leaving
+  out `unchanged`, which loses nothing. **Not known:** how many updates the passes before this fix dropped. Nothing
+  counted them; the 444-fact smoke run reused no key, so it is consistent with none.
 - **Engines other than the local one are refused.** Graphiti and Mem0 extract facts themselves at ingest; a pass
   over them would write the same session twice through two extractors, and `dream` rebuilds the profile by
   re-ingesting, which only the local engine does. `dream` raises rather than running with half the effect.

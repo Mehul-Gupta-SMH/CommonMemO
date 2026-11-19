@@ -1500,3 +1500,108 @@ The two samples share 42 of 120 questions (the preference pool has only 30 eligi
 Pooled accuracy: none 10/198, rag 146/198 (73.7%), memory 142/198 (71.7%); difference -2.0 points, bootstrap 95% interval -10.1 to +6.1. Cost per question: memory $0.0042, rag $0.0071. Reading: the seed-7 conclusions hold. Memory and rag are indistinguishable overall (about 60% of the cost for memory); memory is reliably worse on questions about what the assistant said, which the 1200-character result above suggests is the clipped line; memory's lead on multi-session questions (+12/-4) is consistent in direction on both seeds but still not significant at p < 0.05 (p = 0.077). Per-type pooled samples are 25 to 38 questions; the six per-type tests are not corrected for multiple comparisons, and only the single-session-assistant result would survive such a correction.
 
 **Secret masking on text that is not secrets (offline, [#177](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/177)).** `scripts/mask_false_positives.py` counts what `commonmemo.secrets.mask` rewrites: LoCoMo (10 conversations, 5,882 messages) 0; the repo's docs, README, changelog, source and examples (82 files) 0; LongMemEval (246,750 messages, 50 sessions of chat a question, many messages repeat across questions) 10 rewrites, about 0.004% of messages. Four are `apiKey = '...'` placeholders in pasted code (`your_api_key_here`, `YOUR_GOOGLE_MAPS_API_KEY`), one is an identifier (`token = ...().make_token`), one is a URL query `token=` value, three are one `access_token = "gho_..."` string in a pasted config file (a real token shape; whether it was live is unknown), and one is the text `-----BEGIN PRIVATE KEY-----` mentioned in prose (the marker alone matches). So 7 to 10 of the 10 are false positives by eye, and the rewrite loses only the value. The rate is low on conversational text; code-heavy text (the test fixtures excluded here on purpose) would be higher. This does not measure missed secrets (false negatives).
+
+## 2026-11-16: Are the facts dream extracts correct? ([#159](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/159))
+
+The dream smoke run (2026-11-15: 70 LoCoMo sessions, conversations 0 to 2, 444 facts, extracted by Haiku for $0.13) measured cost and volume only. This grades a sample of those facts against the session each came from. The plan and its numbers were posted on the issue before any spend. Nothing was extracted again: the store of the smoke run still existed, and its `user_fact` events carry the source session.
+
+**Method** (`scripts/dream_fact_check.py`).
+- **Sample:** 150 of the 444 facts, seed 7, split by conversation in proportion (42 / 40 / 68).
+- **Grading:** one call per fact, given the whole source session and the fact. Labels: supported, partly (right subject, a wrong or over-stated detail), unsupported (not in the session), contradicted. Flags: wrong speaker; relative date unresolved or resolved wrongly; not durable.
+- **Judges:** Haiku on all 150 (the model that extracted). Sonnet on a fixed 50 of them (14 / 13 / 23).
+- **Own reading:** 40 of those 50 (11 / 11 / 18), labelled by the agent running the check from the session text, before any judge verdict was opened.
+- All 200 calls returned a verdict that parsed. Intervals are Wilson 95%.
+
+**Result: the rate depends on the grader, and the Haiku judge is the outlier.**
+
+| | Haiku judge (150) | Sonnet judge (50) | own reading (40) |
+|---|---|---|---|
+| supported | 85 = 56.7% [48.7, 64.3] | 43 = 86.0% [73.8, 93.0] | 35 = 87.5% [73.9, 94.5] |
+| partly | 63 = 42.0% [34.4, 50.0] | 7 = 14.0% [7.0, 26.2] | 5 = 12.5% [5.5, 26.1] |
+| unsupported | 2 = 1.3% [0.4, 4.7] | 0 [0, 7.1] | 0 [0, 8.8] |
+| contradicted | 0 [0, 2.5] | 0 [0, 7.1] | 0 [0, 8.8] |
+| flag: wrong speaker | 4 = 2.7% [1.0, 6.7] | 1 = 2.0% [0.4, 10.5] | 1 = 2.5% [0.4, 12.9] |
+| flag: not durable | 15 = 10.0% [6.2, 15.8] | 1 = 2.0% [0.4, 10.5] | 7 = 17.5% [8.7, 32.0] |
+| facts with a date | 142 | 48 | 40 |
+| flag: date wrong, of those | 16 = 11.3% [7.1, 17.5] | 1 = 2.1% [0.4, 10.9] | 2 = 5.0% [1.4, 16.5] |
+| flag: date unresolved, of those | 1 = 0.7% [0.1, 3.9] | 1 = 2.1% [0.4, 10.9] | 0 [0, 8.8] |
+
+Supported, per conversation:
+
+| conversation | Haiku judge | Sonnet judge | own reading |
+|---|---|---|---|
+| 0 | 24/42 = 57.1% [42.2, 70.9] | 12/14 = 85.7% [60.1, 96.0] | 10/11 = 90.9% [62.3, 98.4] |
+| 1 | 30/40 = 75.0% [59.8, 85.8] | 12/13 = 92.3% [66.7, 98.6] | 11/11 = 100% [74.1, 100] |
+| 2 | 31/68 = 45.6% [34.3, 57.3] | 19/23 = 82.6% [62.9, 93.0] | 14/18 = 77.8% [54.8, 91.0] |
+
+Everything not supported was "partly", except the Haiku judge's 2 "unsupported" in conversation 2. On the same 50 facts the Haiku judge says 62.0% supported [48.2, 74.1].
+
+**Agreement.**
+
+| pair | n | label agreement | kappa | how they differ |
+|---|---|---|---|---|
+| Haiku vs Sonnet | 50 | 72.0% [58.3, 82.5] | 0.32 | 13 of 14: Haiku "partly", Sonnet "supported" |
+| own reading vs Sonnet | 40 | 95.0% [83.5, 98.6] | 0.80 | 2: own "supported", Sonnet "partly" |
+| own reading vs Haiku | 40 | 75.0% [59.8, 85.8] | 0.38 | 10 of 10: Haiku "partly", own "supported" |
+
+- All 5 facts the own reading marked "partly" were marked "partly" by both judges.
+- Flags: wrong speaker agreed on every fact in all three pairs. The date flag: 86% (kappa 0.42) between the judges. "Not durable" is not measured reliably: kappa -0.03 between the judges, 0.22 and 0.40 against the own reading.
+
+**Why the Haiku judge's figures are too harsh.** Its reasons often confirm the fact and still return "partly" or a date flag. Three of them, verbatim:
+- `tobias_workmates_hiking_photo_2034_05`, partly, date wrong: "The session date is 25 May 2034, not 2034-05-25 as the fact states, which matches; ... so the fact is supported on content and date. Correction: the date matches, so date should be ok."
+- `current_job_title` ("As of 2034-06-16, Tobias works as an assistant manager at his job, following a promotion"), unsupported: "he says he 'got promoted at work' and is 'now an assistant manager' ... The fact's 'works as' present-tense claim is supported".
+- `chat_ingrid_yoga_career_fair_2034_04_07`, partly: "confirms the date and time, the weekend yoga class with a colleague, and the school career fair volunteering, but never says Ingrid is Tobias's friend".
+
+Both of its "unsupported" verdicts are wrong on reading the sessions: the other is `kids_apple_pie_2034_05_03`, where the session of 4 May says "I made this apple pie for the kids yesterday". So: no grader found a fact that the session contradicts, and no fact made up from nothing was confirmed.
+
+**What is wrong with the facts that are wrong** (each checked against the session text by reading).
+
+*A detail added or over-stated* (the common kind):
+- `work_schedule_home_office`: "has a home desk setup with a computer, keyboard, notebook, chair and lamp". The session has two photo captions of a desk and never says it is at home.
+- `community_meeting_attended_before_2034_01_28`: "convinced that infrastructure upgrades are crucial". Session: "how crucial the upgrades are, especially for the kids. I'm really upset seeing the state of our education."
+- `policy_interest_education_infrastructure`: "the policy area that interests him most". Session: "is particularly interesting to me".
+- `priya_favorite_song_brave`: "Priya's most meaningful song". Session: "has a lot of significance for me".
+- `ingrid_family_oregon_road_trip`: "where Ingrid visited a cliff overlooking a canyon". That is a photo caption, not something she said.
+- `marcus_business_investment_after_job_loss_2034_06_21`: "since he lost his banking job". This session says "since I lost my job"; the bank is from an earlier session.
+- `marcus_reading_lean_startup_2034_05_27`: "tips on running his dance studio business". Session: "tips for my biz".
+- `home_country_sweden`: "Sweden ... where her grandmother lives". Session: "a gift from my grandma in my home country, Sweden".
+
+*A date the session does not give, or a wrong one:*
+- `priya_rainbow_sidewalk_pride_month_2034_06`: "During Pride Month 2034 (June), Priya walked ...". Session (25 August): "came across this cool rainbow sidewalk for Pride Month". No date for the walk.
+- `tobias_family_playground_day_2034_06`: "Shortly before 2034-06-12". The session gives no time for the day at the park.
+- `dana_forest_camping_2034_07`: "Shortly before 2034-07-15". Session: "We even went on another camping trip in the forest", no time.
+- `dana_camping_2034_07_early`: "Around 2034-07-01 to 2034-07-03 (two weekends before 2034-07-17)". 17 July 2034 is a Monday, so two weekends before is 8-9 July; 3 July is a Monday.
+- `priya_relationships_after_transition`: "As of 2034-09-12". The session is dated 12:09 am on 13 September 2034.
+- 8 of the 444 values contain "shortly before" (a text count, not a grade).
+
+*The wrong speaker* (2 found):
+- `fire_brigade_new_truck_2034_08`: "... which Tobias shared a photo of and says everyone contributed to". It was Ingrid who said "we all donated for it". All three graders flagged it.
+- `values_balance_wellbeing`: "Tobias believes taking care of physical and emotional well-being ... is key". "Physically, emotionally, and mentally" are Ingrid's words; Tobias said "looking out for our well-being is key".
+
+*Not durable* (true to the session, little worth recalling):
+- `marcus_persistence_2034_05_27`: "Marcus told Elena he will keep going and never quit ...". `marcus_no_quit_2034_07_09` and `marcus_no_quit_2034_07_23` say the same on other days.
+- `family_workout_whiteboard_photo_2034_05_04`: "Tobias shared a photo of a whiteboard listing his family's workouts".
+- `friend_ingrid_chat_2034_01_09`: "On 2034-01-09 at 7:06 pm, Tobias chatted with his friend Ingrid ...". 6 of the 444 keys are "a chat happened" facts.
+- `tobias_workmates_hiking_photo_2034_05`, `elena_dance_photo_2034_06_16`: a photo was shared. 49 of the 444 values mention a photo.
+- `priya_love_acceptance_belief`: "believes love and acceptance should be everyone's right".
+
+**Duplicates and conflicts, all 444 facts, within a user** (word-overlap heuristics fixed in the plan; candidates, not verdicts):
+- Exact key written twice: 0. Exact value: 0. Near-duplicate values (Jaccard 0.6 or more): 0.
+- Near-duplicate keys: 21 pairs, 25 facts. Mostly a recurring thing under dated keys: `marcus_thanks_elena_support_2034_06_13` / `..._2034_07_09`, `marcus_elena_store_congrats_2034_06_21` / `..._2034_07_21`.
+- Same key without its date, different value: 6 pairs over 4 state facts, all one thing (`ingrid_shelter_volunteering_2034_02_25`, `_2034_04_18`, `_2034_06`, and undated): a state written four times under dated keys, none replacing another. And 8 pairs over 13 facts where an event is involved (two pride parades, the chat facts, repeated thanks). None of these candidates is a contradiction on reading.
+- **No key was ever reused: 444 facts, 444 distinct keys per user.** So no fact in this run replaced an older one. The key heuristic cannot see staleness under different keys, and there is some: `current_job_title` ("As of 2034-06-16, Tobias works as an assistant manager") and `employment_status` ("As of 2034-08-05, Tobias lost his job ...") are both current.
+
+**A defect this turned up (offline, no spend; fixed in [#185](https://github.com/Mehul-Gupta-SMH/CommonMemO/issues/185), see ADR 0008).** In one dream pass, an update to a key is dropped and the oldest value is kept. `dream` passes `not_before=closed_at` so that an old session cannot replace what a newer one said, but the test compares the session's close time with the time the current value was *written*, and everything a pass writes is written after every session it reads closed. Two closed sessions, "I live in Lisbon now" then "I live in Oslo now", a fake model returning `home_city` for each: the pass writes Lisbon, drops Oslo, and marks both sessions done. How many updates the live run dropped is not known (dropped facts are not counted). It is consistent with zero reused keys in 444.
+
+**Spend.** $0.87 of a $1.50 cap: Haiku judge $0.13 (150 calls, $0.0009 each), Sonnet judge $0.74 (50 calls, $0.0148 each). No extraction spend.
+
+**Limits.**
+- LoCoMo is synthetic chat between two people, not agent sessions. The "assistant" is a friend, so about a quarter of the facts (101 of 444 keys start with the other speaker's name) are about the other person, stored in the user's profile. The extractor's "not what the agent said" rule has no clear meaning here.
+- A judge is a model, not ground truth, and the own reading is one reader. The two that agree (kappa 0.80) cover 40 to 50 facts: the supported rate is somewhere between about 74% and 94%, not a point.
+- One extraction run, three conversations, n = 150. Per-conversation intervals are wide.
+- Grading is against the source session only, so a correct detail carried from an earlier session counts as added.
+- This measures whether a written fact is true to its session. It does not measure what was missed, or what the dropped updates above cost.
+- "Not durable" did not reach agreement between graders, so its rate is not established.
+- The verdict files are in a session scratch directory, not in the repository.
+
+Rerun (needs a store a dream pass wrote to): `python scripts/dream_fact_check.py sample --db m.db --work out/`, then `judge --budget 1.5`, then `report --own own.json`.

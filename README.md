@@ -385,6 +385,10 @@ report = await mem.dream(complete=my_model, budget=0.25, apply=True)
 mem.revert(run_id=report.run_id)          # one pass is one run id: "dream:<timestamp>"
 ```
 
+The report counts the facts a pass skipped and says why (`dropped N fact(s): kept newer value`): a
+value the user stated in a session closed later is never replaced by an earlier one, and that is now
+visible rather than silent.
+
 Each session is read once (a `Checkpoint` in the Log marks it, bound to its user so `forget_user`
 removes it), whether or not it yielded a fact, so a re-run does only new work; sessions the close path
 already read are skipped, including those it found nothing in. A
